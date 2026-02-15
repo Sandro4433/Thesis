@@ -8,8 +8,6 @@ moveit_commander.roscpp_initialize([])
 
 robot = Robot("panda_arm", "panda_hand", moveit_commander)
 
-while True:
-    robot.MoveJ("Home")
-    robot.MoveJ_J("Discard")
-    robot.MoveL("Home")
-    robot.MoveJ_J("Discard")
+
+robot.MoveJ("Camera_Home")
+    
