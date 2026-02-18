@@ -9,5 +9,8 @@ moveit_commander.roscpp_initialize([])
 robot = Robot("panda_arm", "panda_hand", moveit_commander)
 
 
-robot.MoveJ("Camera_Home")
+robot.MoveJ_J("Camera_Home")
+robot.MoveJ("Camera_Home",offset=[0.0,0.0,-0.01])
+robot.MoveJ("Camera_Home_test")
+
     
