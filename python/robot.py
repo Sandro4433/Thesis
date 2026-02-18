@@ -33,8 +33,8 @@ class Robot:
         self.arm = moveit_commander.MoveGroupCommander(arm_name)
         self.gripper = moveit_commander.MoveGroupCommander(hand_name)
 
-        self.arm.set_goal_orientation_tolerance(0.005)
-        self.arm.set_goal_position_tolerance(0.005)
+        self.arm.set_goal_orientation_tolerance(0.02)
+        self.arm.set_goal_position_tolerance(0.02)
         self.set_mode_ptp()
 
         self._positions = self.load_points()
@@ -48,8 +48,8 @@ class Robot:
     def set_mode_ptp(self):
         self.arm.set_planner_id("PTP")
         self.arm.set_planning_pipeline_id("pilz_industrial_motion_planner")
-        self.arm.set_max_velocity_scaling_factor(1.0)
-        self.arm.set_max_acceleration_scaling_factor(1.0)
+        self.arm.set_max_velocity_scaling_factor(0.2)
+        self.arm.set_max_acceleration_scaling_factor(0.2)
 
     def set_mode_lin(self):
         self.arm.set_planner_id("LIN")
