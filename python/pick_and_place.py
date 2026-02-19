@@ -2,7 +2,7 @@ def pick_and_place(
     self,
     pick_name: str,
     place_name: str,
-    camera_home_name: str = "Camera_Home",
+    camera_home_name: str = "Camera_Home_vertical",
     approach_z_offset: float = -0.05,
     gripper_open_width: float = 0.075,
     gripper_close_width: float = 0.06,

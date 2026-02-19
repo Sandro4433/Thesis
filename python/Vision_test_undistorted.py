@@ -5,8 +5,30 @@ from pupil_apriltags import Detector
 import json
 import os
 from datetime import datetime
-from typing import Tuple, List, Dict, Any
 
+def undistort_realsense_color(img_bgr, color_frame, alpha=0.0):
+    """
+    alpha=0.0 -> stärkeres Cropping, dafür weniger Rand-Artefakte
+    alpha=1.0 -> mehr Bild bleibt erhalten, dafür mehr Rand-Artefakte möglich
+    """
+    color_profile = color_frame.profile.as_video_stream_profile()
+    intr = color_profile.get_intrinsics()
+
+    K = np.array(
+        [
+            [intr.fx, 0.0, intr.ppx],
+            [0.0, intr.fy, intr.ppy],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+    dist = np.array(intr.coeffs, dtype=np.float64)
+
+    h, w = img_bgr.shape[:2]
+    newK, _ = cv2.getOptimalNewCameraMatrix(K, dist, (w, h), alpha, (w, h))
+
+    img_u = cv2.undistort(img_bgr, K, dist, None, newK)
+    return img_u, K, dist, newK
 
 
 def id_to_square_map(cols=11, rows=8):
@@ -48,69 +70,10 @@ def wrap_deg_90(a_deg: float) -> float:
     return (a_deg + 90.0) % 180.0 - 90.0
 
 
-# -------- JSONL UPSERT (replace by name) --------
-
-def load_jsonl_by_name(path: str) -> Dict[str, Any]:
-
-    """
-    Reads JSONL into {name: obj}. If duplicate names exist in file,
-    the last one wins.
-    """
-    data = {}
-    if not os.path.exists(path):
-        return data
-
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            name = obj.get("name")
-            if isinstance(name, str) and name:
-                data[name] = obj
-    return data
-
-
-def write_jsonl_atomic(path: str, objs) -> None:
+def append_jsonl(path: str, obj: dict) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        for obj in objs:
-            f.write(json.dumps(obj) + "\n")
-    os.replace(tmp, path)
-
-
-def upsert_jsonl_by_name(path: str, new_objects: List[Dict[str, Any]]) -> Tuple[int, int]:
-
-    """
-    Upsert entries by 'name':
-      - if name exists -> overwrite existing entry
-      - if name does not exist -> insert new entry
-    Returns: (inserted, overwritten)
-    """
-    existing = load_jsonl_by_name(path)
-
-    inserted = 0
-    overwritten = 0
-    for obj in new_objects:
-        name = obj.get("name")
-        if not isinstance(name, str) or not name:
-            continue
-        if name in existing:
-            overwritten += 1
-        else:
-            inserted += 1
-        existing[name] = obj
-
-    # Keep stable order (optional): sort by name
-    out = [existing[k] for k in sorted(existing.keys())]
-    write_jsonl_atomic(path, out)
-
-    return inserted, overwritten
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(obj) + "\n")
 
 
 def main():
@@ -123,14 +86,15 @@ def main():
     # These are METERS in the robot base frame.
     charuco_origin_in_robot_m = {
         "x": 0.206,   # +206 mm
-        "y": 0.180,   # 180 mm
+        "y": -0.100,  # -100 mm
     }
 
     camera_home = {
         "name": "Camera_Home",
-        "pos": [0.23593705630158426, 0.3716368323719272, 0.7687142220161591],
-        "quat": [0.9219552644565145, 0.3861443044671641, -0.004541816156182142, 0.02950319261524026],
-        "joints": [1.0775895506167237, -0.15707403423006736, -0.048835761024164766, -1.341185694879193, -0.05478648051288393, 1.142599039012556, 0.21453160582469896]
+        "pos": [0.4227845378719083, 0.32034724812351234, 0.640615092088892],
+        "quat": [-0.9283979780341051, 0.3714807967743827, -0.00749409058504109, 0.004801105743297209],
+        "joints": [0.545612563462909, -0.0744156516819589, 0.09891555746814659, -1.6201339441423617,
+                   -0.0004826956735041462, 1.562069236305749, 1.405545344794942],
     }
 
     # Kit (AprilTag ID==0) local points (mm) + allowed grip offsets relative to tag orientation (deg)
@@ -158,7 +122,12 @@ def main():
             print("ERROR: No color frame.")
             return
 
-        img = np.asanyarray(color_frame.get_data())
+        img_raw = np.asanyarray(color_frame.get_data())
+
+#        UNDISTORT HIER
+        img, K, dist, newK = undistort_realsense_color(img_raw, color_frame, alpha=0.0)
+
+
     finally:
         pipeline.stop()
 
@@ -234,9 +203,8 @@ def main():
 
     H_inv = np.linalg.inv(H)
 
-    # ORIGIN = top-right corner in IMAGE.
-    # AXES: X left, Y down (in IMAGE).
-
+    # ORIGIN = top-left corner in IMAGE.
+    # AXES: X down, Y right (in IMAGE).
     board_corners_b = np.array(
         [
             [0.0, 0.0],
@@ -246,11 +214,8 @@ def main():
         ],
         dtype=np.float32,
     )
-
     board_corners_i = project(H, board_corners_b)
-
-    # Top-right in image: large x, small y  -> maximize (x - y)
-    origin_idx = int(np.argmax(board_corners_i[:, 0] - board_corners_i[:, 1]))
+    origin_idx = int(np.argmin(board_corners_i[:, 0] + board_corners_i[:, 1]))
     o_i = board_corners_i[origin_idx]
     o_b = board_corners_b[origin_idx]
 
@@ -268,16 +233,12 @@ def main():
         v = p_i - o_i
         dirs.append((name, p_i, v, delta_b))
 
-    # X should point LEFT in image -> most negative dx
-    x_choice = min(dirs, key=lambda t: t[2][0])
-
-    # Y should point DOWN in image -> most positive dy (exclude same direction as x_choice)
+    x_choice = max(dirs, key=lambda t: t[2][1])  # most "down" in image
     dirs_for_y = [d for d in dirs if d[0] != x_choice[0]]
-    y_choice = max(dirs_for_y, key=lambda t: t[2][1])
+    y_choice = max(dirs_for_y, key=lambda t: t[2][0])  # most "right" in image
 
     ux_unit_b = x_choice[3] / axis_len
     uy_unit_b = y_choice[3] / axis_len
-
 
     # Draw origin + axes
     o = tuple(np.round(o_i).astype(int))
@@ -428,17 +389,22 @@ def main():
                 {"name_suffix": kp["name"], "x_mm": kit_x_mm, "y_mm": kit_y_mm, "orientation_deg": grip_rot_deg_to_y}
             )
 
+        # ----------------------------
+    # SAVE ALL TARGETS TO JSONL
     # ----------------------------
-    # SAVE ALL TARGETS TO JSONL (replace by name)
-    # ----------------------------
+    saved = 0
+
+    # Use fixed Z in robot base frame
     z_robot = 0.2  # meters (hardcoded)
 
-    new_entries = []
+
     for tag_id, targets in tag_targets.items():
         for t in targets:
+            # Charuco (mm) -> meters
             x_charuco_m = float(t["x_mm"]) / 1000.0
             y_charuco_m = float(t["y_mm"]) / 1000.0
 
+            # Robot base position
             x_robot = float(charuco_origin_in_robot_m["x"] + x_charuco_m)
             y_robot = float(charuco_origin_in_robot_m["y"] + y_charuco_m)
 
@@ -446,15 +412,14 @@ def main():
                 "name": f"April_Tag_{tag_id}_{t['name_suffix']}",
                 "pos": [x_robot, y_robot, z_robot],
                 "quat": camera_home["quat"],
-                "orientation": float(t["orientation_deg"]),  # degrees
+                "orientation": float(t["orientation_deg"])  # degrees
             }
-            new_entries.append(entry)
 
-    inserted, overwritten = upsert_jsonl_by_name(positions_path, new_entries)
-    print(
-        f"Wrote {len(new_entries)} entries to: {positions_path} "
-        f"(inserted={inserted}, overwritten={overwritten})"
-    )
+            append_jsonl(positions_path, entry)
+            saved += 1
+
+    print(f"Saved {saved} entries to: {positions_path}")
+
 
     # ----------------------------
     # SHOW RESULT
