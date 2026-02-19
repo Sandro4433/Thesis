@@ -63,11 +63,17 @@ class Robot:
     # --------------------------
 
     # Linear movement
-    def MoveL(self, name, positions=None, offset=None):
+    def MoveL(self, name, positions=None, offset=None, use_current_orientation: bool = False):
         if positions is None:
             positions = self._positions
         self.set_mode_lin()
-        self.go_to_point_pose_only(name, positions, offset)
+        return self.go_to_point_pose_only(
+            name,
+            positions,
+            offset=offset,
+            use_current_orientation=use_current_orientation
+        )
+
 
     # Non-linear movement
     def MoveJ(self, name, positions=None, offset=None):
@@ -100,11 +106,62 @@ class Robot:
             raise MoveItCommanderException("❌ Joint PTP failed.")
 
         return success
+    
+    def MoveJointDelta(self, joint_index: int = 6, delta_deg: float = 0.0, target_name: str = ""):
+        """
+        If target_name is provided and exists in positions.jsonl and contains 'orientation',
+        uses that orientation (deg) as the delta for the specified joint.
+        Otherwise uses delta_deg (deg) as the delta.
+
+        joint_index: 0..6 (default 6 = panda_joint7)
+        delta_deg: used only if target_name is empty or invalid
+        target_name: point name from JSON; if "" -> use delta_deg
+        """
+
+        if joint_index < 0 or joint_index > 6:
+            raise ValueError("joint_index must be between 0 and 6 (panda has 7 joints).")
+
+        # Decide which delta to use (degrees)
+        use_deg = None
+
+        if target_name:
+            entry = self._positions.get(target_name)
+            if entry is None:
+                raise MoveItCommanderException(f"❌ Target '{target_name}' not found in loaded positions.")
+            ori_deg = -entry.get("orientation_deg", None)
+            if ori_deg is None:
+                raise MoveItCommanderException(f"❌ Target '{target_name}' has no 'orientation' field in JSON.")
+            use_deg = float(ori_deg)
+        else:
+            use_deg = float(delta_deg)
+
+        self.set_mode_ptp()
+
+        # Read current joint values
+        current_joints = self.arm.get_current_joint_values()
+
+        # Convert degrees to radians and apply
+        delta_rad = float(np.deg2rad(use_deg))
+        new_joints = list(current_joints)
+        new_joints[joint_index] += delta_rad
+
+        # Execute
+        self.arm.set_joint_value_target(new_joints)
+        success = self.arm.go(wait=True)
+        self.arm.stop()
+        self.arm.clear_pose_targets()
+
+        if not success:
+            raise MoveItCommanderException("❌ Joint delta move failed.")
+
+        return success
+
+
 
     # --------------------------
     # For PTP/LIN movement
     # --------------------------
-    def go_to_point_pose_only(self, name, positions, offset=None):
+    def go_to_point_pose_only(self, name, positions, offset=None, use_current_orientation: bool = False):
         entry = positions.get(name)
         if entry is None:
             print(f"⚠ Position '{name}' not found.")
@@ -116,12 +173,17 @@ class Robot:
         pose_goal.position.x = pose.position.x
         pose_goal.position.y = pose.position.y
         pose_goal.position.z = pose.position.z
-        pose_goal.orientation = pose.orientation
 
         if offset is not None:
             pose_goal.position.x += offset[0]
             pose_goal.position.y += offset[1]
             pose_goal.position.z += offset[2]
+
+        if use_current_orientation:
+            current_pose = self.arm.get_current_pose().pose
+            pose_goal.orientation = current_pose.orientation
+        else:
+            pose_goal.orientation = pose.orientation
 
         self.normalize_quaternion(pose_goal)
         self.arm.set_pose_target(pose_goal)
@@ -135,17 +197,20 @@ class Robot:
 
         return success
 
+
     # --------------------------
     #      GRIPPER
     # --------------------------
     def gripper_open(self, width=None):
         if width is None:
-            width = 0.04
+            width = 0.075
         self.set_width(width)
         self.gripper.go(wait=True)
 
-    def gripper_close(self):
-        self.set_width(0.0005)
+    def gripper_close(self, width=None):
+        if width is None:
+            width = 0.06
+        self.set_width(width)
         self.gripper.go(wait=True)
 
     def set_width(self, width):
@@ -194,7 +259,8 @@ class Robot:
 
                     positions[data["name"]] = {
                         "pose": pose,
-                        "joints": joints
+                        "joints": joints,
+                        "orientation_deg": data.get("orientation", None) 
                     }
 
         except FileNotFoundError:

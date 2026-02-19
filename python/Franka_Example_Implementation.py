@@ -1,3 +1,4 @@
+from pick_and_place import pick_and_place
 import rospy
 import moveit_commander
 from robot import Robot 
@@ -8,9 +9,11 @@ moveit_commander.roscpp_initialize([])
 
 robot = Robot("panda_arm", "panda_hand", moveit_commander)
 
-
 robot.MoveJ_J("Camera_Home")
-robot.MoveJ("Camera_Home",offset=[0.0,0.0,-0.01])
-robot.MoveJ("Camera_Home_test")
 
-    
+
+pick_and_place(robot, "April_Tag_0_Pos_1", "Reject")
+pick_and_place(robot, "April_Tag_0_Pos_2", "Reject")
+pick_and_place(robot, "April_Tag_0_Pos_3", "Reject")
+
+

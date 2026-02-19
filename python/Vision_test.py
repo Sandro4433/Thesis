@@ -58,9 +58,12 @@ def main():
     # ----------------------------
     positions_path = os.path.abspath("positions.jsonl")
 
-    # Robot base frame relative to Charuco frame (mm)
-    robot_offset_x_mm = 26.0
-    robot_offset_y_mm = 10.0
+    # Define the Charuco origin in the ROBOT BASE FRAME.
+    # These are METERS in the robot base frame.
+    charuco_origin_in_robot_m = {
+        "x": 0.206,   # +206 mm
+        "y": -0.100,  # -100 mm
+    }
 
     camera_home = {
         "name": "Camera_Home",
@@ -72,9 +75,9 @@ def main():
 
     # Kit (AprilTag ID==0) local points (mm) + allowed grip offsets relative to tag orientation (deg)
     kit_points = [
-        {"name": "Pos_1", "dx_mm": 65.0,  "dy_mm": 30.0,  "grip_off_deg": +60.0},
-        {"name": "Pos_2", "dx_mm": 65.0,  "dy_mm": -30.0, "grip_off_deg": -60.0},
-        {"name": "Pos_3", "dx_mm": 120.0, "dy_mm": 0.0,   "grip_off_deg": +90.0},
+        {"name": "Pos_1", "dx_mm": 65.0,  "dy_mm": 30.0,  "grip_off_deg": 30.0},
+        {"name": "Pos_2", "dx_mm": 65.0,  "dy_mm": -30.0, "grip_off_deg": -30.0},
+        {"name": "Pos_3", "dx_mm": 120.0, "dy_mm": 0.0,   "grip_off_deg": -80.0},
     ]
 
     # ----------------------------
@@ -86,7 +89,6 @@ def main():
 
     profile = pipeline.start(config)
     try:
-        # warmup a few frames
         for _ in range(5):
             pipeline.wait_for_frames()
 
@@ -131,8 +133,8 @@ def main():
         refine_edges=1,
     )
 
-    axis_len = square * 3.0          # meters (for choosing axes)
-    tag_axis_draw_len = 0.04         # meters (4 cm) for drawing tag axis
+    axis_len = square * 3.0      # meters (for choosing axes)
+    tag_axis_draw_len = 0.04     # meters (4 cm) for drawing tag axis
 
     # ----------------------------
     # Find board homography
@@ -222,11 +224,11 @@ def main():
                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
 
     # ----------------------------
-    # Detect AprilTags, compute targets, visualize, save JSONL
+    # Detect AprilTags, compute targets, visualize
     # ----------------------------
     detections = april.detect(gray)
 
-    # tag_targets[tag_id] = list of targets: {name_suffix, x_mm, y_mm, rot_deg_to_y}
+    # tag_targets[tag_id] = list of targets: {name_suffix, x_mm, y_mm, orientation_deg}
     tag_targets = {}
 
     for r in detections:
@@ -276,7 +278,7 @@ def main():
 
         # Tag angle relative to Y-axis (deg)
         theta_y_deg = float(np.degrees(np.arctan2(vx, vy)))
-        theta_y_deg = wrap_deg_180(theta_y_deg)
+        theta_y_deg = wrap_deg_180(-theta_y_deg)
 
         # Smallest two-finger rotation relative to Y-axis (deg)
         tag_rot_deg_to_y = wrap_deg_90(theta_y_deg)
@@ -299,7 +301,7 @@ def main():
         if r.tag_id != 0:
             # Save only center point for non-kit tags
             tag_targets[r.tag_id] = [
-                {"name_suffix": "Pos_0", "x_mm": tag_x_mm, "y_mm": tag_y_mm, "rot_deg_to_y": tag_rot_deg_to_y}
+                {"name_suffix": "Pos_0", "x_mm": tag_x_mm, "y_mm": tag_y_mm, "orientation_deg": tag_rot_deg_to_y}
             ]
             continue
 
@@ -355,50 +357,40 @@ def main():
             )
 
             tag_targets[r.tag_id].append(
-                {"name_suffix": kp["name"], "x_mm": kit_x_mm, "y_mm": kit_y_mm, "rot_deg_to_y": grip_rot_deg_to_y}
+                {"name_suffix": kp["name"], "x_mm": kit_x_mm, "y_mm": kit_y_mm, "orientation_deg": grip_rot_deg_to_y}
             )
 
-    # ----------------------------
+        # ----------------------------
     # SAVE ALL TARGETS TO JSONL
     # ----------------------------
     saved = 0
+
+    # Use fixed Z in robot base frame
+    z_robot = 0.2  # meters (hardcoded)
+
+
     for tag_id, targets in tag_targets.items():
         for t in targets:
-            # Charuco -> robot base translation (mm), then to meters
-            rx_mm = float(t["x_mm"]) + robot_offset_x_mm
-            ry_mm = float(t["y_mm"]) + robot_offset_y_mm
-            rx_m = rx_mm / 1000.0
-            ry_m = ry_mm / 1000.0
+            # Charuco (mm) -> meters
+            x_charuco_m = float(t["x_mm"]) / 1000.0
+            y_charuco_m = float(t["y_mm"]) / 1000.0
 
-            # Rotation for last axis (rad). Add to camera_home joint7.
-            rot_rad = float(np.deg2rad(float(t["rot_deg_to_y"])))
-            new_joints = list(camera_home["joints"])
-            new_joints[-1] = float(new_joints[-1] + rot_rad)
-
-            # Update pos (assumption: camera_home pos corresponds to Charuco (0,0))
-            new_pos = list(camera_home["pos"])
-            new_pos[0] = float(camera_home["pos"][0] + rx_m)
-            new_pos[1] = float(camera_home["pos"][1] + ry_m)
+            # Robot base position
+            x_robot = float(charuco_origin_in_robot_m["x"] + x_charuco_m)
+            y_robot = float(charuco_origin_in_robot_m["y"] + y_charuco_m)
 
             entry = {
                 "name": f"April_Tag_{tag_id}_{t['name_suffix']}",
-                "pos": new_pos,
+                "pos": [x_robot, y_robot, z_robot],
                 "quat": camera_home["quat"],
-                "joints": new_joints,
-                "meta": {
-                    "source": "vision_single_shot",
-                    "timestamp": datetime.now().isoformat(timespec="seconds"),
-                    "charuco_mm": {"x": float(t["x_mm"]), "y": float(t["y_mm"])},
-                    "robot_offset_mm": {"x": robot_offset_x_mm, "y": robot_offset_y_mm},
-                    "robot_xy_mm": {"x": float(rx_mm), "y": float(ry_mm)},
-                    "rot_deg_to_y": float(t["rot_deg_to_y"]),
-                    "rot_rad_to_y": float(rot_rad),
-                },
+                "orientation": float(t["orientation_deg"])  # degrees
             }
+
             append_jsonl(positions_path, entry)
             saved += 1
 
     print(f"Saved {saved} entries to: {positions_path}")
+
 
     # ----------------------------
     # SHOW RESULT
