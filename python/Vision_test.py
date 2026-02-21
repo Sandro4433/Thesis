@@ -4,9 +4,7 @@ import pyrealsense2 as rs
 from pupil_apriltags import Detector
 import json
 import os
-from datetime import datetime
 from typing import Tuple, List, Dict, Any
-
 
 
 def id_to_square_map(cols=11, rows=8):
@@ -51,7 +49,6 @@ def wrap_deg_90(a_deg: float) -> float:
 # -------- JSONL UPSERT (replace by name) --------
 
 def load_jsonl_by_name(path: str) -> Dict[str, Any]:
-
     """
     Reads JSONL into {name: obj}. If duplicate names exist in file,
     the last one wins.
@@ -85,7 +82,6 @@ def write_jsonl_atomic(path: str, objs) -> None:
 
 
 def upsert_jsonl_by_name(path: str, new_objects: List[Dict[str, Any]]) -> Tuple[int, int]:
-
     """
     Upsert entries by 'name':
       - if name exists -> overwrite existing entry
@@ -122,8 +118,8 @@ def main():
     # Define the Charuco origin in the ROBOT BASE FRAME.
     # These are METERS in the robot base frame.
     charuco_origin_in_robot_m = {
-        "x": 0.206,   # +206 mm
-        "y": 0.180,   # 180 mm
+        "x": 0.157,   # +157 mm
+        "y": 0.301,   # 301 mm
     }
 
     camera_home = {
@@ -133,11 +129,21 @@ def main():
         "joints": [1.0283937304877353, 0.1866175160754216, 0.0338391137322888, -0.8281534481959998, -0.019907020211219786, 1.0351364941067163, 0.2533314509864326]
     }
 
-    # Kit (AprilTag ID==0) local points (mm) + allowed grip offsets relative to tag orientation (deg)
+    # Kit (AprilTag ID==0) local points (mm) + grip offsets relative to tag orientation (deg)
     kit_points = [
         {"name": "Pos_1", "dx_mm": 65.0,  "dy_mm": 30.0,  "grip_off_deg": 30.0},
         {"name": "Pos_2", "dx_mm": 65.0,  "dy_mm": -30.0, "grip_off_deg": -30.0},
         {"name": "Pos_3", "dx_mm": 120.0, "dy_mm": 0.0,   "grip_off_deg": -90.0},
+    ]
+
+    # Container (AprilTag ID==1) local points (mm) + grip offsets relative to tag orientation (deg)
+    container_points = [
+        {"name": "Pos_1", "dx_mm":  65.0, "dy_mm":   0.0, "grip_off_deg":   0.0},
+        {"name": "Pos_2", "dx_mm":  35.0, "dy_mm":  55.0, "grip_off_deg": 60.0},
+        {"name": "Pos_3", "dx_mm": -35.0, "dy_mm":  55.0, "grip_off_deg":  120.0},
+        {"name": "Pos_4", "dx_mm": -65.0, "dy_mm":   0.0, "grip_off_deg":   0.0},
+        {"name": "Pos_5", "dx_mm": -35.0, "dy_mm": -55.0, "grip_off_deg": -120.0},
+        {"name": "Pos_6", "dx_mm":  35.0, "dy_mm": -55.0, "grip_off_deg":  -60.0},
     ]
 
     # ----------------------------
@@ -147,7 +153,7 @@ def main():
     config = rs.config()
     config.enable_stream(rs.stream.color, 1920, 1080, rs.format.bgr8, 30)
 
-    profile = pipeline.start(config)
+    pipeline.start(config)
     try:
         for _ in range(5):
             pipeline.wait_for_frames()
@@ -278,7 +284,6 @@ def main():
     ux_unit_b = x_choice[3] / axis_len
     uy_unit_b = y_choice[3] / axis_len
 
-
     # Draw origin + axes
     o = tuple(np.round(o_i).astype(int))
     px = tuple(np.round(x_choice[1]).astype(int))
@@ -308,6 +313,9 @@ def main():
 
         if r.tag_id == 0:
             cv2.putText(img, "Kit (ID: 0)", label_xy,
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+        elif r.tag_id == 1:
+            cv2.putText(img, "Container (ID: 1)", label_xy,
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
         else:
             cv2.putText(img, f"ID: {r.tag_id}", label_xy,
@@ -366,22 +374,31 @@ def main():
                     (label_xy[0], label_xy[1] + 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
 
-        if r.tag_id != 0:
-            # Save only center point for non-kit tags
+        # If it's neither Kit (0) nor Container (1): save only the center
+        if r.tag_id not in (0, 1):
             tag_targets[r.tag_id] = [
                 {"name_suffix": "Pos_0", "x_mm": tag_x_mm, "y_mm": tag_y_mm, "orientation_deg": tag_rot_deg_to_x}
             ]
             continue
 
-        # KIT: compute & draw 3 sub-positions + their grip rotations (relative to Y-axis)
+        # Choose point-set based on tag id
+        if r.tag_id == 0:
+            object_label = "Kit"
+            point_set = kit_points
+            draw_color = (0, 255, 255)
+        else:  # r.tag_id == 1
+            object_label = "Container"
+            point_set = container_points
+            draw_color = (0, 200, 255)
+
         tag_targets[r.tag_id] = []
 
-        # For rotating kit-local offsets, use tag angle relative to WORKSPACE X-axis:
+        # For rotating local offsets: use tag angle relative to WORKSPACE X-axis
         theta_x_rad = float(np.arctan2(vy, vx))
         cth = float(np.cos(theta_x_rad))
         sth = float(np.sin(theta_x_rad))
 
-        for kp in kit_points:
+        for kp in point_set:
             dx_mm = float(kp["dx_mm"])
             dy_mm = float(kp["dy_mm"])
             off_deg = float(kp["grip_off_deg"])
@@ -390,28 +407,28 @@ def main():
             rx_mm = dx_mm * cth - dy_mm * sth
             ry_mm = dx_mm * sth + dy_mm * cth
 
-            kit_x_mm = tag_x_mm + rx_mm
-            kit_y_mm = tag_y_mm + ry_mm
+            obj_x_mm = tag_x_mm + rx_mm
+            obj_y_mm = tag_y_mm + ry_mm
 
-            # Grip angle at this point relative to Y-axis (deg), then smallest two-finger rotation
+            # Grip angle at this point relative to X-axis (deg), then smallest two-finger rotation
             grip_theta_x_deg = wrap_deg_180(theta_x_deg + off_deg)
             grip_rot_deg_to_x = wrap_deg_90(grip_theta_x_deg)
 
-            # Draw kit point
-            kit_x_m = kit_x_mm / 1000.0
-            kit_y_m = kit_y_mm / 1000.0
-            p_b = o_b + ux_unit_b * kit_x_m + uy_unit_b * kit_y_m
+            # Draw point
+            obj_x_m = obj_x_mm / 1000.0
+            obj_y_m = obj_y_mm / 1000.0
+            p_b = o_b + ux_unit_b * obj_x_m + uy_unit_b * obj_y_m
             p_i = project(H, np.array([p_b], dtype=np.float32))[0]
             pi = tuple(np.round(p_i).astype(int))
 
-            cv2.circle(img, pi, 6, (0, 255, 255), -1)
+            cv2.circle(img, pi, 6, draw_color, -1)
             cv2.putText(
                 img,
-                f'{kp["name"]} ({kit_x_mm:.0f},{kit_y_mm:.0f})mm',
+                f'{object_label}_{kp["name"]} ({obj_x_mm:.0f},{obj_y_mm:.0f})mm',
                 (pi[0] + 8, pi[1] - 10),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.65,
-                (0, 255, 255),
+                draw_color,
                 2,
             )
             cv2.putText(
@@ -420,12 +437,12 @@ def main():
                 (pi[0] + 8, pi[1] + 18),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.65,
-                (0, 255, 255),
+                draw_color,
                 2,
             )
 
             tag_targets[r.tag_id].append(
-                {"name_suffix": kp["name"], "x_mm": kit_x_mm, "y_mm": kit_y_mm, "orientation_deg": grip_rot_deg_to_x}
+                {"name_suffix": kp["name"], "x_mm": obj_x_mm, "y_mm": obj_y_mm, "orientation_deg": grip_rot_deg_to_x}
             )
 
     # ----------------------------
