@@ -48,8 +48,8 @@ class Robot:
     def set_mode_ptp(self):
         self.arm.set_planner_id("PTP")
         self.arm.set_planning_pipeline_id("pilz_industrial_motion_planner")
-        self.arm.set_max_velocity_scaling_factor(0.2)
-        self.arm.set_max_acceleration_scaling_factor(0.2)
+        self.arm.set_max_velocity_scaling_factor(0.5)
+        self.arm.set_max_acceleration_scaling_factor(0.5)
 
     def set_mode_lin(self):
         self.arm.set_planner_id("LIN")
