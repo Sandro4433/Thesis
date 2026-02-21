@@ -8,28 +8,43 @@ def pick_and_place(
     gripper_close_width: float = 0.06,
 ):
    
-
+    # Home
     self.MoveJ_J(home_name)
 
+    # Approach pick location
     self.MoveJ(pick_name)
     
+    # Rotate gripper
     self.MoveJointDelta(joint_index=6, target_name=pick_name)
     
+    # Go down to pick
     self.MoveL(pick_name, offset=(0.0, 0.0, approach_z_offset), use_current_orientation=True)
 
-    # close gripper
+    # Close gripper
     self.gripper_close(gripper_close_width)
 
-    #  retreat up
+    # Retreat up
     self.MoveL(pick_name, offset=(0.0, 0.0, 0.1), use_current_orientation=True)
 
-    #  go to place
-    self.MoveJ_J(place_name)
+    # Home
+    self.MoveJ_J(home_name)
 
-  
+    # Approach place location
+    self.MoveJ(place_name)
+
+    # Rotate gripper
+    self.MoveJointDelta(joint_index=6, target_name=place_name)
+    
+    # Go down to place
+    self.MoveL(place_name, offset=(0.0, 0.0, approach_z_offset), use_current_orientation=True)
+
+    # Open gripper
     self.gripper_open(gripper_open_width)
 
-    #  camera home
+    # Retreat up
+    self.MoveL(place_name, offset=(0.0, 0.0, 0.1), use_current_orientation=True)
+
+    # Home
     self.MoveJ_J(home_name)
 
     return True

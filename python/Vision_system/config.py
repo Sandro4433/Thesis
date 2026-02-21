@@ -26,6 +26,11 @@ CAMERA_HOME: Dict[str, Any] = {
     ],
 }
 
+
+# Tag groupings (which AprilTag IDs belong to which object type)
+KIT_TAG_IDS = {0, 2, 4}
+CONTAINER_TAG_IDS = {1, 3, 5}
+
 # Kit (AprilTag ID==0) local points (mm) + grip offsets relative to tag orientation (deg)
 KIT_POINTS: List[Dict[str, float]] = [
     {"name": "Pos_1", "dx_mm": 65.0, "dy_mm": 30.0, "grip_off_deg": 30.0},
