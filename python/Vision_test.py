@@ -128,16 +128,16 @@ def main():
 
     camera_home = {
         "name": "Camera_Home",
-        "pos": [0.23593705630158426, 0.3716368323719272, 0.7687142220161591],
-        "quat": [0.9219552644565145, 0.3861443044671641, -0.004541816156182142, 0.02950319261524026],
-        "joints": [1.0775895506167237, -0.15707403423006736, -0.048835761024164766, -1.341185694879193, -0.05478648051288393, 1.142599039012556, 0.21453160582469896]
+        "pos": [0.25468104952011544, 0.4446658106363947, 0.7958241558793229],
+        "quat": [-0.9214052431423866, -0.3884316547590146, -0.011368659081744474, 0.001995264788503215],
+        "joints": [1.0283937304877353, 0.1866175160754216, 0.0338391137322888, -0.8281534481959998, -0.019907020211219786, 1.0351364941067163, 0.2533314509864326]
     }
 
     # Kit (AprilTag ID==0) local points (mm) + allowed grip offsets relative to tag orientation (deg)
     kit_points = [
         {"name": "Pos_1", "dx_mm": 65.0,  "dy_mm": 30.0,  "grip_off_deg": 30.0},
         {"name": "Pos_2", "dx_mm": 65.0,  "dy_mm": -30.0, "grip_off_deg": -30.0},
-        {"name": "Pos_3", "dx_mm": 120.0, "dy_mm": 0.0,   "grip_off_deg": -80.0},
+        {"name": "Pos_3", "dx_mm": 120.0, "dy_mm": 0.0,   "grip_off_deg": -90.0},
     ]
 
     # ----------------------------
@@ -344,12 +344,12 @@ def main():
         vx = float(v_b_unit.dot(ux_unit_b))  # along X
         vy = float(v_b_unit.dot(uy_unit_b))  # along Y
 
-        # Tag angle relative to Y-axis (deg)
-        theta_y_deg = float(np.degrees(np.arctan2(vx, vy)))
-        theta_y_deg = wrap_deg_180(-theta_y_deg)
+        # Tag angle relative to X-axis (deg)
+        theta_x_deg = float(np.degrees(np.arctan2(vy, vx)))
+        theta_x_deg = wrap_deg_180(theta_x_deg)
 
-        # Smallest two-finger rotation relative to Y-axis (deg)
-        tag_rot_deg_to_y = wrap_deg_90(theta_y_deg)
+        # Smallest two-finger rotation relative to X-axis (deg)
+        tag_rot_deg_to_x = wrap_deg_90(theta_x_deg)
 
         # Draw tag axis
         end_b = c_b + v_b_unit * tag_axis_draw_len
@@ -362,14 +362,14 @@ def main():
         cv2.putText(img, f"X={tag_x_mm:.1f}mm  Y={tag_y_mm:.1f}mm",
                     (label_xy[0], label_xy[1] + 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
-        cv2.putText(img, f"rot={tag_rot_deg_to_y:.1f} deg (to Y)",
+        cv2.putText(img, f"rot={tag_rot_deg_to_x:.1f} deg (to X)",
                     (label_xy[0], label_xy[1] + 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
 
         if r.tag_id != 0:
             # Save only center point for non-kit tags
             tag_targets[r.tag_id] = [
-                {"name_suffix": "Pos_0", "x_mm": tag_x_mm, "y_mm": tag_y_mm, "orientation_deg": tag_rot_deg_to_y}
+                {"name_suffix": "Pos_0", "x_mm": tag_x_mm, "y_mm": tag_y_mm, "orientation_deg": tag_rot_deg_to_x}
             ]
             continue
 
@@ -394,8 +394,8 @@ def main():
             kit_y_mm = tag_y_mm + ry_mm
 
             # Grip angle at this point relative to Y-axis (deg), then smallest two-finger rotation
-            grip_theta_y_deg = wrap_deg_180(theta_y_deg + off_deg)
-            grip_rot_deg_to_y = wrap_deg_90(grip_theta_y_deg)
+            grip_theta_x_deg = wrap_deg_180(theta_x_deg + off_deg)
+            grip_rot_deg_to_x = wrap_deg_90(grip_theta_x_deg)
 
             # Draw kit point
             kit_x_m = kit_x_mm / 1000.0
@@ -416,7 +416,7 @@ def main():
             )
             cv2.putText(
                 img,
-                f"rot={grip_rot_deg_to_y:.1f} deg (to Y)",
+                f"rot={grip_rot_deg_to_x:.1f} deg (to X)",
                 (pi[0] + 8, pi[1] + 18),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.65,
@@ -425,7 +425,7 @@ def main():
             )
 
             tag_targets[r.tag_id].append(
-                {"name_suffix": kp["name"], "x_mm": kit_x_mm, "y_mm": kit_y_mm, "orientation_deg": grip_rot_deg_to_y}
+                {"name_suffix": kp["name"], "x_mm": kit_x_mm, "y_mm": kit_y_mm, "orientation_deg": grip_rot_deg_to_x}
             )
 
     # ----------------------------

@@ -9,13 +9,13 @@ moveit_commander.roscpp_initialize([])
 
 robot = Robot("panda_arm", "panda_hand", moveit_commander)
 
-robot.MoveJ_J("Camera_Home_vertical")
+robot.MoveJ_J("Camera_Home")
 
 
 """
 pick_and_place(robot, "April_Tag_0_Pos_1", "Reject")
 pick_and_place(robot, "April_Tag_0_Pos_2", "Reject")
 pick_and_place(robot, "April_Tag_0_Pos_3", "Reject")
-
-
 """
+
+
