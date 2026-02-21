@@ -15,9 +15,6 @@ robot.MoveJ_J("Camera_Home")
 
 pick_and_place(robot, "April_Tag_1_Pos_1", "Reject")
 pick_and_place(robot, "April_Tag_1_Pos_2", "Reject")
-pick_and_place(robot, "April_Tag_1_Pos_3", "Reject")
-pick_and_place(robot, "April_Tag_1_Pos_4", "Reject")
-pick_and_place(robot, "April_Tag_1_Pos_5", "Reject")
-pick_and_place(robot, "April_Tag_1_Pos_6", "Reject")
+
 robot.MoveJ_J("Camera_Home")
 
