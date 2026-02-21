@@ -1,7 +1,9 @@
-# main.py
+# Vision_Main.py
 import cv2
 
 from config import (
+    CONTAINER_TAG_IDS,
+    KIT_TAG_IDS,
     POSITIONS_PATH,
     CHARUCO_ORIGIN_IN_ROBOT_M,
     CAMERA_HOME,
@@ -31,20 +33,15 @@ from io_jsonl import upsert_jsonl_by_name
 
 
 def main() -> None:
-    # ----------------------------
-    # CAPTURE ONE IMAGE (RealSense)
-    # ----------------------------
-    img = capture_color_frame(
+    img_raw = capture_color_frame(
         width=REALSENSE_WIDTH,
         height=REALSENSE_HEIGHT,
         fps=REALSENSE_FPS,
         warmup_frames=REALSENSE_WARMUP_FRAMES,
     )
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img_vis = img_raw.copy()
+    gray = cv2.cvtColor(img_raw, cv2.COLOR_BGR2GRAY)
 
-    # ----------------------------
-    # Find board homography
-    # ----------------------------
     H, inliers, board_w, board_h = detect_board_homography(
         gray=gray,
         cols=BOARD_COLS,
@@ -57,13 +54,11 @@ def main() -> None:
     if H is None or inliers < 20:
         print("ERROR: Charuco board not reliably detected (homography invalid). Nothing will be saved.")
         cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
-        cv2.imshow("Result", img)
+        cv2.imshow("Result", img_vis)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
         return
 
-    # ORIGIN = top-right corner in IMAGE.
-    # AXES: X left, Y down (in IMAGE).
     origin_axes = choose_origin_and_axes(
         H=H,
         board_w=board_w,
@@ -73,11 +68,8 @@ def main() -> None:
         x_dir="left",
         y_dir="down",
     )
-    draw_origin_and_axes(img, origin_axes)
+    draw_origin_and_axes(img_vis, origin_axes)
 
-    # ----------------------------
-    # AprilTag detection
-    # ----------------------------
     detector = create_detector(
         families="tag25h9",
         nthreads=4,
@@ -87,22 +79,19 @@ def main() -> None:
     )
     detections = detect_tags(detector, gray)
 
-    # ----------------------------
-    # Compute targets + annotate image
-    # ----------------------------
     tag_targets = compute_tag_targets_and_annotate(
-        img=img,
+        img_vis=img_vis,
+        img_raw=img_raw,
         detections=detections,
         H=H,
         origin_axes=origin_axes,
         kit_points=KIT_POINTS,
         container_points=CONTAINER_POINTS,
+        kit_ids=KIT_TAG_IDS,
+        container_ids=CONTAINER_TAG_IDS,
         tag_axis_draw_len=TAG_AXIS_DRAW_LEN_M,
     )
 
-    # ----------------------------
-    # SAVE ALL TARGETS TO JSONL (replace by name)
-    # ----------------------------
     new_entries = targets_to_robot_entries(
         tag_targets=tag_targets,
         charuco_origin_in_robot_m=CHARUCO_ORIGIN_IN_ROBOT_M,
@@ -116,11 +105,8 @@ def main() -> None:
         f"(inserted={inserted}, overwritten={overwritten})"
     )
 
-    # ----------------------------
-    # SHOW RESULT
-    # ----------------------------
     cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
-    cv2.imshow("Result", img)
+    cv2.imshow("Result", img_vis)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 

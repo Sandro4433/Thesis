@@ -1,12 +1,13 @@
 # pipeline.py
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
 import cv2
 import numpy as np
 
 from geometry import project, wrap_deg_180, wrap_deg_90, rot2d, OriginAxes
+from vision_circles import detect_color_cluster_parts_on_board
 
 
 def _tag_center_to_board_m(r: Any, H_inv: np.ndarray) -> np.ndarray:
@@ -50,18 +51,22 @@ def _tag_pose_in_workspace_mm(
 
 
 def compute_tag_targets_and_annotate(
-    img: np.ndarray,
+    img_vis: np.ndarray,
+    img_raw: np.ndarray,
     detections: List[Any],
     H: np.ndarray,
     origin_axes: OriginAxes,
     kit_points: List[Dict[str, float]],
     container_points: List[Dict[str, float]],
+    kit_ids: Set[int],
+    container_ids: Set[int],
     tag_axis_draw_len: float,
 ) -> Dict[int, List[Dict[str, float]]]:
     """
     Produces:
       tag_targets[tag_id] = list of {name_suffix, x_mm, y_mm, orientation_deg}
-    Also draws detections and target points on img.
+    Draws only on img_vis. Uses img_raw for detection.
+    Also detects colored parts via dense color clusters + circular shape test.
     """
     H_inv = origin_axes.H_inv
     o_b = origin_axes.o_b
@@ -70,20 +75,32 @@ def compute_tag_targets_and_annotate(
 
     tag_targets: Dict[int, List[Dict[str, float]]] = {}
 
+    # ----------------------------
+    # AprilTag loop
+    # ----------------------------
     for r in detections:
-        # Draw tag border
+        tag_id = int(r.tag_id)
+
+        # Draw tag border (VIS only)
         pts_i_int = r.corners.astype(int)
         for i in range(4):
-            cv2.line(img, tuple(pts_i_int[i]), tuple(pts_i_int[(i + 1) % 4]), (255, 0, 0), 3)
+            cv2.line(
+                img_vis,
+                tuple(pts_i_int[i]),
+                tuple(pts_i_int[(i + 1) % 4]),
+                (255, 0, 0),
+                3,
+            )
 
         label_xy = (int(pts_i_int[0][0]), int(pts_i_int[0][1] - 10))
 
-        if r.tag_id == 0:
-            cv2.putText(img, "Kit (ID: 0)", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
-        elif r.tag_id == 1:
-            cv2.putText(img, "Container (ID: 1)", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+        # Label by group (VIS only)
+        if tag_id in kit_ids:
+            cv2.putText(img_vis, f"Kit (ID: {tag_id})", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+        elif tag_id in container_ids:
+            cv2.putText(img_vis, f"Container (ID: {tag_id})", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
         else:
-            cv2.putText(img, f"ID: {r.tag_id}", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+            cv2.putText(img_vis, f"ID: {tag_id}", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
 
         # Tag center in board coords
         c_b = _tag_center_to_board_m(r, H_inv)
@@ -93,7 +110,7 @@ def compute_tag_targets_and_annotate(
         v_b_unit, n = _tag_axis_vector_board(r, H_inv)
 
         cv2.putText(
-            img,
+            img_vis,
             f"X={tag_x_mm:.1f}mm  Y={tag_y_mm:.1f}mm",
             (label_xy[0], label_xy[1] + 30),
             cv2.FONT_HERSHEY_SIMPLEX,
@@ -102,11 +119,21 @@ def compute_tag_targets_and_annotate(
             2,
         )
 
+        # Degenerate axis
         if n <= 1e-9:
-            # degenerate; save center only for unknown tags
-            tag_targets[r.tag_id] = [
-                {"name_suffix": "Pos_0", "x_mm": tag_x_mm, "y_mm": tag_y_mm, "orientation_deg": 0.0}
-            ]
+            if tag_id in kit_ids or tag_id in container_ids:
+                point_set = kit_points if tag_id in kit_ids else container_points
+                tag_targets[tag_id] = []
+                for kp in point_set:
+                    dx_mm = float(kp["dx_mm"])
+                    dy_mm = float(kp["dy_mm"])
+                    obj_x_mm = tag_x_mm + dx_mm
+                    obj_y_mm = tag_y_mm + dy_mm
+                    tag_targets[tag_id].append(
+                        {"name_suffix": str(kp["name"]), "x_mm": obj_x_mm, "y_mm": obj_y_mm, "orientation_deg": 0.0}
+                    )
+            else:
+                tag_targets[tag_id] = [{"name_suffix": "Pos_0", "x_mm": tag_x_mm, "y_mm": tag_y_mm, "orientation_deg": 0.0}]
             continue
 
         # Express tag axis in workspace (X,Y) basis
@@ -118,7 +145,7 @@ def compute_tag_targets_and_annotate(
         tag_rot_deg_to_x = wrap_deg_90(theta_x_deg)
 
         cv2.putText(
-            img,
+            img_vis,
             f"rot={tag_rot_deg_to_x:.1f} deg (to X)",
             (label_xy[0], label_xy[1] + 60),
             cv2.FONT_HERSHEY_SIMPLEX,
@@ -127,22 +154,20 @@ def compute_tag_targets_and_annotate(
             2,
         )
 
-        # Draw tag axis in image
+        # Draw tag axis in image (VIS only)
         end_b = c_b + v_b_unit * float(tag_axis_draw_len)
         end_i = project(H, np.array([end_b], dtype=np.float32))[0]
         p0 = tuple(np.round(r.center).astype(int))
         p1 = tuple(np.round(end_i).astype(int))
-        cv2.arrowedLine(img, p0, p1, (255, 255, 0), 3, tipLength=0.25)
+        cv2.arrowedLine(img_vis, p0, p1, (255, 255, 0), 3, tipLength=0.25)
 
         # Unknown tag: save only center
-        if r.tag_id not in (0, 1):
-            tag_targets[r.tag_id] = [
-                {"name_suffix": "Pos_0", "x_mm": tag_x_mm, "y_mm": tag_y_mm, "orientation_deg": tag_rot_deg_to_x}
-            ]
+        if tag_id not in kit_ids and tag_id not in container_ids:
+            tag_targets[tag_id] = [{"name_suffix": "Pos_0", "x_mm": tag_x_mm, "y_mm": tag_y_mm, "orientation_deg": tag_rot_deg_to_x}]
             continue
 
-        # Choose point-set based on tag id
-        if r.tag_id == 0:
+        # Choose point-set based on tag group
+        if tag_id in kit_ids:
             object_label = "Kit"
             point_set = kit_points
             draw_color = (0, 255, 255)
@@ -151,7 +176,7 @@ def compute_tag_targets_and_annotate(
             point_set = container_points
             draw_color = (0, 200, 255)
 
-        tag_targets[r.tag_id] = []
+        tag_targets[tag_id] = []
 
         # For rotating local offsets: use tag angle relative to workspace X-axis
         theta_x_rad = float(np.arctan2(vy, vx))
@@ -163,24 +188,26 @@ def compute_tag_targets_and_annotate(
             dy_mm = float(kp["dy_mm"])
             off_deg = float(kp["grip_off_deg"])
 
+            # Rotate local point into workspace and translate
             rx_mm, ry_mm = rot2d(dx_mm, dy_mm, c=cth, s=sth)
             obj_x_mm = tag_x_mm + rx_mm
             obj_y_mm = tag_y_mm + ry_mm
 
+            # Grip angle at this point relative to X-axis (deg), then smallest two-finger rotation
             grip_theta_x_deg = wrap_deg_180(theta_x_deg + off_deg)
             grip_rot_deg_to_x = wrap_deg_90(grip_theta_x_deg)
 
-            # Draw point
+            # Draw point (VIS only)
             obj_x_m = obj_x_mm / 1000.0
             obj_y_m = obj_y_mm / 1000.0
             p_b = o_b + ux_unit_b * obj_x_m + uy_unit_b * obj_y_m
             p_i = project(H, np.array([p_b], dtype=np.float32))[0]
             pi = tuple(np.round(p_i).astype(int))
 
-            cv2.circle(img, pi, 6, draw_color, -1)
+            cv2.circle(img_vis, pi, 6, draw_color, -1)
             cv2.putText(
-                img,
-                f'{object_label}_{kp["name"]} ({obj_x_mm:.0f},{obj_y_mm:.0f})mm',
+                img_vis,
+                f"{object_label}_{kp['name']} ({obj_x_mm:.0f},{obj_y_mm:.0f})mm",
                 (pi[0] + 8, pi[1] - 10),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.65,
@@ -188,7 +215,7 @@ def compute_tag_targets_and_annotate(
                 2,
             )
             cv2.putText(
-                img,
+                img_vis,
                 f"rot={grip_rot_deg_to_x:.1f} deg (to X)",
                 (pi[0] + 8, pi[1] + 18),
                 cv2.FONT_HERSHEY_SIMPLEX,
@@ -197,9 +224,66 @@ def compute_tag_targets_and_annotate(
                 2,
             )
 
-            tag_targets[r.tag_id].append(
+            tag_targets[tag_id].append(
                 {"name_suffix": str(kp["name"]), "x_mm": obj_x_mm, "y_mm": obj_y_mm, "orientation_deg": grip_rot_deg_to_x}
             )
+
+    # ----------------------------
+    # Color-cluster part detection (RAW only), circularity-validated, then draw on VIS
+    # ----------------------------
+    ref_rgb = {
+        "Blue": (50, 80, 130),
+        "Red": (122, 22, 20),
+        "Green": (56, 85, 50),
+    }
+
+    # Tuning knobs:
+    # - tol_rgb: widen if you miss parts; tighten if you get background detections
+    # - min_area_px: cluster-size threshold (increase to reject noise)
+    # - circularity_min/fill_ratio_min: how "circle-like" the cluster must be
+    part_dets = detect_color_cluster_parts_on_board(
+        bgr=img_raw,
+        H_inv=H_inv,
+        ref_rgb=ref_rgb,
+        tol_rgb=(45, 45, 45),
+        min_area_px=1000,
+        circularity_min=0.35,
+        fill_ratio_min=0.45,
+    )
+
+    # Numbering per color (stable)
+    counters: Dict[str, int] = {"Blue": 0, "Red": 0, "Green": 0}
+
+    for d in part_dets:
+        color = str(d["color"])
+        if color not in counters:
+            continue
+
+        counters[color] += 1
+        name_suffix = f"Part_{color}_Nr_{counters[color]}"
+
+        # Convert board center (meters) -> workspace mm using your axis basis
+        c_b = np.array([d["cx_b_m"], d["cy_b_m"]], dtype=np.float32)
+        delta_b = c_b - o_b
+        x_mm = float(delta_b.dot(ux_unit_b)) * 1000.0
+        y_mm = float(delta_b.dot(uy_unit_b)) * 1000.0
+
+        # Visualization (VIS only)
+        center = (int(round(d["cx_px"])), int(round(d["cy_px"])))
+        cv2.circle(img_vis, center, 10, (255, 255, 255), 2)
+        cv2.putText(
+            img_vis,
+            name_suffix,
+            (center[0] + 10, center[1] - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (255, 255, 255),
+            2,
+        )
+
+        tag_targets.setdefault(-1000, []).append(
+            {"name_suffix": name_suffix, "x_mm": x_mm, "y_mm": y_mm, "orientation_deg": 0.0}
+        )
 
     return tag_targets
 
@@ -220,11 +304,17 @@ def targets_to_robot_entries(
             x_robot = float(charuco_origin_in_robot_m["x"] + x_charuco_m)
             y_robot = float(charuco_origin_in_robot_m["y"] + y_charuco_m)
 
+            name_suffix = str(t["name_suffix"])
+            if name_suffix.startswith("Part_"):
+                name = name_suffix
+            else:
+                name = f"April_Tag_{tag_id}_{name_suffix}"
+
             entry = {
-                "name": f"April_Tag_{tag_id}_{t['name_suffix']}",
+                "name": name,
                 "pos": [x_robot, y_robot, float(z_robot)],
-                "quat": camera_quat,
-                "orientation": float(t["orientation_deg"]),  # degrees
+                "quat": camera_quat,  # Home quaternion
+                "orientation": float(t["orientation_deg"]),
             }
             new_entries.append(entry)
 

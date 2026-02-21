@@ -12,9 +12,10 @@ robot = Robot("panda_arm", "panda_hand", moveit_commander)
 robot.MoveJ_J("Camera_Home")
 
 
-
-pick_and_place(robot, "April_Tag_1_Pos_1", "Reject")
-pick_and_place(robot, "April_Tag_1_Pos_2", "Reject")
+"""
+pick_and_place(robot, "April_Tag_1_Pos_1", "April_Tag_2_Pos_3")
+pick_and_place(robot, "April_Tag_2_Pos_2", "April_Tag_1_Pos_1")
 
 robot.MoveJ_J("Camera_Home")
 
+"""
