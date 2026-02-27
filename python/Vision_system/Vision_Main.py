@@ -29,7 +29,8 @@ from vision_charuco import (
 )
 from vision_apriltag import create_detector, detect_tags
 from pipeline import compute_tag_targets_and_annotate, targets_to_robot_entries
-from io_jsonl import upsert_jsonl_by_name
+from assign_parts import assign_parts_to_slots
+from workspace_state import entries_to_state, save_json_snapshot
 
 
 def main() -> None:
@@ -97,13 +98,18 @@ def main() -> None:
         charuco_origin_in_robot_m=CHARUCO_ORIGIN_IN_ROBOT_M,
         z_robot=Z_ROBOT_M,
         camera_quat=CAMERA_HOME["quat"],
+        kit_ids=KIT_TAG_IDS,
+        container_ids=CONTAINER_TAG_IDS,
     )
 
-    inserted, overwritten = upsert_jsonl_by_name(POSITIONS_PATH, new_entries)
-    print(
-        f"Wrote {len(new_entries)} entries to: {POSITIONS_PATH} "
-        f"(inserted={inserted}, overwritten={overwritten})"
+    final_entries = assign_parts_to_slots(
+        new_entries,
+        xy_threshold_m=0.02,  # tune (meters)
     )
+
+    state = entries_to_state(final_entries)
+    save_json_snapshot(POSITIONS_PATH, state, pretty=True)
+    print(f"Wrote JSON snapshot to: {POSITIONS_PATH}")
 
     cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
     cv2.imshow("Result", img_vis)

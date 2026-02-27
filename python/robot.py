@@ -1,31 +1,8 @@
-
 # robot.py
+import json
 import numpy as np
 from geometry_msgs.msg import Pose
 from moveit_commander.exception import MoveItCommanderException
-import json
-
-'''
-# --- Set up FRANKA ---
-FCI needs to be enabled, joints unlocked and enabeling Button not pressed (blue mode)
-
-In your script initalize the Franka as follows
-Example for FRANKA EMIKA
-
-rospy.init_node("franka_go_points")
-moveit_commander.roscpp_initialize([])
-
-robot = Robot("panda_arm", "panda_hand", moveit_commander)
-
-
-For trajectory planning, RViz needs to be running. Change the ip to your Franka controller.
-
-source ~/ws_moveit/devel/setup.bash
-roslaunch panda_moveit_config  franka_control.launch robot_ip:=192.168.1.100 load_gripper:=true use_rviz:=false
-
-
-'''
-
 
 
 class Robot:
@@ -37,14 +14,17 @@ class Robot:
         self.arm.set_goal_position_tolerance(0.02)
         self.set_mode_ptp()
 
-        self._positions = self.load_points()
-        print("Loaded positions:", list(self._positions.keys()))
+        self._positions = {}
+        # NEW: load snapshot JSON
+        self._positions.update(self.load_points_snapshot_json("positions.json"))
+        # Keep fixed JSONL as-is
+        self._positions.update(self.load_points_jsonl("positions_fixed.jsonl"))
 
+        print("Loaded positions:", list(self._positions.keys()))
 
     # --------------------------
     #       PLANNERS
     # --------------------------
-
     def set_mode_ptp(self):
         self.arm.set_planner_id("PTP")
         self.arm.set_planning_pipeline_id("pilz_industrial_motion_planner")
@@ -57,12 +37,9 @@ class Robot:
         self.arm.set_max_velocity_scaling_factor(0.1)
         self.arm.set_max_acceleration_scaling_factor(0.1)
 
-
     # --------------------------
     #     MOTION FUNCTIONS
     # --------------------------
-
-    # Linear movement
     def MoveL(self, name, positions=None, offset=None, use_current_orientation: bool = False):
         if positions is None:
             positions = self._positions
@@ -74,15 +51,12 @@ class Robot:
             use_current_orientation=use_current_orientation
         )
 
-
-    # Non-linear movement
     def MoveJ(self, name, positions=None, offset=None):
         if positions is None:
             positions = self._positions
         self.set_mode_ptp()
         self.go_to_point_pose_only(name, positions, offset)
 
-    # Joint movement
     def MoveJ_J(self, name, positions=None):
         if positions is None:
             positions = self._positions
@@ -106,23 +80,10 @@ class Robot:
             raise MoveItCommanderException("❌ Joint PTP failed.")
 
         return success
-    
+
     def MoveJointDelta(self, joint_index: int = 6, delta_deg: float = 0.0, target_name: str = ""):
-        """
-        If target_name is provided and exists in positions.jsonl and contains 'orientation',
-        uses that orientation (deg) as the delta for the specified joint.
-        Otherwise uses delta_deg (deg) as the delta.
-
-        joint_index: 0..6 (default 6 = panda_joint7)
-        delta_deg: used only if target_name is empty or invalid
-        target_name: point name from JSON; if "" -> use delta_deg
-        """
-
         if joint_index < 0 or joint_index > 6:
             raise ValueError("joint_index must be between 0 and 6 (panda has 7 joints).")
-
-        # Decide which delta to use (degrees)
-        use_deg = None
 
         if target_name:
             entry = self._positions.get(target_name)
@@ -137,15 +98,11 @@ class Robot:
 
         self.set_mode_ptp()
 
-        # Read current joint values
         current_joints = self.arm.get_current_joint_values()
-
-        # Convert degrees to radians and apply
         delta_rad = float(np.deg2rad(use_deg))
         new_joints = list(current_joints)
         new_joints[joint_index] += delta_rad
 
-        # Execute
         self.arm.set_joint_value_target(new_joints)
         success = self.arm.go(wait=True)
         self.arm.stop()
@@ -155,8 +112,6 @@ class Robot:
             raise MoveItCommanderException("❌ Joint delta move failed.")
 
         return success
-
-
 
     # --------------------------
     # For PTP/LIN movement
@@ -197,7 +152,6 @@ class Robot:
 
         return success
 
-
     # --------------------------
     #      GRIPPER
     # --------------------------
@@ -234,36 +188,96 @@ class Robot:
             q = q / norm
             pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = q
 
+    # --------------------------
+    #   LOADERS
+    # --------------------------
+    def _entry_to_pose_record(self, name: str, data: dict) -> dict:
+        pose = Pose()
+        pose.position.x = data["pos"][0]
+        pose.position.y = data["pos"][1]
+        pose.position.z = data["pos"][2]
+        pose.orientation.x = data["quat"][0]
+        pose.orientation.y = data["quat"][1]
+        pose.orientation.z = data["quat"][2]
+        pose.orientation.w = data["quat"][3]
 
-    def load_points(self):
-        SAVE_FILE = "positions.jsonl"       # file in which the postions are saved
+        return {
+            "pose": pose,
+            "joints": data.get("joints", None),
+            "orientation_deg": data.get("orientation", None),
+        }
+
+    def load_points_snapshot_json(self, save_file: str):
+        """
+        Loads the new JSON snapshot:
+          {
+            "slots": { name: {pos,quat,orientation,...} },
+            "parts": { name: {...} }
+          }
+
+        Robot positions are built from:
+          - each slot itself
+          - if slot has child_part, also create a derived target "<slot_name>__child"
+            (optional convenience)
+        """
         positions = {}
         try:
-            with open(SAVE_FILE, "r") as f:
+            with open(save_file, "r", encoding="utf-8") as f:
+                state = json.load(f)
+        except FileNotFoundError:
+            print(f"⚠ File not found: {save_file}")
+            return positions
+        except Exception as e:
+            print(f"⚠ Failed to read {save_file}: {e}")
+            return positions
+
+        slots = state.get("slots", {}) if isinstance(state, dict) else {}
+        if not isinstance(slots, dict):
+            return positions
+
+        for name, slot in slots.items():
+            if not isinstance(name, str) or not name:
+                continue
+            if not isinstance(slot, dict):
+                continue
+
+            # reconstruct a flat record with name
+            record = dict(slot)
+            record["name"] = name
+
+            # must have pos/quat for motion
+            if "pos" in record and "quat" in record:
+                positions[name] = self._entry_to_pose_record(name, record)
+
+            # Optional convenience: expose child pose as "<slot>__child"
+            child = slot.get("child_part")
+            if isinstance(child, dict) and "pos" in child and "quat" in child:
+                child_name = f"{name}__child"
+                child_record = dict(child)
+                child_record["name"] = child_name
+                positions[child_name] = self._entry_to_pose_record(child_name, child_record)
+
+        return positions
+
+    def load_points_jsonl(self, save_file: str):
+        """
+        Keeps your old JSONL loader for fixed points.
+        """
+        positions = {}
+        try:
+            with open(save_file, "r") as f:
                 for line in f:
                     if not line.strip():
                         continue
-
                     data = json.loads(line.strip())
 
-                    pose = Pose()
-                    pose.position.x = data["pos"][0]
-                    pose.position.y = data["pos"][1]
-                    pose.position.z = data["pos"][2]
-                    pose.orientation.x = data["quat"][0]
-                    pose.orientation.y = data["quat"][1]
-                    pose.orientation.z = data["quat"][2]
-                    pose.orientation.w = data["quat"][3]
+                    name = data.get("name")
+                    if not isinstance(name, str) or not name:
+                        continue
 
-                    joints = data.get("joints", None)
-
-                    positions[data["name"]] = {
-                        "pose": pose,
-                        "joints": joints,
-                        "orientation_deg": data.get("orientation", None) 
-                    }
+                    positions[name] = self._entry_to_pose_record(name, data)
 
         except FileNotFoundError:
-            print(f"⚠ File not found: {SAVE_FILE}")
+            print(f"⚠ File not found: {save_file}")
 
         return positions

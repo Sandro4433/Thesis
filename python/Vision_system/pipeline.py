@@ -293,10 +293,30 @@ def targets_to_robot_entries(
     charuco_origin_in_robot_m: Dict[str, float],
     z_robot: float,
     camera_quat: List[float],
+    kit_ids: Set[int],
+    container_ids: Set[int],
 ) -> List[Dict[str, Any]]:
+    """
+    Outputs objects WITHOUT groupname:
+      - Slot: name="Kit_<tagid>_Pos_1" or "Container_<tagid>_Pos_6"
+      - Part: name="Part_<Color>_Nr_<k>"
+
+    Schema (human-readable, pretty on disk):
+      Slot:
+        { name, pos, quat, orientation, Role, child_part }
+      Part:
+        { name, pos, quat, orientation, Color, Size, Fragility, Role }
+    """
+    def _part_color_from_name(part_name: str) -> str:
+        # Expected: Part_<Color>_Nr_<k>
+        toks = part_name.split("_")
+        return toks[1] if len(toks) >= 2 else "Unknown"
+
     new_entries: List[Dict[str, Any]] = []
 
     for tag_id, targets in tag_targets.items():
+        tag_id_int = int(tag_id)
+
         for t in targets:
             x_charuco_m = float(t["x_mm"]) / 1000.0
             y_charuco_m = float(t["y_mm"]) / 1000.0
@@ -305,16 +325,40 @@ def targets_to_robot_entries(
             y_robot = float(charuco_origin_in_robot_m["y"] + y_charuco_m)
 
             name_suffix = str(t["name_suffix"])
-            if name_suffix.startswith("Part_"):
-                name = name_suffix
+            is_part = name_suffix.startswith("Part_")
+
+            if is_part:
+                part_name = name_suffix
+                entry = {
+                    "name": part_name,
+                    "pos": [x_robot, y_robot, float(z_robot)],
+                    "quat": camera_quat,
+                    "orientation": None,                 # will inherit from parent slot if assigned
+                    "Color": _part_color_from_name(part_name),
+                    "Size": None,
+                    "Fragility": None,
+                    "Role": None,
+                }
+                new_entries.append(entry)
+                continue
+
+            # Slot
+            if tag_id_int in kit_ids:
+                prefix = "Kit"
+            elif tag_id_int in container_ids:
+                prefix = "Container"
             else:
-                name = f"April_Tag_{tag_id}_{name_suffix}"
+                prefix = "Unknown"
+
+            slot_name = f"{prefix}_{tag_id_int}_{name_suffix}"
 
             entry = {
-                "name": name,
+                "name": slot_name,
                 "pos": [x_robot, y_robot, float(z_robot)],
-                "quat": camera_quat,  # Home quaternion
+                "quat": camera_quat,
                 "orientation": float(t["orientation_deg"]),
+                "Role": None,
+                "child_part": None,                   # will be set if a part is assigned
             }
             new_entries.append(entry)
 

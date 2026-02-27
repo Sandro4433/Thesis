@@ -3,7 +3,7 @@ import os
 from typing import Dict, List, Any
 
 # Output
-POSITIONS_PATH = os.path.abspath("positions.jsonl")
+POSITIONS_PATH = os.path.abspath("positions.json")
 
 # Define the Charuco origin in the ROBOT BASE FRAME. (METERS)
 CHARUCO_ORIGIN_IN_ROBOT_M: Dict[str, float] = {

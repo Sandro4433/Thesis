@@ -63,3 +63,12 @@ def upsert_jsonl_by_name(path: str, new_objects: List[Dict[str, Any]]) -> Tuple[
     write_jsonl_atomic(path, out)
 
     return inserted, overwritten
+
+def rewrite_jsonl_snapshot(path: str, objects: List[Dict[str, Any]]) -> None:
+    """
+    Completely rewrites the file. Use this when you need deletions to take effect.
+    """
+    # Optional: keep stable ordering by name
+    objs = [o for o in objects if isinstance(o.get("name"), str) and o["name"]]
+    objs.sort(key=lambda x: x["name"])
+    write_jsonl_atomic(path, objs)
