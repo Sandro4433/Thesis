@@ -85,7 +85,7 @@ def detect_color_cluster_parts_on_board(
     # reference colors in RGB (as provided by you)
     ref_rgb: Dict[str, Tuple[int, int, int]],
     # per-channel tolerance in RGB space (converted internally to BGR)
-    tol_rgb: Tuple[int, int, int] = (45, 45, 45),
+    tol_rgb: Tuple[int, int, int] = (60, 60, 60),
     # cluster size threshold (px)
     min_area_px: int = 1500,
     # circularity test thresholds
