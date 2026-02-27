@@ -6,8 +6,9 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-from geometry import id_to_square_map, marker_obj_corners, project, choose_origin_index, choose_axis_endpoints, OriginAxes
-from geometry import Corner, Direction
+from Vision_Module.geometry import id_to_square_map, marker_obj_corners, project, choose_origin_index, choose_axis_endpoints, OriginAxes
+from Vision_Module.geometry import Corner, Direction
+
 
 
 def detect_board_homography(

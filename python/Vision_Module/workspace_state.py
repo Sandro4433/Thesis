@@ -168,3 +168,50 @@ def state_to_api_payload(
         data = remap(data)
 
     return json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+
+def save_llm_snapshot(
+    path: str,
+    state: Dict[str, Any],
+    compact_keys: bool = True,
+    drop_nulls: bool = True,
+    pretty: bool = False,
+) -> None:
+    """
+    Create and save a stripped-down LLM planning JSON file.
+    Uses same stripping logic as state_to_api_payload,
+    but writes a JSON file instead of returning a string.
+    """
+    data = _strip_for_llm(state)
+
+    if drop_nulls:
+        data = _drop_nulls(data)
+
+    if compact_keys:
+        def remap(o: Any) -> Any:
+            if isinstance(o, dict):
+                out = {}
+                for k, v in o.items():
+                    nk = k
+                    if k == "pos": nk = "p"
+                    elif k == "Color": nk = "c"
+                    elif k == "Size": nk = "s"
+                    elif k == "Fragility": nk = "f"
+                    elif k == "Role": nk = "r"
+                    elif k == "child_part": nk = "ch"
+                    out[nk] = remap(v)
+                return out
+            if isinstance(o, list):
+                return [remap(v) for v in o]
+            return o
+
+        data = remap(data)
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        if pretty:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        else:
+            json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
+
+    os.replace(tmp, path)

@@ -4,6 +4,7 @@ import numpy as np
 from geometry_msgs.msg import Pose
 from moveit_commander.exception import MoveItCommanderException
 
+from paths import POSITIONS_JSON, POSITIONS_FIXED_JSONL
 
 class Robot:
     def __init__(self, arm_name, hand_name, moveit_commander):
@@ -15,10 +16,9 @@ class Robot:
         self.set_mode_ptp()
 
         self._positions = {}
-        # NEW: load snapshot JSON
-        self._positions.update(self.load_points_snapshot_json("positions.json"))
-        # Keep fixed JSONL as-is
-        self._positions.update(self.load_points_jsonl("positions_fixed.jsonl"))
+        # Load positions from the shared exchange folder (stable paths)
+        self._positions.update(self.load_points_snapshot_json(str(POSITIONS_JSON.resolve())))
+        self._positions.update(self.load_points_jsonl(str(POSITIONS_FIXED_JSONL.resolve())))
 
         print("Loaded positions:", list(self._positions.keys()))
 

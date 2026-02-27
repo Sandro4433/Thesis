@@ -6,8 +6,8 @@ from typing import Any, Dict, List, Set, Tuple
 import cv2
 import numpy as np
 
-from geometry import project, wrap_deg_180, wrap_deg_90, rot2d, OriginAxes
-from vision_circles import detect_color_cluster_parts_on_board
+from Vision_Module.geometry import project, wrap_deg_180, wrap_deg_90, rot2d, OriginAxes
+from Vision_Module.vision_circles import detect_color_cluster_parts_on_board
 
 
 def _tag_center_to_board_m(r: Any, H_inv: np.ndarray) -> np.ndarray:
@@ -253,7 +253,7 @@ def compute_tag_targets_and_annotate(
         tol_rgb_by_color={
             "Blue":  (45, 45, 45),   # widen to recover matte/dark blue
             "Red":   (45, 45, 45),
-            "Green": (35, 35, 35),   # tighter to avoid highlights
+            "Green": (30, 30, 30),   # tighter to avoid highlights
         },
 
         # optional per-color morph tweaks (useful if blue gets fragmented)
