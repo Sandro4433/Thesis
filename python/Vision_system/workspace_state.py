@@ -85,18 +85,64 @@ def entries_to_state(final_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {"slots": slots, "parts": parts}
 
 
+def _strip_for_llm(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Return a reduced state for LLM planning:
+      - Remove quat (q) and orientation (o)
+      - Replace pos [x,y,z] -> [x,y]
+      - Keep child_part (if embedded) but also stripped the same way
+    """
+    def strip_obj(o: Any) -> Any:
+        if isinstance(o, dict):
+            out = {}
+            for k, v in o.items():
+                # Drop fields not needed for LLM planning
+                if k in ("quat", "orientation"):
+                    continue
+
+                if k == "pos":
+                    # Keep only X,Y
+                    if isinstance(v, (list, tuple)) and len(v) >= 2:
+                        out["pos"] = [v[0], v[1]]
+                    continue
+
+                # Recurse
+                out[k] = strip_obj(v)
+            return out
+
+        if isinstance(o, list):
+            return [strip_obj(v) for v in o]
+
+        return o
+
+    # Only process expected top-level shape
+    if not isinstance(state, dict):
+        return {"slots": {}, "parts": {}}
+
+    slots = state.get("slots", {})
+    parts = state.get("parts", {})
+
+    slim = {
+        "slots": strip_obj(slots) if isinstance(slots, dict) else {},
+        "parts": strip_obj(parts) if isinstance(parts, dict) else {},
+    }
+    return slim
+
+
 def state_to_api_payload(
     state: Dict[str, Any],
     compact_keys: bool = True,
     drop_nulls: bool = True,
 ) -> str:
     """
-    Minified payload for LLM:
+    Minified payload for LLM planning:
+      - strips quat/orientation and Z
       - optional null stripping
       - optional compact keys
       - always minified JSON
     """
-    data = state
+    data = _strip_for_llm(state)
+
     if drop_nulls:
         data = _drop_nulls(data)
 
@@ -106,9 +152,8 @@ def state_to_api_payload(
                 out = {}
                 for k, v in o.items():
                     nk = k
+                    # keep top-level "slots"/"parts" as-is
                     if k == "pos": nk = "p"
-                    elif k == "quat": nk = "q"
-                    elif k == "orientation": nk = "o"
                     elif k == "Color": nk = "c"
                     elif k == "Size": nk = "s"
                     elif k == "Fragility": nk = "f"

@@ -232,9 +232,9 @@ def compute_tag_targets_and_annotate(
     # Color-cluster part detection (RAW only), circularity-validated, then draw on VIS
     # ----------------------------
     ref_rgb = {
-        "Blue": (50, 80, 130),
-        "Red": (122, 22, 20),
-        "Green": (56, 85, 50),
+        "Blue": (40, 80, 130),
+        "Red": (130, 40, 40),
+        "Green": (50, 80, 50),
     }
 
     # Tuning knobs:
@@ -245,10 +245,32 @@ def compute_tag_targets_and_annotate(
         bgr=img_raw,
         H_inv=H_inv,
         ref_rgb=ref_rgb,
+
+        # fallback (used if color not in dict)
         tol_rgb=(45, 45, 45),
+
+        # per-color tolerance overrides (start values)
+        tol_rgb_by_color={
+            "Blue":  (45, 45, 45),   # widen to recover matte/dark blue
+            "Red":   (45, 45, 45),
+            "Green": (35, 35, 35),   # tighter to avoid highlights
+        },
+
+        # optional per-color morph tweaks (useful if blue gets fragmented)
+        morph_by_color={
+            "Blue":  {"morph_kernel": 5, "open_iter": 0, "close_iter": 2},
+            "Green": {"morph_kernel": 7, "open_iter": 1, "close_iter": 2},
+            "Red":   {"morph_kernel": 7, "open_iter": 1, "close_iter": 2},
+        },
+
         min_area_px=1000,
         circularity_min=0.35,
         fill_ratio_min=0.45,
+
+        # debug (optional)
+        debug_mask_color="Blue",
+        debug_show_mask=False,
+        debug_show_overlay=False,
     )
 
     # Numbering per color (stable)
