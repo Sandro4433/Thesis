@@ -1,10 +1,19 @@
 # Vision_Main.py
+from pathlib import Path
+import sys
+
+# Allow running this file directly (by path) as well as importing it from python/Main.py
+PROJECT_DIR = Path(__file__).resolve().parents[1]  # .../python
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
 import cv2
 
-from config import (
+from Vision_Module.config import (
     CONTAINER_TAG_IDS,
     KIT_TAG_IDS,
     POSITIONS_PATH,
+    LLM_INPUT_PATH,
     CHARUCO_ORIGIN_IN_ROBOT_M,
     CAMERA_HOME,
     KIT_POINTS,
@@ -21,17 +30,13 @@ from config import (
     REALSENSE_FPS,
     REALSENSE_WARMUP_FRAMES,
 )
-from vision_realsense import capture_color_frame
-from vision_charuco import (
-    detect_board_homography,
-    choose_origin_and_axes,
-    draw_origin_and_axes,
-)
-from vision_apriltag import create_detector, detect_tags
-from pipeline import compute_tag_targets_and_annotate, targets_to_robot_entries
-from assign_parts import assign_parts_to_slots
-from workspace_state import entries_to_state, save_json_snapshot
 
+from Vision_Module.vision_realsense import capture_color_frame
+from Vision_Module.vision_charuco import detect_board_homography, choose_origin_and_axes, draw_origin_and_axes
+from Vision_Module.vision_apriltag import create_detector, detect_tags
+from Vision_Module.pipeline import compute_tag_targets_and_annotate, targets_to_robot_entries
+from Vision_Module.assign_parts import assign_parts_to_slots
+from Vision_Module.workspace_state import entries_to_state, save_json_snapshot, save_llm_snapshot
 
 def main() -> None:
     img_raw = capture_color_frame(
@@ -110,6 +115,8 @@ def main() -> None:
     state = entries_to_state(final_entries)
     save_json_snapshot(POSITIONS_PATH, state, pretty=True)
     print(f"Wrote JSON snapshot to: {POSITIONS_PATH}")
+    save_llm_snapshot(LLM_INPUT_PATH, state, compact_keys=True, drop_nulls=True, pretty=False)
+    print(f"Wrote LLM input snapshot to: {LLM_INPUT_PATH}")
 
     cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
     cv2.imshow("Result", img_vis)

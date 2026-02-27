@@ -1,9 +1,11 @@
 # config.py
-import os
 from typing import Dict, List, Any
 
-# Output
-POSITIONS_PATH = os.path.abspath("positions.json")
+# Output (stable paths; independent of current working directory)
+from paths import POSITIONS_JSON, LLM_INPUT_JSON
+
+POSITIONS_PATH = str(POSITIONS_JSON.resolve())
+LLM_INPUT_PATH = str(LLM_INPUT_JSON.resolve())
 
 # Define the Charuco origin in the ROBOT BASE FRAME. (METERS)
 CHARUCO_ORIGIN_IN_ROBOT_M: Dict[str, float] = {
