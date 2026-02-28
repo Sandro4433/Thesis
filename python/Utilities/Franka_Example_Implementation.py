@@ -1,4 +1,4 @@
-# Robot_Main.py
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,7 +12,7 @@ import rospy
 import moveit_commander
 
 from Execution_Module.robot import Robot
-from Execution_Module.sequence_executor import execute_sequence
+
 
 
 def main() -> None:
@@ -23,13 +23,7 @@ def main() -> None:
 
     robot.MoveJ_J("Camera_Home")
 
-    # ── Option A: Run a sequence from sequence.json (standard usage) ──────────
-    execute_sequence(robot)
-
-    # ── Option B: Single manual pick-and-place (still works as before) ────────
-    # robot.pick_and_place("Container_1_Pos_1", "Kit_0_Pos_1")
-
-    robot.MoveJ_J("Camera_Home")
+    
 
 
 if __name__ == "__main__":

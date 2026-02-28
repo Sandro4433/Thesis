@@ -10,15 +10,14 @@ def _ensure_project_on_syspath() -> None:
 def main() -> None:
     _ensure_project_on_syspath()
 
-    # Optional: fail early if no key
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("OPENAI_API_KEY is not set in the environment.")
-
+  
     from Vision_Module.Vision_Main import main as vision_main
     from Communication_Module.API_test import main as api_main
+    from Execution_Module.Robot_Main import main as robot_main
 
     vision_main()  # writes File_Exchange/positions.json + llm_input.json
     api_main()     # reads File_Exchange/llm_input.json and starts interactive loop
+    robot_main()
 
 if __name__ == "__main__":
     main()

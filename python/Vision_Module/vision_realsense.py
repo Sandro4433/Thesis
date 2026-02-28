@@ -63,7 +63,7 @@ def capture_color_frame(
         color_frame = frames.get_color_frame()
         if not color_frame:
             raise RuntimeError("No color frame from RealSense.")
-        img = np.asanyarray(color_frame.get_data())
+        img = np.asanyarray(color_frame.get_data()).copy()  # own the buffer
         return img
 
     finally:
