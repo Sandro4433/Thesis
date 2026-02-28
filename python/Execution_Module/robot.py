@@ -89,10 +89,13 @@ class Robot:
             entry = self._positions.get(target_name)
             if entry is None:
                 raise MoveItCommanderException(f"❌ Target '{target_name}' not found in loaded positions.")
-            ori_deg = -entry.get("orientation_deg", None)
-            if ori_deg is None:
-                raise MoveItCommanderException(f"❌ Target '{target_name}' has no 'orientation' field in JSON.")
-            use_deg = float(ori_deg)
+            raw_ori = entry.get("orientation_deg", None)
+            if raw_ori is None:
+                # No orientation defined for this position (e.g. standalone parts
+                # with "orientation": null) — skip the gripper rotation entirely.
+                print(f"⚠ '{target_name}' has no orientation — skipping gripper rotation.")
+                return True
+            use_deg = float(-raw_ori)
         else:
             use_deg = float(delta_deg)
 
@@ -249,13 +252,35 @@ class Robot:
             if "pos" in record and "quat" in record:
                 positions[name] = self._entry_to_pose_record(name, record)
 
-            # Optional convenience: expose child pose as "<slot>__child"
+            # Expose child_part pose under its own name (e.g. "Part_Green_Nr_1")
+            # AND as the legacy "<slot>__child" alias for backward compatibility.
             child = slot.get("child_part")
             if isinstance(child, dict) and "pos" in child and "quat" in child:
-                child_name = f"{name}__child"
                 child_record = dict(child)
+                # Named entry (preferred) ─ uses the part's actual name field
+                child_name = child.get("name") or f"{name}__child"
                 child_record["name"] = child_name
                 positions[child_name] = self._entry_to_pose_record(child_name, child_record)
+                # Legacy alias so old code using "<slot>__child" still works
+                legacy_name = f"{name}__child"
+                if legacy_name != child_name:
+                    positions[legacy_name] = positions[child_name]
+
+        # ── standalone parts (top-level "parts" section) ──────────────────────
+        # These are parts NOT currently sitting in a slot (e.g. on a table).
+        parts = state.get("parts", {})
+        if not isinstance(parts, dict):
+            return positions
+
+        for name, part in parts.items():
+            if not isinstance(name, str) or not name:
+                continue
+            if not isinstance(part, dict):
+                continue
+            if "pos" in part and "quat" in part:
+                record = dict(part)
+                record["name"] = name
+                positions[name] = self._entry_to_pose_record(name, record)
 
         return positions
 
