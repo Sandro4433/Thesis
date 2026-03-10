@@ -127,34 +127,43 @@ def chat(client: OpenAI, messages: List[Dict[str, str]], temperature: float = 0.
     return (resp.choices[0].message.content or "").strip()
 
 
+def _contains_word(text: str, words) -> bool:
+    """True if any of the given words appears as a whole word in text."""
+    import re
+    for w in words:
+        if re.search(r'\b' + re.escape(w) + r'\b', text):
+            return True
+    return False
+
+
 def is_finish(text: str) -> bool:
     t = text.strip().lower()
-    return any(x in t for x in [
+    return _contains_word(t, [
         "finish", "finalize", "done", "end", "export",
-        "save", "write", "last step", "that's all", "thats all", "quit", "exit",
-    ])
+        "save", "write", "quit", "exit",
+    ]) or any(x in t for x in ["last step", "that's all", "thats all"])
 
 
 def is_yes(text: str) -> bool:
     t = text.strip().lower()
-    return any(x in t for x in [
-        "yes", "y", "ok", "okay", "confirm", "confirmed", "sure",
-        "go ahead", "do it", "looks good", "correct",
-    ])
+    return _contains_word(t, [
+        "yes", "ok", "okay", "confirm", "confirmed", "sure", "correct",
+    ]) or any(x in t for x in ["go ahead", "do it", "looks good"]) or t == "y"
 
 
 def is_no(text: str) -> bool:
     t = text.strip().lower()
-    return any(x in t for x in ["no", "n", "nope", "cancel", "reject", "wrong", "redo"])
+    return _contains_word(t, [
+        "no", "nope", "cancel", "reject", "wrong", "redo",
+    ]) or t == "n"
 
 
 def is_reconfig_request(text: str) -> bool:
     """Detect when user agrees to switch to reconfiguration mode."""
     t = text.strip().lower()
-    return any(x in t for x in [
-        "yes", "y", "ok", "okay", "sure", "go ahead", "switch", "reconfigure",
-        "reconfig", "change", "fix", "correct",
-    ])
+    return _contains_word(t, [
+        "yes", "ok", "okay", "sure", "switch", "reconfigure", "reconfig", "change", "fix", "correct",
+    ]) or any(x in t for x in ["go ahead"]) or t == "y"
 
 
 # ── Scene pre-processing ──────────────────────────────────────────────────────
@@ -264,6 +273,8 @@ descriptions into an ordered sequence of pick-and-place actions for a robot arm.
 You will receive an INPUT JSON describing the current scene:
   - "slots": named workspace positions (Kit_* or Container_*).
     A slot with a non-null "child_part" means a part is sitting there.
+    The child_part has a "name" field (e.g. "Part_Blue_Nr_3") — this is the PICK target.
+    The slot key itself (e.g. "Container_3_Pos_2") is the PLACE target only.
     Slots have: Role (null | "input" | "output"), child_part.
   - "parts": standalone parts not in any slot (Part_*).
     Parts have: Color ("Blue" | "Red"), Size (null | "large").
@@ -327,10 +338,13 @@ Examples:
   ["Part_Blue_Nr_1", "Kit_0_Pos_2", 0.06]  ← Blue part, large → include 0.06
 
 Other rules:
-- Parts in slots   → pick = child_part name  (e.g. "Part_Blue_Nr_1")
-- Standalone parts → pick = top-level key     (e.g. "Part_Blue_Nr_3")
-- Destination      → place = slot key         (e.g. "Kit_0_Pos_1")
-- NEVER use coordinates or invented names.
+- Parts in slots   → pick = the "name" field inside child_part  (e.g. "Part_Blue_Nr_1")
+                     NEVER use the slot name or append "_child_part" — the slot name is the PLACE, not the pick.
+                     WRONG: "Container_3_Pos_2_child_part"  ← does not exist, will crash the robot
+                     CORRECT: "Part_Blue_Nr_3"              ← the actual name field from child_part
+- Standalone parts → pick = top-level key in "parts"        (e.g. "Part_Blue_Nr_3")
+- Destination      → place = slot key                       (e.g. "Kit_0_Pos_1")
+- NEVER use coordinates, invented names, or slot names as pick targets.
 - NEVER include a sequence with role violations — explain and ask about reconfiguration instead.
 - If no valid empty destination slots exist, say so before proposing anything.
 
@@ -428,7 +442,69 @@ def _apply_and_save_config(
     print(f"✅  config.json saved → {config_path.resolve()}\n")
 
 
-# ── Session (one mode + scene selection) ─────────────────────────────────────
+# ── Post-execution scene update ───────────────────────────────────────────────
+
+def apply_sequence_to_scene(scene: dict, sequence: list) -> dict:
+    """
+    Apply a completed pick-and-place sequence to a scene dict.
+    For each [pick_name, place_name, ...]:
+      - Finds the slot whose child_part.name == pick_name → clears it to null
+        (or removes from standalone parts if it was there)
+      - Moves that child_part object into the destination slot,
+        updating its pos/quat/orientation to match the slot it now lives in.
+    Returns a deep copy of the updated scene.
+    """
+    import copy
+    scene = copy.deepcopy(scene)
+    slots = scene.get("slots", {})
+    parts = scene.get("parts", {})
+
+    for entry in sequence:
+        pick_name  = entry[0]
+        place_name = entry[1]
+
+        # ── Locate the part ───────────────────────────────────────────────────
+        part_obj    = None
+        source_slot = None
+
+        for slot_name, slot in slots.items():
+            cp = slot.get("child_part")
+            if isinstance(cp, dict) and cp.get("name") == pick_name:
+                part_obj    = copy.deepcopy(cp)
+                source_slot = slot_name
+                break
+
+        if part_obj is None and pick_name in parts:
+            part_obj = copy.deepcopy(parts[pick_name])
+            part_obj.setdefault("name", pick_name)
+
+        if part_obj is None:
+            print(f"⚠  apply_sequence_to_scene: '{pick_name}' not found — skipping.")
+            continue
+
+        if place_name not in slots:
+            print(f"⚠  apply_sequence_to_scene: slot '{place_name}' not found — skipping.")
+            continue
+
+        # ── Remove from source ────────────────────────────────────────────────
+        if source_slot:
+            slots[source_slot]["child_part"] = None
+        elif pick_name in parts:
+            del parts[pick_name]
+
+        # ── Update part pose to match destination slot ────────────────────────
+        dest = slots[place_name]
+        for key in ("pos", "quat", "orientation"):
+            if key in dest:
+                part_obj[key] = dest[key]
+
+        # ── Place into destination slot ───────────────────────────────────────
+        slots[place_name]["child_part"] = part_obj
+
+    return scene
+
+
+
 
 def run_session(client: OpenAI, mode: str) -> None:
     """
@@ -440,16 +516,45 @@ def run_session(client: OpenAI, mode: str) -> None:
 
     # ── Option 3: Execute robot motion ────────────────────────────────────────
     if mode == "execute":
-        seq_path = SEQUENCE_PATH
-        if not seq_path.exists():
-            print(f"\n⚠  No sequence.json found at {seq_path.resolve()}")
+        if not SEQUENCE_PATH.exists():
+            print(f"\n⚠  No sequence.json found at {SEQUENCE_PATH.resolve()}")
             print("   Plan a motion sequence first (option 2).\n")
             return
-        print(f"\n▶  Executing sequence from: {seq_path.resolve()}")
+
+        # ── Load sequence ─────────────────────────────────────────────────────
+        sequence = json.loads(SEQUENCE_PATH.read_text(encoding="utf-8"))
+        print(f"\n▶  Executing {len(sequence)} step(s) from: {SEQUENCE_PATH.resolve()}")
+        print("   Robot is running — no input accepted until motion is complete.\n")
+
+        # ── Execute (blocking — user cannot interact) ─────────────────────────
         from Execution_Module.Robot_Main import main as robot_main
         robot_main()
         print("\n── Execution complete. ──\n")
+
+        # ── Derive new config from executed sequence ──────────────────────────
+        # Find the most recent baseline (config.json if it exists, else llm_input.json)
+        MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+        config_path = MEMORY_DIR / "config.json"
+        if config_path.exists():
+            baseline = json.loads(config_path.read_text(encoding="utf-8"))
+            print(f"Updating config from baseline: {config_path.name}")
+        elif LLM_INPUT_PATH.exists():
+            baseline = json.loads(LLM_INPUT_PATH.read_text(encoding="utf-8"))
+            print(f"Updating config from baseline: {LLM_INPUT_PATH.name}")
+        else:
+            print("⚠  No baseline config found — cannot update config.json.")
+            return
+
+        updated_scene = apply_sequence_to_scene(baseline, sequence)
+
+        # Save as new config.json
+        tmp = str(config_path) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(updated_scene, f, indent=2, ensure_ascii=False)
+        Path(tmp).replace(config_path)
+        print(f"✅  config.json updated with post-execution state → {config_path.resolve()}\n")
         return
+
     scene, baseline_path = select_scene()
 
     messages: List[Dict[str, str]] = [
@@ -580,11 +685,19 @@ def run_session(client: OpenAI, mode: str) -> None:
 
             # Skip LLM — go straight back to user input
             user_input = input("Anything else? (or type 'done')\nYOU: ").strip()
-            if not user_input or not is_finish(user_input):
-                if user_input:
-                    messages.append({"role": "user", "content": user_input})
-                continue
-            # user typed 'done' — fall through to the done-handler below
+            if is_finish(user_input):
+                # Write everything and return to mode selection
+                if accumulated_changes:
+                    saved = save_changes(accumulated_changes)
+                    total = sum(len(v) for v in accumulated_changes.values())
+                    print(f"\n✅  All workspace changes saved ({total} attribute(s)) → {saved.resolve()}")
+                    print(json.dumps(accumulated_changes, indent=2, ensure_ascii=False))
+                    _apply_and_save_config(baseline_path, accumulated_changes)
+                print("\n── Session complete. ──\n")
+                return
+            if user_input:
+                messages.append({"role": "user", "content": user_input})
+            continue
 
         if has_pending and is_no(user_input):
             print("  [Proposal rejected.]\n")

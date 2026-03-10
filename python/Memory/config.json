@@ -101,7 +101,7 @@
           0.2
         ],
         "Color": "Blue",
-        "Size": "large"
+        "Size": null
       }
     },
     "Container_3_Pos_3": {
@@ -118,7 +118,7 @@
           0.2
         ],
         "Color": "Blue",
-        "Size": "large"
+        "Size": null
       }
     },
     "Container_3_Pos_4": {
@@ -135,7 +135,7 @@
           0.2
         ],
         "Color": "Blue",
-        "Size": "large"
+        "Size": null
       }
     },
     "Container_3_Pos_5": {
