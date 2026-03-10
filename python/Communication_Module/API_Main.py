@@ -30,7 +30,7 @@ SEQUENCE_BLOCK_RE = re.compile(r"```sequence\s*(.*?)\s*```", re.DOTALL | re.IGNO
 CHANGES_BLOCK_RE  = re.compile(r"```changes\s*(.*?)\s*```",  re.DOTALL | re.IGNORECASE)
 
 # Valid attribute values
-VALID_ROLE  = {"input", "output"}
+VALID_ROLE  = {"input", "output", None}
 VALID_SIZE  = {None, "large"}
 VALID_COLOR = {"Blue", "Red"}
 
@@ -170,22 +170,31 @@ def is_reconfig_request(text: str) -> bool:
 # ── Scene pre-processing ──────────────────────────────────────────────────────
 
 def slim_scene(scene: dict) -> dict:
-    """Strip pos/quat before sending to the LLM to save tokens."""
-    skip = {"pos", "quat"}
-
-    def slim_entry(e: dict) -> dict:
-        return {k: v for k, v in e.items() if k not in skip}
+    """
+    Produce a slim scene for the LLM from positions.json.
+    Strips pos, quat, orientation — but KEEPS child_part.name so the LLM
+    can reference parts by their real name in sequence and changes blocks.
+    """
+    SLOT_KEEP  = {"Role", "child_part"}
+    CHILD_KEEP = {"name", "Color", "Size"}
+    PART_KEEP  = {"Color", "Size"}
 
     out: dict = {}
     if "slots" in scene:
         out["slots"] = {}
-        for name, slot in scene["slots"].items():
-            s = slim_entry(slot)
-            if "child_part" in s and isinstance(s["child_part"], dict):
-                s["child_part"] = slim_entry(s["child_part"])
-            out["slots"][name] = s
+        for slot_name, slot in scene["slots"].items():
+            s = {k: v for k, v in slot.items() if k in SLOT_KEEP}
+            cp = slot.get("child_part")
+            if isinstance(cp, dict):
+                s["child_part"] = {k: v for k, v in cp.items() if k in CHILD_KEEP}
+            else:
+                s["child_part"] = None
+            out["slots"][slot_name] = s
     if "parts" in scene:
-        out["parts"] = {k: slim_entry(v) for k, v in scene["parts"].items()}
+        out["parts"] = {
+            k: {attr: v for attr, v in p.items() if attr in PART_KEEP}
+            for k, p in scene["parts"].items()
+        }
     return out
 
 
@@ -217,18 +226,28 @@ If an attribute is changed more than once, only the latest value will be kept.
 ```
 
 Allowed attributes and values:
-  Role  (slots only)      : "input" | "output"
-  Size  (slots and parts) : null | "large"
-  Color (parts only)      : "Blue" | "Red"
+  Role  (slots only) : "input" | "output" | null
+  Size  (parts only) : null | "large"
+  Color (parts only) : "Blue" | "Red"
 
 CRITICAL FORMAT RULES:
-- <object_name> must be a verbatim name from the INPUT JSON (e.g. "Container_3_Pos_2").
+- For Role changes   → use the SLOT name as key  (e.g. "Kit_0_Pos_1")
+- For Size/Color changes → use the PART name as key  (e.g. "Part_Blue_Nr_3")
+  The part name is the "name" field inside child_part in the INPUT JSON.
+  For standalone parts it is the top-level key in "parts".
 - <attribute> must be EXACTLY one of: Role, Size, Color — nothing else.
-- NEVER use dotted paths like "child_part.Size". Use "Size" directly.
-  When you set Size or Color on a slot name, the system automatically redirects
-  it to the child_part inside that slot. You do not need to navigate into it.
+- NEVER use dotted paths or construct names. Use verbatim names from the INPUT JSON.
 - NEVER output the full scene JSON.
 - null means reset to default (no size / no role).
+
+Example:
+```changes
+{
+  "Kit_0_Pos_1": {"Role": "output"},
+  "Part_Blue_Nr_3": {"Size": "large"},
+  "Part_Red_Nr_1": {"Color": "Red", "Size": null}
+}
+```
 """
 
 
@@ -241,7 +260,8 @@ attribute changes to workspace objects and output a structured changes block.
 You will receive an INPUT JSON describing the current scene:
   - "slots": named workspace positions (Kit_* or Container_*).
     A slot with a non-null "child_part" means a part is sitting there.
-    Slots have: Role (null | "input" | "output"), Size (null | "large"), child_part.
+    child_part has a "name" field — use this name when changing Size or Color.
+    Slots have: Role (null | "input" | "output"), child_part {name, Color, Size}.
   - "parts": standalone parts not in any slot (Part_*).
     Parts have: Color ("Blue" | "Red"), Size (null | "large").
 
@@ -387,157 +407,78 @@ def select_mode() -> str:
     return ["reconfig", "motion", "execute", "exit"][idx]
 
 
-def select_scene() -> tuple[dict, Path]:
+def select_scene() -> dict:
     """
-    Ask the user which baseline config to use.
-    Returns (scene_dict, baseline_path).
-    If live vision is chosen the vision module is called first.
-    Memory files are slimmed (pos/quat stripped) before being sent to the LLM.
+    Ask the user which scene to use as context for the LLM.
+    Always returns a slim version of the chosen scene (pos/quat stripped, names kept).
+    Options:
+      [1] Live vision — runs vision module → fresh positions.json
+      [2+] Load positions.json directly (already up to date after prior session)
+    The robot always uses positions.json for motion; this only affects what the LLM sees.
     """
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-    memory_files: List[Path] = sorted(MEMORY_DIR.glob("*.json"))
+    options = [
+        "Live vision  (capture new image with camera)",
+        f"Current positions.json  ({POSITIONS_PATH})",
+    ]
 
-    options = ["Live vision  (capture new image with camera)"]
-    for f in memory_files:
-        options.append(f"Memory: {f.name}")
-
-    idx = _pick_from_list("\nWhich baseline config do you want to use?", options)
+    idx = _pick_from_list("\nWhich scene do you want to use?", options)
 
     if idx == 0:
         print("\nStarting vision module …")
         from Vision_Module.Vision_Main import main as vision_main
         vision_main()
-        if not LLM_INPUT_PATH.exists():
-            print(f"ERROR: Vision module did not produce {LLM_INPUT_PATH}")
+        if not POSITIONS_PATH.exists():
+            print(f"ERROR: Vision module did not produce {POSITIONS_PATH}")
             sys.exit(1)
-        scene = json.loads(LLM_INPUT_PATH.read_text(encoding="utf-8"))
-        baseline_path = LLM_INPUT_PATH
-        print(f"Loaded scene from vision: {LLM_INPUT_PATH}")
+        print(f"Loaded fresh scene from vision.")
     else:
-        chosen = memory_files[idx - 1]
-        raw = json.loads(chosen.read_text(encoding="utf-8"))
-        scene = slim_scene(raw)   # strip pos/quat just like llm_input
-        baseline_path = chosen
-        print(f"Loaded scene from memory: {chosen}")
+        if not POSITIONS_PATH.exists():
+            print(f"ERROR: positions.json not found at {POSITIONS_PATH.resolve()}")
+            sys.exit(1)
+        print(f"Loaded scene from: {POSITIONS_PATH}")
 
-    return scene, baseline_path
+    scene = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+    return slim_scene(scene)
 
 
 # ── Config application helper ─────────────────────────────────────────────────
 
 def _apply_and_save_config(
-    baseline_path: Path,
     accumulated_changes: Dict[str, Dict[str, Any]],
 ) -> None:
+    """Apply accumulated changes to positions.json and save it in-place."""
     from Configuration_Module.Apply_Config_Changes import apply_changes
 
-    baseline_scene = json.loads(baseline_path.read_text(encoding="utf-8"))
-    updated = apply_changes(baseline_scene, accumulated_changes)
+    if not POSITIONS_PATH.exists():
+        print(f"⚠  positions.json not found at {POSITIONS_PATH.resolve()} — cannot apply changes.")
+        return
 
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-    config_path = MEMORY_DIR / "config.json"
-    tmp = str(config_path) + ".tmp"
+    scene   = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+    updated = apply_changes(scene, accumulated_changes)
+
+    tmp = str(POSITIONS_PATH) + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(updated, f, indent=2, ensure_ascii=False)
-    Path(tmp).replace(config_path)
-    print(f"✅  config.json saved → {config_path.resolve()}\n")
+    Path(tmp).replace(POSITIONS_PATH)
+    print(f"✅  positions.json updated → {POSITIONS_PATH.resolve()}\n")
 
 
 # ── Post-execution scene update ───────────────────────────────────────────────
 
-def _build_execution_baseline(positions_path: Path, config_path: Path) -> dict:
-    """
-    Produce a merged scene that has:
-      - Full structure + part names from positions.json  (the authoritative source)
-      - Attribute overrides (Role, Size, Color) from config.json
-
-    This is needed because config.json strips 'name', 'quat', and 'orientation'
-    from child_parts, making it impossible to locate parts by name during
-    sequence application.
-    """
-    import copy
-
-    if not positions_path.exists():
-        raise FileNotFoundError(f"positions.json not found: {positions_path}")
-
-    positions = json.loads(positions_path.read_text(encoding="utf-8"))
-    result    = copy.deepcopy(positions)
-
-    if config_path.exists():
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-        for slot_name, slot in result.get("slots", {}).items():
-            cfg_slot = config.get("slots", {}).get(slot_name, {})
-            # Apply slot-level attribute overrides
-            for attr in ("Role",):
-                if attr in cfg_slot:
-                    slot[attr] = cfg_slot[attr]
-            # Apply child_part attribute overrides
-            cfg_child = cfg_slot.get("child_part")
-            slot_child = slot.get("child_part")
-            if isinstance(slot_child, dict) and isinstance(cfg_child, dict):
-                for attr in ("Color", "Size"):
-                    if attr in cfg_child:
-                        slot_child[attr] = cfg_child[attr]
-        # Apply standalone parts overrides
-        for part_name, part in result.get("parts", {}).items():
-            cfg_part = config.get("parts", {}).get(part_name, {})
-            for attr in ("Color", "Size"):
-                if attr in cfg_part:
-                    part[attr] = cfg_part[attr]
-
-    return result
-
-
-def _slim_for_config(scene: dict) -> dict:
-    """
-    Produce the slim config.json format from a full positions-style scene:
-      slots  → keep pos, Role, child_part (child keeps pos, Color, Size — no name/quat/orientation)
-      parts  → keep pos, Color, Size
-    """
-    import copy
-    result: dict = {"slots": {}, "parts": {}}
-
-    for slot_name, slot in scene.get("slots", {}).items():
-        slim_slot: dict = {}
-        if "pos"  in slot: slim_slot["pos"]  = slot["pos"]
-        slim_slot["Role"] = slot.get("Role")
-        cp = slot.get("child_part")
-        if isinstance(cp, dict):
-            slim_cp: dict = {}
-            if "pos"   in cp: slim_cp["pos"]   = cp["pos"]
-            slim_cp["Color"] = cp.get("Color")
-            slim_cp["Size"]  = cp.get("Size")
-            slim_slot["child_part"] = slim_cp
-        else:
-            slim_slot["child_part"] = None
-        result["slots"][slot_name] = slim_slot
-
-    for part_name, part in scene.get("parts", {}).items():
-        slim_part: dict = {}
-        if "pos" in part: slim_part["pos"] = part["pos"]
-        slim_part["Color"] = part.get("Color")
-        slim_part["Size"]  = part.get("Size")
-        result["parts"][part_name] = slim_part
-
-    return result
-
-
 def apply_sequence_to_scene(scene: dict, sequence: list) -> dict:
     """
-    Apply a completed pick-and-place sequence to a FULL scene dict
-    (one that has 'name', 'quat', 'orientation' in child_parts).
-
+    Apply a completed pick-and-place sequence to a scene dict.
     For each [pick_name, place_name, ...]:
-      - Locates the slot whose child_part["name"] == pick_name and clears it,
-        OR removes it from standalone parts.
-      - Moves the part object into the destination slot, inheriting the
-        slot's pos/quat/orientation for the part's pose.
+      - Finds the slot whose child_part.name == pick_name → clears it to null
+        (or removes from standalone parts if it was there)
+      - Moves that child_part object into the destination slot,
+        updating its pos/quat/orientation to match the slot it now lives in.
     Returns a deep copy of the updated scene.
     """
     import copy
-    scene  = copy.deepcopy(scene)
-    slots  = scene.get("slots", {})
-    parts  = scene.get("parts", {})
+    scene = copy.deepcopy(scene)
+    slots = scene.get("slots", {})
+    parts = scene.get("parts", {})
 
     for entry in sequence:
         pick_name  = entry[0]
@@ -561,6 +502,7 @@ def apply_sequence_to_scene(scene: dict, sequence: list) -> dict:
         if part_obj is None:
             print(f"⚠  apply_sequence_to_scene: '{pick_name}' not found — skipping.")
             continue
+
         if place_name not in slots:
             print(f"⚠  apply_sequence_to_scene: slot '{place_name}' not found — skipping.")
             continue
@@ -571,16 +513,18 @@ def apply_sequence_to_scene(scene: dict, sequence: list) -> dict:
         elif pick_name in parts:
             del parts[pick_name]
 
-        # ── Inherit pose from destination slot ────────────────────────────────
+        # ── Update part pose to match destination slot ────────────────────────
         dest = slots[place_name]
         for key in ("pos", "quat", "orientation"):
             if key in dest:
-                part_obj[key] = copy.deepcopy(dest[key])
+                part_obj[key] = dest[key]
 
         # ── Place into destination slot ───────────────────────────────────────
         slots[place_name]["child_part"] = part_obj
 
     return scene
+
+
 
 
 def run_session(client: OpenAI, mode: str) -> None:
@@ -608,40 +552,22 @@ def run_session(client: OpenAI, mode: str) -> None:
         robot_main()
         print("\n── Execution complete. ──\n")
 
-        # ── Derive new config from executed sequence ──────────────────────────
-        # positions.json is the authoritative source for part names + full pose data.
-        # config.json holds attribute overrides (Role, Size, Color).
-        # We merge both, apply the sequence structurally, then slim back to config format.
-        MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-        config_path = MEMORY_DIR / "config.json"
-
+        # ── Update positions.json to reflect what the robot just did ──────────
         if not POSITIONS_PATH.exists():
-            print(f"⚠  positions.json not found at {POSITIONS_PATH.resolve()} — cannot update config.")
+            print(f"⚠  positions.json not found — cannot update after execution.")
             return
 
-        print(f"Building execution baseline from:")
-        print(f"  Structure + names : {POSITIONS_PATH.name}")
-        print(f"  Attribute overrides: {config_path.name if config_path.exists() else '(none)'}")
+        scene   = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+        updated = apply_sequence_to_scene(scene, sequence)
 
-        # Step 1: merge positions (structure) + config (attribute overrides)
-        full_baseline = _build_execution_baseline(POSITIONS_PATH, config_path)
-
-        # Step 2: apply the sequence — moves parts between slots by name
-        full_updated = apply_sequence_to_scene(full_baseline, sequence)
-
-        # Step 3: slim back to config.json format (pos + Role + Color + Size, no name/quat/orientation)
-        slim_updated = _slim_for_config(full_updated)
-
-        # Step 4: atomic save
-        tmp = str(config_path) + ".tmp"
+        tmp = str(POSITIONS_PATH) + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(slim_updated, f, indent=2, ensure_ascii=False)
-        Path(tmp).replace(config_path)
-        print(f"✅  config.json updated with post-execution state → {config_path.resolve()}\n")
+            json.dump(updated, f, indent=2, ensure_ascii=False)
+        Path(tmp).replace(POSITIONS_PATH)
+        print(f"✅  positions.json updated with post-execution state → {POSITIONS_PATH.resolve()}\n")
         return
 
-
-    scene, baseline_path = select_scene()
+    scene = select_scene()
 
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": build_system_prompt(mode)},
@@ -664,7 +590,7 @@ def run_session(client: OpenAI, mode: str) -> None:
     accumulated_changes: Dict[str, Dict[str, Any]] = {}
 
     mode_label = "Reconfiguration" if mode == "reconfig" else "Motion Sequence"
-    print(f"\n── Mode: {mode_label}  |  Baseline: {baseline_path.name} ──\n")
+    print(f"\n── Mode: {mode_label} ──\n")
 
     while True:
         # ── LLM turn ──────────────────────────────────────────────────────────
@@ -742,7 +668,7 @@ def run_session(client: OpenAI, mode: str) -> None:
                 total = sum(len(v) for v in accumulated_changes.values())
                 print(f"\n✅  All workspace changes saved ({total} attribute(s)) → {saved.resolve()}")
                 print(json.dumps(accumulated_changes, indent=2, ensure_ascii=False))
-                _apply_and_save_config(baseline_path, accumulated_changes)
+                _apply_and_save_config(accumulated_changes)
 
             print("\n── Session complete. ──\n")
             return  # back to outer loop → new mode selection
@@ -778,7 +704,7 @@ def run_session(client: OpenAI, mode: str) -> None:
                     total = sum(len(v) for v in accumulated_changes.values())
                     print(f"\n✅  All workspace changes saved ({total} attribute(s)) → {saved.resolve()}")
                     print(json.dumps(accumulated_changes, indent=2, ensure_ascii=False))
-                    _apply_and_save_config(baseline_path, accumulated_changes)
+                    _apply_and_save_config(accumulated_changes)
                 print("\n── Session complete. ──\n")
                 return
             if user_input:

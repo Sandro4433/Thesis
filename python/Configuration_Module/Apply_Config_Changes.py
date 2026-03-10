@@ -1,8 +1,16 @@
 # Apply_Config_Changes.py
 # Can be run standalone OR imported by API_Main.py.
 #
-# Standalone: reads baseline and changes from paths.py paths, saves config.json to Memory/.
-# Imported:   call apply_changes(scene_dict, changes_dict) directly.
+# Applies workspace_changes.json to positions.json and saves it in-place.
+#
+# Changes format:
+#   Role changes  → keyed by SLOT name   e.g. "Kit_0_Pos_1": {"Role": "output"}
+#   Size/Color    → keyed by PART name   e.g. "Part_Blue_Nr_3": {"Size": "large"}
+#
+# The script searches positions.json for each name and applies changes in-place.
+# Parent-child structure is never altered by this script — only attributes change.
+# Structural changes (moving parts between slots) are handled by apply_sequence_to_scene
+# in API_Main.py after robot execution.
 
 from __future__ import annotations
 
@@ -17,12 +25,10 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from paths import LLM_INPUT_JSON, LLM_RESPONSE_JSON
+from paths import POSITIONS_JSON, LLM_RESPONSE_JSON
 
-LLM_INPUT_PATH  = Path(LLM_INPUT_JSON.resolve())
-CHANGES_PATH    = Path(LLM_RESPONSE_JSON.resolve()).parent / "workspace_changes.json"
-MEMORY_DIR      = PROJECT_DIR / "Memory"
-CONFIG_OUT_PATH = MEMORY_DIR / "config.json"
+POSITIONS_PATH = Path(POSITIONS_JSON.resolve())
+CHANGES_PATH   = Path(LLM_RESPONSE_JSON.resolve()).parent / "workspace_changes.json"
 
 
 # ── Core apply function (importable) ─────────────────────────────────────────
@@ -32,70 +38,75 @@ def apply_changes(
     changes: Dict[str, Dict[str, Any]],
 ) -> Dict[str, Any]:
     """
-    Applies a changes dict onto a scene dict and returns the updated scene.
+    Applies a changes dict to a full positions.json-style scene dict.
+    Returns an updated deep copy. Does NOT modify the input.
 
-    Lookup order per changed object name:
-      1. Top-level slot  → scene["slots"][name]
-         - Role applies to the slot itself.
-         - Color/Size are redirected to the slot's child_part (if one exists).
-      2. Top-level part  → scene["parts"][name]
-         - Color/Size apply directly.
-      3. Embedded child_part → searches all slot["child_part"] for matching name
-         - Color/Size apply to the embedded part.
+    Key lookup rules:
+      - If the key matches a slot name  → apply Role to that slot.
+      - If the key matches a part name  → find the part (in child_parts or
+        standalone parts) and apply Size / Color to it.
 
     Allowed attributes:
-      Slots : Role, (Size/Color redirected to child_part)
-      Parts : Color, Size
+      Slots  : Role  (null | "input" | "output")
+      Parts  : Size  (null | "large")
+               Color ("Blue" | "Red")
     """
     result = copy.deepcopy(scene)
-
-    slots = result.get("slots", {})
-    parts = result.get("parts", {})
+    slots  = result.get("slots", {})
+    parts  = result.get("parts", {})
 
     not_found: list[str] = []
 
     for obj_name, attrs in changes.items():
 
-        # 1. Direct slot match
+        # ── 1. Slot name → apply Role ─────────────────────────────────────────
         if obj_name in slots:
-            slot = slots[obj_name]
             for attr, val in attrs.items():
                 if attr == "Role":
-                    slot[attr] = val
+                    slots[obj_name]["Role"] = val
                 elif attr in ("Color", "Size"):
-                    # Part attributes — redirect to child_part
-                    child = slot.get("child_part")
+                    # Convenience: if user accidentally keys by slot for part attrs,
+                    # redirect to child_part if one exists.
+                    child = slots[obj_name].get("child_part")
                     if isinstance(child, dict):
                         child[attr] = val
+                        print(f"  Note: '{attr}' on slot '{obj_name}' redirected to its child_part.")
                     else:
                         print(f"  WARNING: '{obj_name}' has no child_part — cannot set '{attr}', skipped.")
                 else:
-                    print(f"  WARNING: Unknown attribute '{attr}' for '{obj_name}' — skipped.")
+                    print(f"  WARNING: Unknown attribute '{attr}' for slot '{obj_name}' — skipped.")
             continue
 
-        # 2. Direct part match (standalone)
-        if obj_name in parts:
-            for attr, val in attrs.items():
-                if attr not in ("Color", "Size"):
-                    print(f"  WARNING: '{attr}' is not a valid part attribute — skipped for '{obj_name}'.")
-                    continue
-                parts[obj_name][attr] = val
-            continue
+        # ── 2. Part name → find in child_parts or standalone parts ────────────
+        found = False
 
-        # 3. Embedded child_part inside a slot
-        found_embedded = False
+        # Search child_parts in all slots
         for slot in slots.values():
             child = slot.get("child_part")
             if isinstance(child, dict) and child.get("name") == obj_name:
                 for attr, val in attrs.items():
-                    if attr not in ("Color", "Size"):
-                        print(f"  WARNING: '{attr}' is not a valid part attribute — skipped for '{obj_name}'.")
-                        continue
-                    child[attr] = val
-                found_embedded = True
+                    if attr in ("Color", "Size"):
+                        child[attr] = val
+                    elif attr == "Role":
+                        print(f"  WARNING: Role is a slot attribute, not a part attribute — "
+                              f"skipped for '{obj_name}'.")
+                    else:
+                        print(f"  WARNING: Unknown attribute '{attr}' for part '{obj_name}' — skipped.")
+                found = True
                 break
 
-        if not found_embedded:
+        if not found and obj_name in parts:
+            for attr, val in attrs.items():
+                if attr in ("Color", "Size"):
+                    parts[obj_name][attr] = val
+                elif attr == "Role":
+                    print(f"  WARNING: Role is a slot attribute, not a part attribute — "
+                          f"skipped for '{obj_name}'.")
+                else:
+                    print(f"  WARNING: Unknown attribute '{attr}' for part '{obj_name}' — skipped.")
+            found = True
+
+        if not found:
             not_found.append(obj_name)
 
     if not_found:
@@ -109,30 +120,29 @@ def apply_changes(
 # ── Standalone entry point ────────────────────────────────────────────────────
 
 def main() -> None:
-    if not LLM_INPUT_PATH.exists():
-        print(f"ERROR: LLM input file not found: {LLM_INPUT_PATH}")
+    if not POSITIONS_PATH.exists():
+        print(f"ERROR: positions.json not found: {POSITIONS_PATH}")
         sys.exit(1)
     if not CHANGES_PATH.exists():
         print(f"ERROR: Changes file not found: {CHANGES_PATH}")
         sys.exit(1)
 
-    scene   = json.loads(LLM_INPUT_PATH.read_text(encoding="utf-8"))
+    scene   = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
     changes = json.loads(CHANGES_PATH.read_text(encoding="utf-8"))
 
-    print(f"Loaded scene:   {LLM_INPUT_PATH}")
-    print(f"Loaded changes: {CHANGES_PATH}")
+    print(f"Loaded positions: {POSITIONS_PATH}")
+    print(f"Loaded changes:   {CHANGES_PATH}")
     total_attrs = sum(len(v) for v in changes.values())
     print(f"  → {len(changes)} object(s), {total_attrs} attribute change(s)")
 
     updated = apply_changes(scene, changes)
 
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = str(CONFIG_OUT_PATH) + ".tmp"
+    tmp = str(POSITIONS_PATH) + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(updated, f, indent=2, ensure_ascii=False)
-    Path(tmp).replace(CONFIG_OUT_PATH)
+    Path(tmp).replace(POSITIONS_PATH)
 
-    print(f"Saved config:   {CONFIG_OUT_PATH}")
+    print(f"Saved:            {POSITIONS_PATH}")
 
 
 if __name__ == "__main__":
