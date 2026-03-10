@@ -43,7 +43,7 @@ from Vision_Module.workspace_state import entries_to_state, save_json_snapshot, 
 # Set USE_CAMERA = True  → capture live from RealSense
 # Set USE_CAMERA = False → load a PNG from the Images folder
 # =============================================================================
-USE_CAMERA = True
+USE_CAMERA = False
 
 # Only used when USE_CAMERA = False.
 # Path is relative to this file's directory (Vision_Module/Images/).
@@ -170,7 +170,7 @@ def main() -> None:
     state = entries_to_state(final_entries)
     save_json_snapshot(POSITIONS_PATH, state, pretty=True)
     print(f"Wrote JSON snapshot to: {POSITIONS_PATH}")
-    save_llm_snapshot(LLM_INPUT_PATH, state, compact_keys=True, drop_nulls=True, pretty=False)
+    save_llm_snapshot(LLM_INPUT_PATH, state, pretty=True)
     print(f"Wrote LLM input snapshot to: {LLM_INPUT_PATH}")
 
     # ------------------------------------------------------------------

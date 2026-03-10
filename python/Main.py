@@ -12,12 +12,12 @@ def main() -> None:
 
   
     from Vision_Module.Vision_Main import main as vision_main
-    from Communication_Module.API_test import main as api_main
+    from Communication_Module.API_Main import main as api_main
     from Execution_Module.Robot_Main import main as robot_main
 
     vision_main()  # writes File_Exchange/positions.json + llm_input.json
     api_main()     # reads File_Exchange/llm_input.json and starts interactive loop
-    robot_main()
+    #robot_main()
 
 if __name__ == "__main__":
     main()

@@ -358,7 +358,6 @@ def targets_to_robot_entries(
                     "orientation": None,                 # will inherit from parent slot if assigned
                     "Color": _part_color_from_name(part_name),
                     "Size": None,
-                    "Fragility": None,
                     "Role": None,
                 }
                 new_entries.append(entry)
