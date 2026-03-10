@@ -7,7 +7,15 @@
         0.2
       ],
       "Role": null,
-      "child_part": null
+      "child_part": {
+        "pos": [
+          0.5575469871992703,
+          0.509683261826017,
+          0.2
+        ],
+        "Color": "Blue",
+        "Size": null
+      }
     },
     "Kit_0_Pos_2": {
       "pos": [
@@ -16,7 +24,15 @@
         0.2
       ],
       "Role": null,
-      "child_part": null
+      "child_part": {
+        "pos": [
+          0.5146094495725165,
+          0.46777421909594386,
+          0.2
+        ],
+        "Color": "Blue",
+        "Size": null
+      }
     },
     "Kit_0_Pos_3": {
       "pos": [
@@ -25,7 +41,15 @@
         0.2
       ],
       "Role": null,
-      "child_part": null
+      "child_part": {
+        "pos": [
+          0.5744948408884605,
+          0.44936933096978937,
+          0.2
+        ],
+        "Color": "Red",
+        "Size": null
+      }
     },
     "Kit_2_Pos_1": {
       "pos": [
@@ -68,15 +92,7 @@
         0.2
       ],
       "Role": null,
-      "child_part": {
-        "pos": [
-          0.58658003282547,
-          0.24689008390903472,
-          0.2
-        ],
-        "Color": "Red",
-        "Size": null
-      }
+      "child_part": null
     },
     "Container_3_Pos_1": {
       "pos": [
@@ -111,15 +127,7 @@
         0.2
       ],
       "Role": null,
-      "child_part": {
-        "pos": [
-          0.28887535107135776,
-          0.5155699560642242,
-          0.2
-        ],
-        "Color": "Blue",
-        "Size": null
-      }
+      "child_part": null
     },
     "Container_3_Pos_4": {
       "pos": [
@@ -128,15 +136,7 @@
         0.2
       ],
       "Role": null,
-      "child_part": {
-        "pos": [
-          0.33245375227928164,
-          0.5687785754203796,
-          0.2
-        ],
-        "Color": "Blue",
-        "Size": null
-      }
+      "child_part": null
     },
     "Container_3_Pos_5": {
       "pos": [

@@ -16,9 +16,10 @@ if str(PROJECT_DIR) not in sys.path:
 # ── Config ────────────────────────────────────────────────────────────────────
 MODEL = "gpt-4.1"
 
-from paths import LLM_INPUT_JSON, LLM_RESPONSE_JSON
+from paths import LLM_INPUT_JSON, LLM_RESPONSE_JSON, POSITIONS_JSON
 
 LLM_INPUT_PATH = Path(LLM_INPUT_JSON.resolve())
+POSITIONS_PATH = Path(POSITIONS_JSON.resolve())
 OUTPUT_DIR     = Path(LLM_RESPONSE_JSON.resolve()).parent
 SEQUENCE_PATH  = OUTPUT_DIR / "sequence.json"
 CHANGES_PATH   = OUTPUT_DIR / "workspace_changes.json"
@@ -444,20 +445,99 @@ def _apply_and_save_config(
 
 # ── Post-execution scene update ───────────────────────────────────────────────
 
+def _build_execution_baseline(positions_path: Path, config_path: Path) -> dict:
+    """
+    Produce a merged scene that has:
+      - Full structure + part names from positions.json  (the authoritative source)
+      - Attribute overrides (Role, Size, Color) from config.json
+
+    This is needed because config.json strips 'name', 'quat', and 'orientation'
+    from child_parts, making it impossible to locate parts by name during
+    sequence application.
+    """
+    import copy
+
+    if not positions_path.exists():
+        raise FileNotFoundError(f"positions.json not found: {positions_path}")
+
+    positions = json.loads(positions_path.read_text(encoding="utf-8"))
+    result    = copy.deepcopy(positions)
+
+    if config_path.exists():
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        for slot_name, slot in result.get("slots", {}).items():
+            cfg_slot = config.get("slots", {}).get(slot_name, {})
+            # Apply slot-level attribute overrides
+            for attr in ("Role",):
+                if attr in cfg_slot:
+                    slot[attr] = cfg_slot[attr]
+            # Apply child_part attribute overrides
+            cfg_child = cfg_slot.get("child_part")
+            slot_child = slot.get("child_part")
+            if isinstance(slot_child, dict) and isinstance(cfg_child, dict):
+                for attr in ("Color", "Size"):
+                    if attr in cfg_child:
+                        slot_child[attr] = cfg_child[attr]
+        # Apply standalone parts overrides
+        for part_name, part in result.get("parts", {}).items():
+            cfg_part = config.get("parts", {}).get(part_name, {})
+            for attr in ("Color", "Size"):
+                if attr in cfg_part:
+                    part[attr] = cfg_part[attr]
+
+    return result
+
+
+def _slim_for_config(scene: dict) -> dict:
+    """
+    Produce the slim config.json format from a full positions-style scene:
+      slots  → keep pos, Role, child_part (child keeps pos, Color, Size — no name/quat/orientation)
+      parts  → keep pos, Color, Size
+    """
+    import copy
+    result: dict = {"slots": {}, "parts": {}}
+
+    for slot_name, slot in scene.get("slots", {}).items():
+        slim_slot: dict = {}
+        if "pos"  in slot: slim_slot["pos"]  = slot["pos"]
+        slim_slot["Role"] = slot.get("Role")
+        cp = slot.get("child_part")
+        if isinstance(cp, dict):
+            slim_cp: dict = {}
+            if "pos"   in cp: slim_cp["pos"]   = cp["pos"]
+            slim_cp["Color"] = cp.get("Color")
+            slim_cp["Size"]  = cp.get("Size")
+            slim_slot["child_part"] = slim_cp
+        else:
+            slim_slot["child_part"] = None
+        result["slots"][slot_name] = slim_slot
+
+    for part_name, part in scene.get("parts", {}).items():
+        slim_part: dict = {}
+        if "pos" in part: slim_part["pos"] = part["pos"]
+        slim_part["Color"] = part.get("Color")
+        slim_part["Size"]  = part.get("Size")
+        result["parts"][part_name] = slim_part
+
+    return result
+
+
 def apply_sequence_to_scene(scene: dict, sequence: list) -> dict:
     """
-    Apply a completed pick-and-place sequence to a scene dict.
+    Apply a completed pick-and-place sequence to a FULL scene dict
+    (one that has 'name', 'quat', 'orientation' in child_parts).
+
     For each [pick_name, place_name, ...]:
-      - Finds the slot whose child_part.name == pick_name → clears it to null
-        (or removes from standalone parts if it was there)
-      - Moves that child_part object into the destination slot,
-        updating its pos/quat/orientation to match the slot it now lives in.
+      - Locates the slot whose child_part["name"] == pick_name and clears it,
+        OR removes it from standalone parts.
+      - Moves the part object into the destination slot, inheriting the
+        slot's pos/quat/orientation for the part's pose.
     Returns a deep copy of the updated scene.
     """
     import copy
-    scene = copy.deepcopy(scene)
-    slots = scene.get("slots", {})
-    parts = scene.get("parts", {})
+    scene  = copy.deepcopy(scene)
+    slots  = scene.get("slots", {})
+    parts  = scene.get("parts", {})
 
     for entry in sequence:
         pick_name  = entry[0]
@@ -481,7 +561,6 @@ def apply_sequence_to_scene(scene: dict, sequence: list) -> dict:
         if part_obj is None:
             print(f"⚠  apply_sequence_to_scene: '{pick_name}' not found — skipping.")
             continue
-
         if place_name not in slots:
             print(f"⚠  apply_sequence_to_scene: slot '{place_name}' not found — skipping.")
             continue
@@ -492,18 +571,16 @@ def apply_sequence_to_scene(scene: dict, sequence: list) -> dict:
         elif pick_name in parts:
             del parts[pick_name]
 
-        # ── Update part pose to match destination slot ────────────────────────
+        # ── Inherit pose from destination slot ────────────────────────────────
         dest = slots[place_name]
         for key in ("pos", "quat", "orientation"):
             if key in dest:
-                part_obj[key] = dest[key]
+                part_obj[key] = copy.deepcopy(dest[key])
 
         # ── Place into destination slot ───────────────────────────────────────
         slots[place_name]["child_part"] = part_obj
 
     return scene
-
-
 
 
 def run_session(client: OpenAI, mode: str) -> None:
@@ -532,28 +609,37 @@ def run_session(client: OpenAI, mode: str) -> None:
         print("\n── Execution complete. ──\n")
 
         # ── Derive new config from executed sequence ──────────────────────────
-        # Find the most recent baseline (config.json if it exists, else llm_input.json)
+        # positions.json is the authoritative source for part names + full pose data.
+        # config.json holds attribute overrides (Role, Size, Color).
+        # We merge both, apply the sequence structurally, then slim back to config format.
         MEMORY_DIR.mkdir(parents=True, exist_ok=True)
         config_path = MEMORY_DIR / "config.json"
-        if config_path.exists():
-            baseline = json.loads(config_path.read_text(encoding="utf-8"))
-            print(f"Updating config from baseline: {config_path.name}")
-        elif LLM_INPUT_PATH.exists():
-            baseline = json.loads(LLM_INPUT_PATH.read_text(encoding="utf-8"))
-            print(f"Updating config from baseline: {LLM_INPUT_PATH.name}")
-        else:
-            print("⚠  No baseline config found — cannot update config.json.")
+
+        if not POSITIONS_PATH.exists():
+            print(f"⚠  positions.json not found at {POSITIONS_PATH.resolve()} — cannot update config.")
             return
 
-        updated_scene = apply_sequence_to_scene(baseline, sequence)
+        print(f"Building execution baseline from:")
+        print(f"  Structure + names : {POSITIONS_PATH.name}")
+        print(f"  Attribute overrides: {config_path.name if config_path.exists() else '(none)'}")
 
-        # Save as new config.json
+        # Step 1: merge positions (structure) + config (attribute overrides)
+        full_baseline = _build_execution_baseline(POSITIONS_PATH, config_path)
+
+        # Step 2: apply the sequence — moves parts between slots by name
+        full_updated = apply_sequence_to_scene(full_baseline, sequence)
+
+        # Step 3: slim back to config.json format (pos + Role + Color + Size, no name/quat/orientation)
+        slim_updated = _slim_for_config(full_updated)
+
+        # Step 4: atomic save
         tmp = str(config_path) + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(updated_scene, f, indent=2, ensure_ascii=False)
+            json.dump(slim_updated, f, indent=2, ensure_ascii=False)
         Path(tmp).replace(config_path)
         print(f"✅  config.json updated with post-execution state → {config_path.resolve()}\n")
         return
+
 
     scene, baseline_path = select_scene()
 
