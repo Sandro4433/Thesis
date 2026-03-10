@@ -38,16 +38,60 @@ from Vision_Module.pipeline import compute_tag_targets_and_annotate, targets_to_
 from Vision_Module.assign_parts import assign_parts_to_slots
 from Vision_Module.workspace_state import entries_to_state, save_json_snapshot, save_llm_snapshot
 
+# =============================================================================
+# IMAGE SOURCE TOGGLE
+# Set USE_CAMERA = True  → capture live from RealSense
+# Set USE_CAMERA = False → load a PNG from the Images folder
+# =============================================================================
+USE_CAMERA = True
+
+# Only used when USE_CAMERA = False.
+# Path is relative to this file's directory (Vision_Module/Images/).
+TEST_IMAGE_NAME = "Experiment_2.png"
+# =============================================================================
+
+
+# Path to the Images folder (sits next to this file)
+IMAGES_DIR = Path(__file__).resolve().parent / "Images"
+
+
+def load_test_image(filename: str) -> "np.ndarray":
+    img_path = IMAGES_DIR / filename
+    if not img_path.exists():
+        available = [p.name for p in sorted(IMAGES_DIR.glob("*.png"))]
+        raise FileNotFoundError(
+            f"Test image not found: {img_path}\n"
+            f"Available images in {IMAGES_DIR}:\n  " + "\n  ".join(available or ["(none)"])
+        )
+    img = cv2.imread(str(img_path))
+    if img is None:
+        raise RuntimeError(f"cv2.imread failed to load: {img_path}")
+    print(f"Loaded test image: {img_path}  ({img.shape[1]}x{img.shape[0]})")
+    return img
+
+
 def main() -> None:
-    img_raw = capture_color_frame(
-        width=REALSENSE_WIDTH,
-        height=REALSENSE_HEIGHT,
-        fps=REALSENSE_FPS,
-        warmup_frames=REALSENSE_WARMUP_FRAMES,
-    )
+    # ------------------------------------------------------------------
+    # Acquire raw image
+    # ------------------------------------------------------------------
+    if USE_CAMERA:
+        print("Capturing from RealSense camera...")
+        img_raw = capture_color_frame(
+            width=REALSENSE_WIDTH,
+            height=REALSENSE_HEIGHT,
+            fps=REALSENSE_FPS,
+            warmup_frames=REALSENSE_WARMUP_FRAMES,
+        )
+    else:
+        print(f"Using test image: {TEST_IMAGE_NAME}")
+        img_raw = load_test_image(TEST_IMAGE_NAME)
+
     img_vis = img_raw.copy()
     gray = cv2.cvtColor(img_raw, cv2.COLOR_BGR2GRAY)
 
+    # ------------------------------------------------------------------
+    # Board homography
+    # ------------------------------------------------------------------
     H, inliers, board_w, board_h = detect_board_homography(
         gray=gray,
         cols=BOARD_COLS,
@@ -76,6 +120,9 @@ def main() -> None:
     )
     draw_origin_and_axes(img_vis, origin_axes)
 
+    # ------------------------------------------------------------------
+    # AprilTag detection
+    # ------------------------------------------------------------------
     detector = create_detector(
         families="tag25h9",
         nthreads=1,
@@ -84,7 +131,6 @@ def main() -> None:
         refine_edges=1,
     )
     detections = detect_tags(detector, gray)
-    del detector
 
     tag_targets = compute_tag_targets_and_annotate(
         img_vis=img_vis,
@@ -99,6 +145,11 @@ def main() -> None:
         tag_axis_draw_len=TAG_AXIS_DRAW_LEN_M,
     )
 
+    del detector  # safe to release after compute_tag_targets_and_annotate is done
+
+    # ------------------------------------------------------------------
+    # Robot entries + part assignment
+    # ------------------------------------------------------------------
     new_entries = targets_to_robot_entries(
         tag_targets=tag_targets,
         charuco_origin_in_robot_m=CHARUCO_ORIGIN_IN_ROBOT_M,
@@ -113,13 +164,21 @@ def main() -> None:
         xy_threshold_m=0.02,  # tune (meters)
     )
 
+    # ------------------------------------------------------------------
+    # Save snapshots
+    # ------------------------------------------------------------------
     state = entries_to_state(final_entries)
     save_json_snapshot(POSITIONS_PATH, state, pretty=True)
     print(f"Wrote JSON snapshot to: {POSITIONS_PATH}")
     save_llm_snapshot(LLM_INPUT_PATH, state, compact_keys=True, drop_nulls=True, pretty=False)
     print(f"Wrote LLM input snapshot to: {LLM_INPUT_PATH}")
 
+    # ------------------------------------------------------------------
+    # Display
+    # ------------------------------------------------------------------
+    source_label = "CAMERA" if USE_CAMERA else f"IMAGE: {TEST_IMAGE_NAME}"
     cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
+    cv2.setWindowTitle("Result", f"Result [{source_label}]")
     cv2.imshow("Result", img_vis)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
