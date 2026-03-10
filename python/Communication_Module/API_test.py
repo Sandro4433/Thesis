@@ -238,12 +238,11 @@ def main():
 
         # ── Save & exit ───────────────────────────────────────────────────────
         if is_finish(user_input):
-            if pending_sequence is None:
-                print("No confirmed sequence yet. Confirm a proposal first, or keep chatting.")
-                continue
-            saved = save_sequence(pending_sequence)
-            print(f"\n✅  Sequence saved ({len(pending_sequence)} pairs) → {saved.resolve()}")
-            print(json.dumps(pending_sequence, indent=2, ensure_ascii=False))
+            if pending_sequence is not None:
+                saved = save_sequence(pending_sequence)
+                print(f"\n✅  Sequence saved ({len(pending_sequence)} pairs) → {saved.resolve()}")
+                print(json.dumps(pending_sequence, indent=2, ensure_ascii=False))
+            print("\n👋  Exiting planner.\n")
             return
 
         # ── Confirmation handling ─────────────────────────────────────────────

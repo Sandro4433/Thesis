@@ -3,6 +3,17 @@ import cv2
 import pyrealsense2 as rs
 
 
+def _try_set(sensor: rs.sensor, option: rs.option, value: float) -> None:
+    """
+    Set a RealSense sensor option if supported; otherwise ignore.
+    """
+    try:
+        if sensor.supports(option):
+            sensor.set_option(option, value)
+    except Exception:
+        pass
+
+
 def main():
     pipeline = rs.pipeline()
     config = rs.config()
@@ -16,8 +27,22 @@ def main():
     color_vsp = profile.get_stream(rs.stream.color).as_video_stream_profile()
     print("Active COLOR:", color_vsp.width(), "x", color_vsp.height())
 
-    # Warm up
-    for _ in range(30):
+    # Apply the same camera settings as vision_realsense.py
+    try:
+        dev = profile.get_device()
+        color_sensor = dev.first_color_sensor()
+
+        _try_set(color_sensor, rs.option.enable_auto_exposure,      0.0)    # manual exposure
+        _try_set(color_sensor, rs.option.enable_auto_white_balance, 0.0)    # manual white balance
+        _try_set(color_sensor, rs.option.exposure,                  50.0)   # µs
+        _try_set(color_sensor, rs.option.gain,                      64.0)
+        _try_set(color_sensor, rs.option.white_balance,             4500.0) # Kelvin
+
+    except Exception as e:
+        print(f"Warning: could not apply sensor settings: {e}")
+
+    # Warm up (5 frames, matching vision_realsense.py)
+    for _ in range(5):
         pipeline.wait_for_frames()
 
     print("Capturing frame...")
@@ -27,10 +52,11 @@ def main():
         pipeline.stop()
         raise RuntimeError("Could not get color frame.")
 
-    color_image = np.asanyarray(color_frame.get_data())
+    color_image = np.asanyarray(color_frame.get_data()).copy()
 
     # Save
     cv2.imwrite("image.png", color_image)
+    print("Saved image.png")
 
     # Display (scaled preview so it fits on screen)
     cv2.namedWindow("Color", cv2.WINDOW_NORMAL)
@@ -40,6 +66,7 @@ def main():
     cv2.waitKey(0)
     cv2.destroyAllWindows()
     pipeline.stop()
+
 
 if __name__ == "__main__":
     main()

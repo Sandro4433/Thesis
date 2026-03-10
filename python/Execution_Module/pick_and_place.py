@@ -5,7 +5,7 @@ def pick_and_place(
     home_name: str = "Home",
     approach_z_offset: float = -0.05,
     gripper_open_width: float = 0.075,
-    gripper_close_width: float = 0.06,
+    gripper_close_width: float = 0.05,
 ):
    
     # Home
