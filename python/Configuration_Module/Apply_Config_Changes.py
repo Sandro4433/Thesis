@@ -1,12 +1,15 @@
-# apply_changes.py
-# Loads llm_input.json + workspace_changes.json, applies the changes,
-# and saves the result as config.json in the same directory.
+# Apply_Config_Changes.py
+# Can be run standalone OR imported by API_Main.py.
+#
+# Standalone: reads baseline and changes from paths.py paths, saves config.json to Memory/.
+# Imported:   call apply_changes(scene_dict, changes_dict) directly.
 
 from __future__ import annotations
 
 from pathlib import Path
 import sys
 import json
+import copy
 from typing import Any, Dict
 
 # ── Project root setup ────────────────────────────────────────────────────────
@@ -16,30 +19,34 @@ if str(PROJECT_DIR) not in sys.path:
 
 from paths import LLM_INPUT_JSON, LLM_RESPONSE_JSON
 
-LLM_INPUT_PATH   = Path(LLM_INPUT_JSON.resolve())
-CHANGES_PATH     = Path(LLM_RESPONSE_JSON.resolve()).parent / "workspace_changes.json"
-CONFIG_OUT_PATH  = Path(LLM_RESPONSE_JSON.resolve()).parent / "config.json"
+LLM_INPUT_PATH  = Path(LLM_INPUT_JSON.resolve())
+CHANGES_PATH    = Path(LLM_RESPONSE_JSON.resolve()).parent / "workspace_changes.json"
+MEMORY_DIR      = PROJECT_DIR / "Memory"
+CONFIG_OUT_PATH = MEMORY_DIR / "config.json"
 
 
-# ── Apply logic ───────────────────────────────────────────────────────────────
+# ── Core apply function (importable) ─────────────────────────────────────────
 
 def apply_changes(
     scene: Dict[str, Any],
     changes: Dict[str, Dict[str, Any]],
 ) -> Dict[str, Any]:
     """
-    Applies workspace_changes.json onto the llm_input scene dict.
+    Applies a changes dict onto a scene dict and returns the updated scene.
 
     Lookup order per changed object name:
-      1. Top-level slot  (scene["slots"][name])
-      2. Top-level part  (scene["parts"][name])
-      3. Embedded part   (scene["slots"][slot]["child_part"] where child_part name matches)
+      1. Top-level slot  → scene["slots"][name]
+         - Role applies to the slot itself.
+         - Color/Size are redirected to the slot's child_part (if one exists).
+      2. Top-level part  → scene["parts"][name]
+         - Color/Size apply directly.
+      3. Embedded child_part → searches all slot["child_part"] for matching name
+         - Color/Size apply to the embedded part.
 
     Allowed attributes:
-      Slots : Role
+      Slots : Role, (Size/Color redirected to child_part)
       Parts : Color, Size
     """
-    import copy
     result = copy.deepcopy(scene)
 
     slots = result.get("slots", {})
@@ -54,10 +61,9 @@ def apply_changes(
             slot = slots[obj_name]
             for attr, val in attrs.items():
                 if attr == "Role":
-                    # Role belongs to the slot itself
                     slot[attr] = val
                 elif attr in ("Color", "Size"):
-                    # Part attributes — redirect to child_part if one exists
+                    # Part attributes — redirect to child_part
                     child = slot.get("child_part")
                     if isinstance(child, dict):
                         child[attr] = val
@@ -93,39 +99,34 @@ def apply_changes(
             not_found.append(obj_name)
 
     if not_found:
-        print(f"  WARNING: The following names were not found in the scene and were skipped:")
+        print("  WARNING: The following names were not found in the scene and were skipped:")
         for name in not_found:
             print(f"    - {name}")
 
     return result
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ── Standalone entry point ────────────────────────────────────────────────────
 
 def main() -> None:
-    # Load llm_input.json
     if not LLM_INPUT_PATH.exists():
         print(f"ERROR: LLM input file not found: {LLM_INPUT_PATH}")
         sys.exit(1)
-
-    scene = json.loads(LLM_INPUT_PATH.read_text(encoding="utf-8"))
-    print(f"Loaded scene:   {LLM_INPUT_PATH}")
-
-    # Load workspace_changes.json
     if not CHANGES_PATH.exists():
         print(f"ERROR: Changes file not found: {CHANGES_PATH}")
         sys.exit(1)
 
+    scene   = json.loads(LLM_INPUT_PATH.read_text(encoding="utf-8"))
     changes = json.loads(CHANGES_PATH.read_text(encoding="utf-8"))
+
+    print(f"Loaded scene:   {LLM_INPUT_PATH}")
     print(f"Loaded changes: {CHANGES_PATH}")
     total_attrs = sum(len(v) for v in changes.values())
     print(f"  → {len(changes)} object(s), {total_attrs} attribute change(s)")
 
-    # Apply
     updated = apply_changes(scene, changes)
 
-    # Save config.json
-    CONFIG_OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
     tmp = str(CONFIG_OUT_PATH) + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(updated, f, indent=2, ensure_ascii=False)
