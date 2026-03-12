@@ -9,6 +9,7 @@
       "Kit_2"
     ],
     "containers": [
+      "Container_1",
       "Container_3"
     ],
     "parts": [
@@ -20,6 +21,12 @@
       "Part_Red_Nr_3"
     ],
     "slots": [
+      "Container_1_Pos_1",
+      "Container_1_Pos_2",
+      "Container_1_Pos_3",
+      "Container_1_Pos_4",
+      "Container_1_Pos_5",
+      "Container_1_Pos_6",
       "Container_3_Pos_1",
       "Container_3_Pos_2",
       "Container_3_Pos_3",
@@ -38,6 +45,12 @@
     "Kit_0_Pos_1": "Kit_0",
     "Kit_0_Pos_2": "Kit_0",
     "Kit_0_Pos_3": "Kit_0",
+    "Container_1_Pos_1": "Container_1",
+    "Container_1_Pos_2": "Container_1",
+    "Container_1_Pos_3": "Container_1",
+    "Container_1_Pos_4": "Container_1",
+    "Container_1_Pos_5": "Container_1",
+    "Container_1_Pos_6": "Container_1",
     "Kit_2_Pos_1": "Kit_2",
     "Kit_2_Pos_2": "Kit_2",
     "Kit_2_Pos_3": "Kit_2",
@@ -51,39 +64,49 @@
   "predicates": {
     "at": [
       {
-        "part": "Part_Blue_Nr_3",
-        "slot": "Container_3_Pos_2"
-      },
-      {
-        "part": "Part_Blue_Nr_2",
-        "slot": "Container_3_Pos_3"
-      },
-      {
-        "part": "Part_Blue_Nr_1",
-        "slot": "Container_3_Pos_4"
+        "part": "Part_Red_Nr_3",
+        "slot": "Container_1_Pos_3"
       },
       {
         "part": "Part_Red_Nr_2",
-        "slot": "Kit_2_Pos_1"
-      },
-      {
-        "part": "Part_Red_Nr_3",
-        "slot": "Kit_2_Pos_2"
+        "slot": "Container_1_Pos_4"
       },
       {
         "part": "Part_Red_Nr_1",
-        "slot": "Kit_2_Pos_3"
+        "slot": "Container_1_Pos_5"
+      },
+      {
+        "part": "Part_Blue_Nr_2",
+        "slot": "Container_3_Pos_1"
+      },
+      {
+        "part": "Part_Blue_Nr_1",
+        "slot": "Container_3_Pos_2"
+      },
+      {
+        "part": "Part_Blue_Nr_3",
+        "slot": "Container_3_Pos_6"
       }
     ],
     "slot_empty": [
-      "Container_3_Pos_1",
+      "Container_1_Pos_1",
+      "Container_1_Pos_2",
+      "Container_1_Pos_6",
+      "Container_3_Pos_3",
+      "Container_3_Pos_4",
       "Container_3_Pos_5",
-      "Container_3_Pos_6",
       "Kit_0_Pos_1",
       "Kit_0_Pos_2",
-      "Kit_0_Pos_3"
+      "Kit_0_Pos_3",
+      "Kit_2_Pos_1",
+      "Kit_2_Pos_2",
+      "Kit_2_Pos_3"
     ],
     "role": [
+      {
+        "object": "Container_1",
+        "role": null
+      },
       {
         "object": "Container_3",
         "role": null
@@ -99,8 +122,16 @@
     ],
     "color": [
       {
-        "part": "Part_Blue_Nr_3",
-        "color": "blue"
+        "part": "Part_Red_Nr_3",
+        "color": "red"
+      },
+      {
+        "part": "Part_Red_Nr_2",
+        "color": "red"
+      },
+      {
+        "part": "Part_Red_Nr_1",
+        "color": "red"
       },
       {
         "part": "Part_Blue_Nr_2",
@@ -111,21 +142,21 @@
         "color": "blue"
       },
       {
-        "part": "Part_Red_Nr_2",
-        "color": "red"
-      },
-      {
-        "part": "Part_Red_Nr_3",
-        "color": "red"
-      },
-      {
-        "part": "Part_Red_Nr_1",
-        "color": "red"
+        "part": "Part_Blue_Nr_3",
+        "color": "blue"
       }
     ],
     "size": [
       {
-        "part": "Part_Blue_Nr_3",
+        "part": "Part_Red_Nr_3",
+        "size": "standard"
+      },
+      {
+        "part": "Part_Red_Nr_2",
+        "size": "standard"
+      },
+      {
+        "part": "Part_Red_Nr_1",
         "size": "standard"
       },
       {
@@ -137,15 +168,7 @@
         "size": "standard"
       },
       {
-        "part": "Part_Red_Nr_2",
-        "size": "standard"
-      },
-      {
-        "part": "Part_Red_Nr_3",
-        "size": "standard"
-      },
-      {
-        "part": "Part_Red_Nr_1",
+        "part": "Part_Blue_Nr_3",
         "size": "standard"
       }
     ],

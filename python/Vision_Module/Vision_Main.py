@@ -31,7 +31,6 @@ from Vision_Module.config import (
     REALSENSE_WARMUP_FRAMES,
 )
 
-from Vision_Module.vision_realsense import capture_color_frame
 from Vision_Module.vision_charuco import detect_board_homography, choose_origin_and_axes, draw_origin_and_axes
 from Vision_Module.vision_apriltag import create_detector, detect_tags
 from Vision_Module.pipeline import compute_tag_targets_and_annotate, targets_to_robot_entries
@@ -40,10 +39,10 @@ from Vision_Module.workspace_state import entries_to_state, save_json_snapshot, 
 
 # =============================================================================
 # IMAGE SOURCE TOGGLE
-# Set USE_CAMERA = True  → capture live from RealSense
+# Set USE_CAMERA = True  → capture live from RealSense (via subprocess worker)
 # Set USE_CAMERA = False → load a PNG from the Images folder
 # =============================================================================
-USE_CAMERA = False
+USE_CAMERA = True
 
 # Only used when USE_CAMERA = False.
 # Path is relative to this file's directory (Vision_Module/Images/).
@@ -53,6 +52,53 @@ TEST_IMAGE_NAME = "Experiment_2.png"
 
 # Path to the Images folder (sits next to this file)
 IMAGES_DIR = Path(__file__).resolve().parent / "Images"
+
+# Worker script lives next to this file
+_WORKER = Path(__file__).resolve().parent / "vision_capture_worker.py"
+
+
+def _capture_via_subprocess() -> "np.ndarray":
+    """
+    Spawn a clean Python process that imports ONLY pyrealsense2 + cv2 to
+    capture one frame and write it to a temp file.  This avoids the
+    heap-corruption crash caused by pyrealsense2 + libapriltag sharing a
+    process.
+    """
+    import subprocess
+    import tempfile
+    import numpy as np
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    tmp.close()
+    tmp_path = tmp.name
+
+    cmd = [
+        sys.executable,
+        str(_WORKER),
+        tmp_path,
+        str(REALSENSE_WIDTH),
+        str(REALSENSE_HEIGHT),
+        str(REALSENSE_FPS),
+        str(REALSENSE_WARMUP_FRAMES),
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Camera worker failed (exit {result.returncode}):\n"
+            f"  stdout: {result.stdout.strip()}\n"
+            f"  stderr: {result.stderr.strip()}"
+        )
+
+    img = cv2.imread(tmp_path)
+    Path(tmp_path).unlink(missing_ok=True)
+
+    if img is None:
+        raise RuntimeError(f"cv2.imread could not load temp frame: {tmp_path}")
+
+    print(f"Captured frame via subprocess: {img.shape[1]}x{img.shape[0]}")
+    return img
 
 
 def load_test_image(filename: str) -> "np.ndarray":
@@ -75,13 +121,8 @@ def main() -> None:
     # Acquire raw image
     # ------------------------------------------------------------------
     if USE_CAMERA:
-        print("Capturing from RealSense camera...")
-        img_raw = capture_color_frame(
-            width=REALSENSE_WIDTH,
-            height=REALSENSE_HEIGHT,
-            fps=REALSENSE_FPS,
-            warmup_frames=REALSENSE_WARMUP_FRAMES,
-        )
+        print("Capturing from RealSense camera (subprocess worker)...")
+        img_raw = _capture_via_subprocess()
     else:
         print(f"Using test image: {TEST_IMAGE_NAME}")
         img_raw = load_test_image(TEST_IMAGE_NAME)
