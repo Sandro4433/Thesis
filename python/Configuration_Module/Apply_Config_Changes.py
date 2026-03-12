@@ -1,16 +1,19 @@
 # Apply_Config_Changes.py
-# Can be run standalone OR imported by API_Main.py.
+# Applies a workspace_changes dict to the new PDDL-friendly positions.json.
 #
-# Applies workspace_changes.json to positions.json and saves it in-place.
+# Changes format (output by the LLM):
+# {
+#   "<receptacle_name>": {"role": "input"},        e.g. "Container_3"
+#   "<part_name>":       {"size": "large"},        e.g. "Part_Blue_Nr_1"
+#   "<part_name>":       {"color": "red"},
+#   "workspace":         {"operation_mode": "kitting", "batch_size": 2},
+#   "priority":          [{"color": "blue", "order": 1}, ...],
+#   "kit_recipe":        [{"kit": "Kit_0", "color": "blue", "quantity": 2}, ...],
+#   "part_compatibility":[{"part_color": "blue", "allowed_in": ["Kit_0"]}]
+# }
 #
-# Changes format:
-#   Role changes  → keyed by SLOT name   e.g. "Kit_0_Pos_1": {"Role": "output"}
-#   Size/Color    → keyed by PART name   e.g. "Part_Blue_Nr_3": {"Size": "large"}
-#
-# The script searches positions.json for each name and applies changes in-place.
-# Parent-child structure is never altered by this script — only attributes change.
-# Structural changes (moving parts between slots) are handled by apply_sequence_to_scene
-# in API_Main.py after robot execution.
+# Backward-compatibility: slot-level role keys (e.g. "Container_3_Pos_1")
+# are also accepted and translated to their parent receptacle.
 
 from __future__ import annotations
 
@@ -18,9 +21,8 @@ from pathlib import Path
 import sys
 import json
 import copy
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-# ── Project root setup ────────────────────────────────────────────────────────
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
@@ -31,93 +33,131 @@ POSITIONS_PATH = Path(POSITIONS_JSON.resolve())
 CHANGES_PATH   = Path(LLM_RESPONSE_JSON.resolve()).parent / "workspace_changes.json"
 
 
-# ── Core apply function (importable) ─────────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _parent_of(slot_name: str) -> str | None:
+    idx = slot_name.rfind("_Pos_")
+    return slot_name[:idx] if idx != -1 else None
+
+
+def _upsert_list(lst: List[Dict], key_field: str, key_val: Any,
+                 update: Dict[str, Any]) -> None:
+    """Update first matching entry in a list-of-dicts; append if not found."""
+    for item in lst:
+        if item.get(key_field) == key_val:
+            item.update(update)
+            return
+    lst.append({key_field: key_val, **update})
+
+
+# ── core apply function ───────────────────────────────────────────────────────
 
 def apply_changes(
-    scene: Dict[str, Any],
-    changes: Dict[str, Dict[str, Any]],
+    state: Dict[str, Any],
+    changes: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Applies a changes dict to a full positions.json-style scene dict.
-    Returns an updated deep copy. Does NOT modify the input.
+    Apply a changes dict to a PDDL-friendly state.
+    Returns an updated deep copy; does NOT modify the input.
 
-    Key lookup rules:
-      - If the key matches a slot name  → apply Role to that slot.
-      - If the key matches a part name  → find the part (in child_parts or
-        standalone parts) and apply Size / Color to it.
+    Special top-level keys:
+      "workspace"          → updates state["workspace"]
+      "priority"           → replaces state["predicates"]["priority"]
+      "kit_recipe"         → replaces state["predicates"]["kit_recipe"]
+      "part_compatibility" → replaces state["predicates"]["part_compatibility"]
 
-    Allowed attributes:
-      Slots  : Role  (null | "input" | "output")
-      Parts  : Size  (null | "large")
-               Color ("Blue" | "Red")
+    Object keys:
+      receptacle name (Kit_* / Container_*) → role update in predicates.role
+      slot name (*_Pos_*)                   → role update (translated to parent)
+      part name (Part_*)                    → size / color update in predicates
     """
-    result = copy.deepcopy(scene)
-    slots  = result.get("slots", {})
-    parts  = result.get("parts", {})
+    result = copy.deepcopy(state)
+    preds  = result.setdefault("predicates", {})
+    preds.setdefault("role",              [])
+    preds.setdefault("size",              [])
+    preds.setdefault("color",             [])
+    preds.setdefault("priority",          [])
+    preds.setdefault("kit_recipe",        [])
+    preds.setdefault("part_compatibility",[])
+    result.setdefault("workspace", {"operation_mode": None, "batch_size": None})
 
-    not_found: list[str] = []
+    not_found: List[str] = []
 
-    for obj_name, attrs in changes.items():
+    for key, value in changes.items():
 
-        # ── 1. Slot name → apply Role ─────────────────────────────────────────
-        if obj_name in slots:
-            for attr, val in attrs.items():
-                if attr == "Role":
-                    slots[obj_name]["Role"] = val
-                elif attr in ("Color", "Size"):
-                    # Convenience: if user accidentally keys by slot for part attrs,
-                    # redirect to child_part if one exists.
-                    child = slots[obj_name].get("child_part")
-                    if isinstance(child, dict):
-                        child[attr] = val
-                        print(f"  Note: '{attr}' on slot '{obj_name}' redirected to its child_part.")
-                    else:
-                        print(f"  WARNING: '{obj_name}' has no child_part — cannot set '{attr}', skipped.")
-                else:
-                    print(f"  WARNING: Unknown attribute '{attr}' for slot '{obj_name}' — skipped.")
+        # ── workspace-level attributes ────────────────────────────────────────
+        if key == "workspace" and isinstance(value, dict):
+            result["workspace"].update(value)
+            print(f"  workspace: {value}")
             continue
 
-        # ── 2. Part name → find in child_parts or standalone parts ────────────
-        found = False
+        # ── list-type predicate replacements ─────────────────────────────────
+        if key == "priority" and isinstance(value, list):
+            preds["priority"] = value
+            print(f"  priority: {value}")
+            continue
 
-        # Search child_parts in all slots
-        for slot in slots.values():
-            child = slot.get("child_part")
-            if isinstance(child, dict) and child.get("name") == obj_name:
-                for attr, val in attrs.items():
-                    if attr in ("Color", "Size"):
-                        child[attr] = val
-                    elif attr == "Role":
-                        print(f"  WARNING: Role is a slot attribute, not a part attribute — "
-                              f"skipped for '{obj_name}'.")
-                    else:
-                        print(f"  WARNING: Unknown attribute '{attr}' for part '{obj_name}' — skipped.")
-                found = True
-                break
+        if key == "kit_recipe" and isinstance(value, list):
+            preds["kit_recipe"] = value
+            print(f"  kit_recipe: {value}")
+            continue
 
-        if not found and obj_name in parts:
-            for attr, val in attrs.items():
-                if attr in ("Color", "Size"):
-                    parts[obj_name][attr] = val
-                elif attr == "Role":
-                    print(f"  WARNING: Role is a slot attribute, not a part attribute — "
-                          f"skipped for '{obj_name}'.")
+        if key == "part_compatibility" and isinstance(value, list):
+            preds["part_compatibility"] = value
+            print(f"  part_compatibility: {value}")
+            continue
+
+        if not isinstance(value, dict):
+            print(f"  WARNING: unrecognised change entry '{key}': {value!r} — skipped.")
+            continue
+
+        # ── receptacle role (direct: "Container_3": {"role": "input"}) ────────
+        all_receptacles = (
+            result.get("objects", {}).get("kits", []) +
+            result.get("objects", {}).get("containers", [])
+        )
+
+        if key in all_receptacles:
+            role_val = value.get("role")
+            _upsert_list(preds["role"], "object", key, {"role": role_val})
+            print(f"  role: {key} → {role_val}")
+            continue
+
+        # ── slot-level role (backward-compat: "Container_3_Pos_1": {"Role":…}) ─
+        parent = _parent_of(key)
+        if parent is not None and parent in all_receptacles:
+            role_val = value.get("role") or value.get("Role")
+            if role_val is not None or "role" in value or "Role" in value:
+                _upsert_list(preds["role"], "object", parent, {"role": role_val})
+                print(f"  role (via slot): {parent} → {role_val}")
+                continue
+
+        # ── part attributes ───────────────────────────────────────────────────
+        all_parts = result.get("objects", {}).get("parts", [])
+        if key in all_parts:
+            for attr, val in value.items():
+                attr_lower = attr.lower()
+                if attr_lower == "size":
+                    _upsert_list(preds["size"], "part", key, {"size": (val or "standard").lower()})
+                    print(f"  size: {key} → {val}")
+                elif attr_lower == "color":
+                    _upsert_list(preds["color"], "part", key, {"color": (val or "").lower()})
+                    print(f"  color: {key} → {val}")
                 else:
-                    print(f"  WARNING: Unknown attribute '{attr}' for part '{obj_name}' — skipped.")
-            found = True
+                    print(f"  WARNING: unknown part attribute '{attr}' for '{key}' — skipped.")
+            continue
 
-        if not found:
-            not_found.append(obj_name)
+        not_found.append(key)
 
     if not_found:
-        print("  WARNING: The following names were not found in the scene and were skipped:")
-        for name in not_found:
-            print(f"    - {name}")
+        print("  WARNING: the following keys were not found in the state and were skipped:")
+        for n in not_found:
+            print(f"    - {n}")
 
     return result
 
 
-# ── Standalone entry point ────────────────────────────────────────────────────
+# ── standalone entry point ────────────────────────────────────────────────────
 
 def main() -> None:
     if not POSITIONS_PATH.exists():
@@ -127,22 +167,19 @@ def main() -> None:
         print(f"ERROR: Changes file not found: {CHANGES_PATH}")
         sys.exit(1)
 
-    scene   = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+    state   = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
     changes = json.loads(CHANGES_PATH.read_text(encoding="utf-8"))
 
     print(f"Loaded positions: {POSITIONS_PATH}")
     print(f"Loaded changes:   {CHANGES_PATH}")
-    total_attrs = sum(len(v) for v in changes.values())
-    print(f"  → {len(changes)} object(s), {total_attrs} attribute change(s)")
 
-    updated = apply_changes(scene, changes)
+    updated = apply_changes(state, changes)
 
     tmp = str(POSITIONS_PATH) + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(updated, f, indent=2, ensure_ascii=False)
     Path(tmp).replace(POSITIONS_PATH)
-
-    print(f"Saved:            {POSITIONS_PATH}")
+    print(f"Saved: {POSITIONS_PATH}")
 
 
 if __name__ == "__main__":

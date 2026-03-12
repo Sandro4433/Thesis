@@ -32,18 +32,12 @@ CHANGES_BLOCK_RE  = re.compile(r"```changes\s*(.*?)\s*```",  re.DOTALL | re.IGNO
 # Valid attribute values
 VALID_ROLE  = {"input", "output", None}
 VALID_SIZE  = {None, "large"}
-VALID_COLOR = {"Blue", "Red"}
+VALID_COLOR = {"Blue", "Red", "blue", "red"}
 
 
 # ── Block parsing ─────────────────────────────────────────────────────────────
 
 def extract_sequence_block(text: str) -> List[List]:
-    """
-    Parses a ```sequence``` fenced block.
-    Format: JSON array of 2- or 3-element entries.
-      2 elements: [pick_name, place_name]              → standard size, gripper 0.05
-      3 elements: [pick_name, place_name, 0.06]        → large size, gripper 0.06
-    """
     m = SEQUENCE_BLOCK_RE.search(text or "")
     if not m:
         raise ValueError("No ```sequence``` block found.")
@@ -57,7 +51,7 @@ def extract_sequence_block(text: str) -> List[List]:
                 f"[pick_name, place_name, 0.06], got: {entry!r}"
             )
         if not isinstance(entry[0], str) or not isinstance(entry[1], str):
-            raise ValueError(f"Entry {i}: pick_name and place_name must be strings, got: {entry!r}")
+            raise ValueError(f"Entry {i}: pick_name and place_name must be strings.")
         if not entry[0].strip() or not entry[1].strip():
             raise ValueError(f"Entry {i}: names must not be empty.")
         if len(entry) == 3:
@@ -68,54 +62,71 @@ def extract_sequence_block(text: str) -> List[List]:
     return data
 
 
-def extract_changes_block(text: str) -> Dict[str, Dict[str, Any]]:
+def extract_changes_block(text: str) -> Dict[str, Any]:
     m = CHANGES_BLOCK_RE.search(text or "")
     if not m:
         raise ValueError("No ```changes``` block found.")
     data = json.loads(m.group(1).strip())
     if not isinstance(data, dict) or len(data) == 0:
         raise ValueError("Changes block must be a non-empty JSON object.")
+
     for obj_name, attrs in data.items():
         if not isinstance(obj_name, str) or not obj_name.strip():
             raise ValueError(f"Object name must be a non-empty string, got: {obj_name!r}")
+
+        # Special top-level keys are list/dict values, not attribute dicts
+        if obj_name in ("workspace", "priority", "kit_recipe", "part_compatibility"):
+            continue
+
         if not isinstance(attrs, dict) or len(attrs) == 0:
             raise ValueError(f"Attributes for '{obj_name}' must be a non-empty object.")
+
         for attr, val in attrs.items():
-            if attr == "Role" and val not in VALID_ROLE:
-                raise ValueError(f"'{obj_name}'.Role must be 'input' or 'output', got: {val!r}")
-            if attr == "Size" and val not in VALID_SIZE:
-                raise ValueError(f"'{obj_name}'.Size must be null or 'large', got: {val!r}")
-            if attr == "Color" and val not in VALID_COLOR:
-                raise ValueError(f"'{obj_name}'.Color must be 'Blue' or 'Red', got: {val!r}")
-            if attr not in ("Role", "Size", "Color"):
+            attr_lower = attr.lower()
+            if attr_lower == "role" and val not in VALID_ROLE:
+                raise ValueError(f"'{obj_name}'.role must be 'input', 'output', or null.")
+            if attr_lower == "size" and val not in VALID_SIZE:
+                raise ValueError(f"'{obj_name}'.size must be null or 'large'.")
+            if attr_lower == "color" and val not in VALID_COLOR:
+                raise ValueError(f"'{obj_name}'.color must be 'Blue' or 'Red'.")
+            if attr_lower not in ("role", "size", "color", "Role", "Size", "Color"):
                 raise ValueError(
                     f"'{obj_name}': unknown attribute '{attr}'. "
-                    f"Allowed: Role, Size, Color. Never use dotted paths like 'child_part.Size'."
+                    f"Allowed: role, size, color."
                 )
     return data
 
 
 def merge_changes(
-    accumulated: Dict[str, Dict[str, Any]],
-    new_block: Dict[str, Dict[str, Any]],
-) -> Dict[str, Dict[str, Any]]:
-    merged = {obj: dict(attrs) for obj, attrs in accumulated.items()}
-    for obj_name, attrs in new_block.items():
-        if obj_name not in merged:
-            merged[obj_name] = {}
-        merged[obj_name].update(attrs)
+    accumulated: Dict[str, Any],
+    new_block: Dict[str, Any],
+) -> Dict[str, Any]:
+    merged = {k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v)
+               for k, v in accumulated.items()}
+    for key, value in new_block.items():
+        if key in ("priority", "kit_recipe", "part_compatibility") and isinstance(value, list):
+            merged[key] = value          # list keys replace entirely
+        elif key == "workspace" and isinstance(value, dict):
+            merged.setdefault("workspace", {})
+            merged["workspace"].update(value)
+        elif isinstance(value, dict):
+            if key not in merged or not isinstance(merged[key], dict):
+                merged[key] = {}
+            merged[key].update(value)
+        else:
+            merged[key] = value
     return merged
 
 
 # ── File saving ───────────────────────────────────────────────────────────────
 
-def save_sequence(sequence: List[List[str]]) -> Path:
+def save_sequence(sequence: List[List]) -> Path:
     SEQUENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
     SEQUENCE_PATH.write_text(json.dumps(sequence, indent=2, ensure_ascii=False), encoding="utf-8")
     return SEQUENCE_PATH
 
 
-def save_changes(changes: Dict[str, Dict[str, Any]]) -> Path:
+def save_changes(changes: Dict[str, Any]) -> Path:
     CHANGES_PATH.parent.mkdir(parents=True, exist_ok=True)
     CHANGES_PATH.write_text(json.dumps(changes, indent=2, ensure_ascii=False), encoding="utf-8")
     return CHANGES_PATH
@@ -129,8 +140,6 @@ def chat(client: OpenAI, messages: List[Dict[str, str]], temperature: float = 0.
 
 
 def _contains_word(text: str, words) -> bool:
-    """True if any of the given words appears as a whole word in text."""
-    import re
     for w in words:
         if re.search(r'\b' + re.escape(w) + r'\b', text):
             return True
@@ -159,43 +168,154 @@ def is_no(text: str) -> bool:
     ]) or t == "n"
 
 
-def is_reconfig_request(text: str) -> bool:
-    """Detect when user agrees to switch to reconfiguration mode."""
-    t = text.strip().lower()
-    return _contains_word(t, [
-        "yes", "ok", "okay", "sure", "switch", "reconfigure", "reconfig", "change", "fix", "correct",
-    ]) or any(x in t for x in ["go ahead"]) or t == "y"
+# ── Scene helpers (new PDDL-friendly structure) ───────────────────────────────
 
-
-# ── Scene pre-processing ──────────────────────────────────────────────────────
-
-def slim_scene(scene: dict) -> dict:
+def slim_scene(state: dict) -> dict:
     """
-    Produce a slim scene for the LLM from positions.json.
-    Strips pos, quat, orientation — but KEEPS child_part.name so the LLM
-    can reference parts by their real name in sequence and changes blocks.
-    """
-    SLOT_KEEP  = {"Role", "child_part"}
-    CHILD_KEEP = {"name", "Color", "Size"}
-    PART_KEEP  = {"Color", "Size"}
+    Produce the LLM-facing view from the new PDDL-friendly positions.json.
 
-    out: dict = {}
-    if "slots" in scene:
-        out["slots"] = {}
-        for slot_name, slot in scene["slots"].items():
-            s = {k: v for k, v in slot.items() if k in SLOT_KEEP}
-            cp = slot.get("child_part")
-            if isinstance(cp, dict):
-                s["child_part"] = {k: v for k, v in cp.items() if k in CHILD_KEEP}
-            else:
-                s["child_part"] = None
-            out["slots"][slot_name] = s
-    if "parts" in scene:
-        out["parts"] = {
-            k: {attr: v for attr, v in p.items() if attr in PART_KEEP}
-            for k, p in scene["parts"].items()
+    Returns:
+    {
+        "workspace": {"operation_mode": ..., "batch_size": ...},
+        "slots": {
+            "Kit_0_Pos_1": {
+                "role": "output",          ← propagated from parent receptacle
+                "child_part": null
+            },
+            "Container_3_Pos_1": {
+                "role": "input",
+                "child_part": {"name": "Part_Blue_Nr_1", "color": "blue", "size": "large"}
+            }
+        },
+        "parts": {}                        ← standalone parts (not in a slot)
+    }
+    """
+    preds        = state.get("predicates", {})
+    slot_belongs = state.get("slot_belongs_to", {})
+    objs         = state.get("objects", {})
+
+    # role per receptacle
+    role_map: Dict[str, Optional[str]] = {
+        e["object"]: e.get("role")
+        for e in preds.get("role", [])
+    }
+
+    # part attributes
+    color_map = {e["part"]: e.get("color") for e in preds.get("color", [])}
+    size_map  = {e["part"]: e.get("size")  for e in preds.get("size",  [])}
+
+    # part → slot mapping
+    part_in_slot: Dict[str, str] = {
+        e["part"]: e["slot"] for e in preds.get("at", [])
+    }
+
+    # build slot view
+    slots_view: Dict[str, Any] = {}
+    for slot_name in objs.get("slots", []):
+        parent = slot_belongs.get(slot_name)
+        role   = role_map.get(parent) if parent else None
+        slots_view[slot_name] = {"role": role, "child_part": None}
+
+    # embed parts into their slots
+    for part_name, slot_name in part_in_slot.items():
+        if slot_name not in slots_view:
+            continue
+        slots_view[slot_name]["child_part"] = {
+            "name":  part_name,
+            "color": color_map.get(part_name),
+            "size":  size_map.get(part_name),
         }
-    return out
+
+    # standalone parts (in objects.parts but not in any slot)
+    in_slot_set = set(part_in_slot.keys())
+    parts_view: Dict[str, Any] = {
+        p: {"color": color_map.get(p), "size": size_map.get(p)}
+        for p in objs.get("parts", [])
+        if p not in in_slot_set
+    }
+
+    return {
+        "workspace": state.get("workspace", {"operation_mode": None, "batch_size": None}),
+        "slots":     slots_view,
+        "parts":     parts_view,
+    }
+
+
+def apply_sequence_to_scene(state: dict, sequence: list) -> dict:
+    """
+    Update the PDDL-friendly state after the robot has executed a sequence.
+    For each [pick_name, place_name, ...]:
+      - Removes (part, source_slot) from predicates.at
+      - Adds source_slot to predicates.slot_empty
+      - Removes dest_slot from predicates.slot_empty
+      - Adds (part, dest_slot) to predicates.at
+      - Updates metric[part] position to match metric[dest_slot]
+    Returns an updated deep copy.
+    """
+    import copy
+    state = copy.deepcopy(state)
+    preds = state.setdefault("predicates", {})
+    metric = state.setdefault("metric", {})
+
+    at_list:    List[Dict] = preds.setdefault("at", [])
+    empty_list: List[str]  = preds.setdefault("slot_empty", [])
+
+    for entry in sequence:
+        pick_name  = entry[0]   # part name
+        place_name = entry[1]   # destination slot name
+
+        # find which slot the part is currently in
+        source_slot: Optional[str] = None
+        for item in at_list:
+            if item["part"] == pick_name:
+                source_slot = item["slot"]
+                break
+
+        if source_slot is None:
+            print(f"⚠  apply_sequence: '{pick_name}' not found in predicates.at — skipping.")
+            continue
+
+        if place_name not in {e["slot"] for e in at_list} | set(empty_list):
+            print(f"⚠  apply_sequence: destination slot '{place_name}' unknown — skipping.")
+            continue
+
+        # update predicates.at
+        at_list[:] = [i for i in at_list if i["part"] != pick_name]
+        at_list.append({"part": pick_name, "slot": place_name})
+
+        # update slot_empty
+        if source_slot not in empty_list:
+            empty_list.append(source_slot)
+        if place_name in empty_list:
+            empty_list.remove(place_name)
+
+        # update metric for the moved part
+        dest_metric = metric.get(place_name, {})
+        if dest_metric and pick_name in metric:
+            for key in ("pos", "quat", "orientation"):
+                if key in dest_metric:
+                    metric[pick_name][key] = dest_metric[key]
+
+    return state
+
+
+# ── Config application helper ─────────────────────────────────────────────────
+
+def _apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
+    from Configuration_Module.Apply_Config_Changes import apply_changes  # type: ignore
+
+    if not POSITIONS_PATH.exists():
+        print(f"⚠  positions.json not found at {POSITIONS_PATH.resolve()} — cannot apply changes.")
+        return
+
+    scene   = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+    updated = apply_changes(scene, accumulated_changes)
+
+    tmp = str(POSITIONS_PATH) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(updated, f, indent=2, ensure_ascii=False)
+    Path(tmp).replace(POSITIONS_PATH)
+    print(f"✅  positions.json updated → {POSITIONS_PATH.resolve()}\n")
 
 
 # ── System prompts ────────────────────────────────────────────────────────────
@@ -216,36 +336,41 @@ _CHANGES_BLOCK_RULES = """\
 OUTPUT BLOCK — WORKSPACE CHANGES
 ──────────────────────────────────────────────────────────────
 Output ONLY the attributes that are actually changing — not the full scene.
-If an attribute is changed more than once, only the latest value will be kept.
 
 ```changes
 {
-  "<object_name>": {"<attribute>": <value>},
-  "<object_name>": {"<attribute>": <value>, "<attribute>": <value>}
+  "<receptacle_or_part_name>": {"<attribute>": <value>}
 }
 ```
 
-Allowed attributes and values:
-  Role  (slots only) : "input" | "output" | null
-  Size  (parts only) : null | "large"
-  Color (parts only) : "Blue" | "Red"
+Allowed keys and values:
+  RECEPTACLE name (Kit_*, Container_*)   → "role": "input" | "output" | null
+  PART name (Part_*)                     → "size": null | "large"
+                                         → "color": "Blue" | "Red"
+  "workspace"                            → {"operation_mode": "sorting"|"kitting", "batch_size": N}
+  "priority"                             → [{"color": "blue", "order": 1}, ...]
+  "kit_recipe"                           → [{"kit": "Kit_0", "color": "blue", "quantity": 2}, ...]
+  "part_compatibility"                   → [{"part_color": "blue", "allowed_in": ["Kit_0"]}, ...]
 
 CRITICAL FORMAT RULES:
-- For Role changes   → use the SLOT name as key  (e.g. "Kit_0_Pos_1")
-- For Size/Color changes → use the PART name as key  (e.g. "Part_Blue_Nr_3")
-  The part name is the "name" field inside child_part in the INPUT JSON.
-  For standalone parts it is the top-level key in "parts".
-- <attribute> must be EXACTLY one of: Role, Size, Color — nothing else.
-- NEVER use dotted paths or construct names. Use verbatim names from the INPUT JSON.
-- NEVER output the full scene JSON.
-- null means reset to default (no size / no role).
+- Use the RECEPTACLE name (e.g. "Container_3", "Kit_0") for role changes,
+  NOT individual slot names.
+- Use the PART name (e.g. "Part_Blue_Nr_1") for size/color changes.
+- Never invent names. Use verbatim names from the INPUT JSON.
+- null means reset to default.
 
 Example:
 ```changes
 {
-  "Kit_0_Pos_1": {"Role": "output"},
-  "Part_Blue_Nr_3": {"Size": "large"},
-  "Part_Red_Nr_1": {"Color": "Red", "Size": null}
+  "Container_3": {"role": "input"},
+  "Kit_0": {"role": "output"},
+  "Part_Blue_Nr_1": {"size": "large"},
+  "workspace": {"operation_mode": "kitting"},
+  "kit_recipe": [
+    {"kit": "Kit_0", "color": "blue", "quantity": 2},
+    {"kit": "Kit_0", "color": "red",  "quantity": 1}
+  ],
+  "priority": [{"color": "blue", "order": 1}, {"color": "red", "order": 2}]
 }
 ```
 """
@@ -257,31 +382,30 @@ def build_system_prompt(mode: str) -> str:
 You are a robot workspace configurator. Your job is to track user-specified
 attribute changes to workspace objects and output a structured changes block.
 
-You will receive an INPUT JSON describing the current scene:
+You will receive an INPUT JSON describing the current scene with:
+  - "workspace": current operation_mode and batch_size.
   - "slots": named workspace positions (Kit_* or Container_*).
-    A slot with a non-null "child_part" means a part is sitting there.
-    child_part has a "name" field — use this name when changing Size or Color.
-    Slots have: Role (null | "input" | "output"), child_part {name, Color, Size}.
-  - "parts": standalone parts not in any slot (Part_*).
-    Parts have: Color ("Blue" | "Red"), Size (null | "large").
+    Each slot has: role (null|"input"|"output"), child_part {name, color, size}.
+    The role shown is the role of the parent receptacle (container or kit),
+    applied to all its slots.
+  - "parts": standalone parts not currently in any slot.
 
 ──────────────────────────────────────────────────────────────
 WORKFLOW
 ──────────────────────────────────────────────────────────────
-1. Give a SHORT scene summary: slots with their current Role/Size, parts with Color/Size.
+1. Give a SHORT scene summary: receptacles with their role, parts with color/size,
+   current operation_mode.
 2. Ask what attributes the user wants to change.
-3. If truly ambiguous, ask ONE focused clarification question. Otherwise skip straight to step 4.
-4. Once you understand the request: output the changes block immediately and ask "Confirm?"
-   Do NOT ask "is that correct?" or "just to confirm" before proposing the block.
-   The block IS the confirmation step — one round only.
+3. If truly ambiguous, ask ONE focused clarification question. Otherwise go to step 4.
+4. Once you understand the request: output the changes block and ask "Confirm?"
 
-""" + _CHANGES_BLOCK_RULES + """
+""" + _CHANGES_BLOCK_RULES + """\
+
 ──────────────────────────────────────────────────────────────
 CONFIRMATION
 ──────────────────────────────────────────────────────────────
 - After proposing changes, always ask: "Confirm?"
-- If confirmed → changes are saved and applied to produce a new config.json.
-  Ask if there is more to change.
+- If confirmed → changes are saved. Ask if there is more to change.
 - If rejected → discard and ask what to change.
 
 """ + _COMMON_RULES
@@ -289,60 +413,43 @@ CONFIRMATION
     else:  # motion
         return """\
 You are a robot task planner. Your job is to translate natural-language task
-descriptions into an ordered sequence of pick-and-place actions for a robot arm.
+descriptions into an ordered sequence of pick-and-place actions.
 
-You will receive an INPUT JSON describing the current scene:
+You will receive an INPUT JSON describing the current scene with:
+  - "workspace": current operation_mode and batch_size.
   - "slots": named workspace positions (Kit_* or Container_*).
-    A slot with a non-null "child_part" means a part is sitting there.
-    The child_part has a "name" field (e.g. "Part_Blue_Nr_3") — this is the PICK target.
-    The slot key itself (e.g. "Container_3_Pos_2") is the PLACE target only.
-    Slots have: Role (null | "input" | "output"), child_part.
-  - "parts": standalone parts not in any slot (Part_*).
-    Parts have: Color ("Blue" | "Red"), Size (null | "large").
+    Each slot has: role (null|"input"|"output"), child_part {name, color, size}.
+  - "parts": standalone parts not in any slot.
 
 ──────────────────────────────────────────────────────────────
 ROLE RESTRICTIONS — ENFORCE STRICTLY
 ──────────────────────────────────────────────────────────────
-Every slot and embedded child_part may have a Role attribute:
-  - Role = "input"  → the slot/part CAN be picked FROM, CANNOT be placed INTO.
-  - Role = "output" → the slot/part CAN be placed INTO, CANNOT be picked FROM.
-  - Role = null     → no restriction; can be used for either pick or place.
+  - role = "input"  → CAN be picked FROM, CANNOT be placed INTO.
+  - role = "output" → CAN be placed INTO, CANNOT be picked FROM.
+  - role = null     → no restriction; either pick or place is allowed.
 
-Before proposing any sequence, check every pick and place target against these rules.
-If a conflict is found:
-  1. Do NOT output a sequence block.
-  2. Clearly explain which object has a conflicting role and why it blocks the action.
-  3. Tell the user that the role must be changed via workspace reconfiguration first.
-  4. Ask: "Would you like to switch to reconfiguration mode to fix this?"
-  5. If the user says yes → output exactly this marker on its own line:
-       SWITCH_TO_RECONFIG
-     The system will automatically return to the mode selection menu.
+If a conflict exists, do NOT output a sequence. Explain the conflict and ask:
+"Would you like to switch to reconfiguration mode to fix this?"
+If yes → output exactly: SWITCH_TO_RECONFIG
 
 ──────────────────────────────────────────────────────────────
 GRIPPER WIDTH
 ──────────────────────────────────────────────────────────────
-The gripper close width depends on the Size of the object being PICKED:
-  - Size = null  (standard) → gripper_close_width = 0.05
-  - Size = "large"          → gripper_close_width = 0.06
-
-The gripper open width is always 0.075 and must NOT be included in the sequence.
+  - size = null (standard) → gripper_close_width = 0.05 (omit from sequence)
+  - size = "large"         → gripper_close_width = 0.06 (include as 3rd element)
 
 ──────────────────────────────────────────────────────────────
 WORKFLOW
 ──────────────────────────────────────────────────────────────
-1. Give a SHORT scene summary: part counts per color, empty slots, roles.
-2. Ask what task the user wants ("sort", "move", "assemble", etc.).
-3. Check role restrictions for all involved objects BEFORE proposing anything.
-4. If truly ambiguous, ask ONE focused clarification question. Otherwise skip straight to step 5.
-5. Once you understand the request: output the sequence block immediately and ask "Confirm?"
-   Do NOT ask "is that correct?" or "just to confirm" before proposing the block.
-   The block IS the confirmation step — one round only.
+1. Give a SHORT scene summary: part counts, roles, operation_mode.
+2. Ask what task the user wants.
+3. Check roles for all objects BEFORE proposing anything.
+4. Ask ONE clarification if truly ambiguous. Otherwise go to step 5.
+5. Output the sequence block and ask "Confirm?"
 
 ──────────────────────────────────────────────────────────────
 OUTPUT BLOCK — SEQUENCE
 ──────────────────────────────────────────────────────────────
-Write a short plain-text summary, then:
-
 ```sequence
 [
   ["<pick_name>", "<place_name>"],
@@ -350,24 +457,11 @@ Write a short plain-text summary, then:
 ]
 ```
 
-GRIPPER WIDTH — only add the 3rd element when the picked object has Size = "large":
-  - Size = null  (standard) → 2 elements: ["pick", "place"]          ← no width needed
-  - Size = "large"          → 3 elements: ["pick", "place", 0.06]    ← must include 0.06
+pick_name  = part name from child_part.name  (e.g. "Part_Blue_Nr_1")
+           = standalone part key             (e.g. "Part_Red_Nr_2")
+place_name = destination slot key           (e.g. "Kit_0_Pos_1")
 
-Examples:
-  ["Part_Red_Nr_1",  "Kit_0_Pos_1"]        ← Red part, standard size
-  ["Part_Blue_Nr_1", "Kit_0_Pos_2", 0.06]  ← Blue part, large → include 0.06
-
-Other rules:
-- Parts in slots   → pick = the "name" field inside child_part  (e.g. "Part_Blue_Nr_1")
-                     NEVER use the slot name or append "_child_part" — the slot name is the PLACE, not the pick.
-                     WRONG: "Container_3_Pos_2_child_part"  ← does not exist, will crash the robot
-                     CORRECT: "Part_Blue_Nr_3"              ← the actual name field from child_part
-- Standalone parts → pick = top-level key in "parts"        (e.g. "Part_Blue_Nr_3")
-- Destination      → place = slot key                       (e.g. "Kit_0_Pos_1")
-- NEVER use coordinates, invented names, or slot names as pick targets.
-- NEVER include a sequence with role violations — explain and ask about reconfiguration instead.
-- If no valid empty destination slots exist, say so before proposing anything.
+NEVER use slot names as pick targets. NEVER invent names.
 
 ──────────────────────────────────────────────────────────────
 CONFIRMATION
@@ -379,10 +473,9 @@ CONFIRMATION
 """ + _COMMON_RULES
 
 
-# ── Pre-session setup (mode + source selection) ───────────────────────────────
+# ── Pre-session setup ─────────────────────────────────────────────────────────
 
 def _pick_from_list(prompt: str, options: List[str]) -> int:
-    """Print numbered options and return the 0-based index of the user's choice."""
     print(prompt)
     for i, opt in enumerate(options, 1):
         print(f"  [{i}] {opt}")
@@ -394,13 +487,16 @@ def _pick_from_list(prompt: str, options: List[str]) -> int:
 
 
 def select_mode() -> str:
-    """Ask the user what they want to do. Returns 'reconfig', 'motion', 'execute', or 'exit'."""
+    from Vision_Module.config import USE_PDDL_PLANNER  # type: ignore
+    planner_label = "PDDL planner" if USE_PDDL_PLANNER else "LLM dialogue"
+
     print("\n" + "=" * 60)
     print("  Robot Configuration")
+    print(f"  Sequence planner: {planner_label}  (toggle USE_PDDL_PLANNER in config.py)")
     print("=" * 60)
     idx = _pick_from_list("\nWhat do you want to do?", [
-        "Workspace reconfiguration  (change slot/part attributes)",
-        "Motion sequence planning   (pick-and-place task)",
+        "Workspace reconfiguration  (change attributes, roles, recipes)",
+        f"Motion sequence planning   ({planner_label})",
         "Execute robot motion       (run current sequence.json)",
         "Exit",
     ])
@@ -408,132 +504,33 @@ def select_mode() -> str:
 
 
 def select_scene() -> dict:
-    """
-    Ask the user which scene to use as context for the LLM.
-    Always returns a slim version of the chosen scene (pos/quat stripped, names kept).
-    Options:
-      [1] Live vision — runs vision module → fresh positions.json
-      [2+] Load positions.json directly (already up to date after prior session)
-    The robot always uses positions.json for motion; this only affects what the LLM sees.
-    """
     options = [
         "Live vision  (capture new image with camera)",
         f"Current positions.json  ({POSITIONS_PATH})",
     ]
-
     idx = _pick_from_list("\nWhich scene do you want to use?", options)
 
     if idx == 0:
         print("\nStarting vision module …")
-        from Vision_Module.Vision_Main import main as vision_main
+        from Vision_Module.Vision_Main import main as vision_main  # type: ignore
         vision_main()
         if not POSITIONS_PATH.exists():
             print(f"ERROR: Vision module did not produce {POSITIONS_PATH}")
             sys.exit(1)
-        print(f"Loaded fresh scene from vision.")
+        print("Loaded fresh scene from vision.")
     else:
         if not POSITIONS_PATH.exists():
             print(f"ERROR: positions.json not found at {POSITIONS_PATH.resolve()}")
             sys.exit(1)
         print(f"Loaded scene from: {POSITIONS_PATH}")
 
-    scene = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
-    return slim_scene(scene)
+    state = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+    return slim_scene(state)
 
 
-# ── Config application helper ─────────────────────────────────────────────────
-
-def _apply_and_save_config(
-    accumulated_changes: Dict[str, Dict[str, Any]],
-) -> None:
-    """Apply accumulated changes to positions.json and save it in-place."""
-    from Configuration_Module.Apply_Config_Changes import apply_changes
-
-    if not POSITIONS_PATH.exists():
-        print(f"⚠  positions.json not found at {POSITIONS_PATH.resolve()} — cannot apply changes.")
-        return
-
-    scene   = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
-    updated = apply_changes(scene, accumulated_changes)
-
-    tmp = str(POSITIONS_PATH) + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(updated, f, indent=2, ensure_ascii=False)
-    Path(tmp).replace(POSITIONS_PATH)
-    print(f"✅  positions.json updated → {POSITIONS_PATH.resolve()}\n")
-
-
-# ── Post-execution scene update ───────────────────────────────────────────────
-
-def apply_sequence_to_scene(scene: dict, sequence: list) -> dict:
-    """
-    Apply a completed pick-and-place sequence to a scene dict.
-    For each [pick_name, place_name, ...]:
-      - Finds the slot whose child_part.name == pick_name → clears it to null
-        (or removes from standalone parts if it was there)
-      - Moves that child_part object into the destination slot,
-        updating its pos/quat/orientation to match the slot it now lives in.
-    Returns a deep copy of the updated scene.
-    """
-    import copy
-    scene = copy.deepcopy(scene)
-    slots = scene.get("slots", {})
-    parts = scene.get("parts", {})
-
-    for entry in sequence:
-        pick_name  = entry[0]
-        place_name = entry[1]
-
-        # ── Locate the part ───────────────────────────────────────────────────
-        part_obj    = None
-        source_slot = None
-
-        for slot_name, slot in slots.items():
-            cp = slot.get("child_part")
-            if isinstance(cp, dict) and cp.get("name") == pick_name:
-                part_obj    = copy.deepcopy(cp)
-                source_slot = slot_name
-                break
-
-        if part_obj is None and pick_name in parts:
-            part_obj = copy.deepcopy(parts[pick_name])
-            part_obj.setdefault("name", pick_name)
-
-        if part_obj is None:
-            print(f"⚠  apply_sequence_to_scene: '{pick_name}' not found — skipping.")
-            continue
-
-        if place_name not in slots:
-            print(f"⚠  apply_sequence_to_scene: slot '{place_name}' not found — skipping.")
-            continue
-
-        # ── Remove from source ────────────────────────────────────────────────
-        if source_slot:
-            slots[source_slot]["child_part"] = None
-        elif pick_name in parts:
-            del parts[pick_name]
-
-        # ── Update part pose to match destination slot ────────────────────────
-        dest = slots[place_name]
-        for key in ("pos", "quat", "orientation"):
-            if key in dest:
-                part_obj[key] = dest[key]
-
-        # ── Place into destination slot ───────────────────────────────────────
-        slots[place_name]["child_part"] = part_obj
-
-    return scene
-
-
-
+# ── Main session loop ─────────────────────────────────────────────────────────
 
 def run_session(client: OpenAI, mode: str) -> None:
-    """
-    Runs one full mode session (reconfig, motion, or execute).
-    For 'execute': calls Robot_Main directly and returns.
-    For reconfig/motion: all confirmed changes are accumulated in memory and
-    only written to disk when the user types 'done'.
-    """
 
     # ── Option 3: Execute robot motion ────────────────────────────────────────
     if mode == "execute":
@@ -542,31 +539,35 @@ def run_session(client: OpenAI, mode: str) -> None:
             print("   Plan a motion sequence first (option 2).\n")
             return
 
-        # ── Load sequence ─────────────────────────────────────────────────────
         sequence = json.loads(SEQUENCE_PATH.read_text(encoding="utf-8"))
         print(f"\n▶  Executing {len(sequence)} step(s) from: {SEQUENCE_PATH.resolve()}")
-        print("   Robot is running — no input accepted until motion is complete.\n")
 
-        # ── Execute (blocking — user cannot interact) ─────────────────────────
-        from Execution_Module.Robot_Main import main as robot_main
+        from Execution_Module.Robot_Main import main as robot_main  # type: ignore
         robot_main()
         print("\n── Execution complete. ──\n")
 
-        # ── Update positions.json to reflect what the robot just did ──────────
         if not POSITIONS_PATH.exists():
-            print(f"⚠  positions.json not found — cannot update after execution.")
+            print("⚠  positions.json not found — cannot update after execution.")
             return
 
-        scene   = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
-        updated = apply_sequence_to_scene(scene, sequence)
+        state   = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+        updated = apply_sequence_to_scene(state, sequence)
 
         tmp = str(POSITIONS_PATH) + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(updated, f, indent=2, ensure_ascii=False)
         Path(tmp).replace(POSITIONS_PATH)
-        print(f"✅  positions.json updated with post-execution state → {POSITIONS_PATH.resolve()}\n")
+        print(f"✅  positions.json updated → {POSITIONS_PATH.resolve()}\n")
         return
 
+    # ── Option 2 (PDDL path): skip LLM dialogue, run planner directly ─────────
+    if mode == "motion":
+        from Vision_Module.config import USE_PDDL_PLANNER  # type: ignore
+        if USE_PDDL_PLANNER:
+            _run_pddl_sequence()
+            return
+
+    # ── Options 1 & 2 (LLM path) ─────────────────────────────────────────────
     scene = select_scene()
 
     messages: List[Dict[str, str]] = [
@@ -575,7 +576,7 @@ def run_session(client: OpenAI, mode: str) -> None:
             "role": "user",
             "content": (
                 "INPUT SCENE JSON (sole source of truth — use these names verbatim):\n"
-                + json.dumps(slim_scene(scene), indent=2, ensure_ascii=False)
+                + json.dumps(scene, indent=2, ensure_ascii=False)
             ),
         },
         {
@@ -584,126 +585,96 @@ def run_session(client: OpenAI, mode: str) -> None:
         },
     ]
 
-    pending_sequence: Optional[List[List[str]]] = None
-    pending_changes:  Optional[Dict[str, Dict[str, Any]]] = None
-    # All confirmed changes for this session — only written to disk on 'done'
-    accumulated_changes: Dict[str, Dict[str, Any]] = {}
+    pending_sequence: Optional[List[List]] = None
+    pending_changes:  Optional[Dict[str, Any]] = None
+    accumulated_changes: Dict[str, Any] = {}
 
     mode_label = "Reconfiguration" if mode == "reconfig" else "Motion Sequence"
     print(f"\n── Mode: {mode_label} ──\n")
 
     while True:
-        # ── LLM turn ──────────────────────────────────────────────────────────
         assistant_text = chat(client, messages)
         print(f"\nASSISTANT:\n{assistant_text}\n")
         messages.append({"role": "assistant", "content": assistant_text})
 
-        # Detect role-conflict redirect → return to outer loop (mode selection)
         if "SWITCH_TO_RECONFIG" in assistant_text:
-            print("  [Role conflict detected — returning to mode selection for reconfiguration.]\n")
-            print("── Returning to main menu ──\n")
+            print("  [Role conflict — returning to mode selection.]\n")
             return
 
-        # Detect sequence proposal
         try:
             pending_sequence = extract_sequence_block(assistant_text)
-            print(f"  [Sequence proposal detected: {len(pending_sequence)} step(s)]\n")
+            print(f"  [Sequence proposal: {len(pending_sequence)} step(s)]\n")
         except Exception as e:
             if "```sequence" in (assistant_text or ""):
-                print(f"  [WARNING: sequence block found but failed to parse — {e}]")
-                print(f"  [Asking LLM to correct its output format …]\n")
+                print(f"  [WARNING: sequence block parse error — {e}]")
                 messages.append({
                     "role": "user",
                     "content": (
-                        "Your sequence block failed to parse with this error: " + str(e) + "\n"
-                        "Each entry must be 2 or 3 elements:\n"
-                        "  [\"pick\", \"place\"]        ← standard size (no width needed)\n"
-                        "  [\"pick\", \"place\", 0.06]  ← large size only\n"
-                        "Please rewrite the sequence block with the correct format."
+                        f"Your sequence block failed to parse: {e}\n"
+                        "Each entry must be [\"pick\", \"place\"] or [\"pick\", \"place\", 0.06].\n"
+                        "Please rewrite the sequence block."
                     ),
                 })
                 continue
 
-        # Detect changes proposal
         try:
             pending_changes = extract_changes_block(assistant_text)
-            objs  = len(pending_changes)
-            attrs = sum(len(v) for v in pending_changes.values())
-            print(f"  [Changes proposal detected: {attrs} attribute(s) across {objs} object(s)]\n")
+            attrs = sum(len(v) if isinstance(v, dict) else 1 for v in pending_changes.values())
+            print(f"  [Changes proposal: {len(pending_changes)} key(s), ~{attrs} value(s)]\n")
         except Exception as e:
             if "```changes" in (assistant_text or ""):
-                print(f"  [WARNING: changes block found but failed to parse — {e}]")
-                print(f"  [Asking LLM to correct its output format …]\n")
+                print(f"  [WARNING: changes block parse error — {e}]")
                 messages.append({
                     "role": "user",
                     "content": (
-                        "Your changes block failed to parse with this error: " + str(e) + "\n"
-                        "IMPORTANT: Use only flat attribute keys: Role, Size, or Color. "
-                        "NEVER use dotted paths like 'child_part.Size'. "
-                        "Use the slot name as the key (e.g. 'Container_3_Pos_2') and "
-                        "'Size' as the attribute. The system redirects Size/Color to the "
-                        "child_part automatically. Please rewrite the changes block correctly."
+                        f"Your changes block failed to parse: {e}\n"
+                        "Use receptacle names (e.g. 'Container_3') for role changes.\n"
+                        "Use part names (e.g. 'Part_Blue_Nr_1') for size/color changes.\n"
+                        "Please rewrite the changes block."
                     ),
                 })
                 continue
 
-        # ── User turn ─────────────────────────────────────────────────────────
         user_input = input("YOU: ").strip()
         if not user_input:
             continue
 
-        # ── Done — write everything and return to mode selection ──────────────
         if is_finish(user_input):
-            # Merge any unconfirmed pending blocks before writing
             if pending_sequence is not None:
                 saved = save_sequence(pending_sequence)
                 print(f"\n✅  Sequence saved ({len(pending_sequence)} pairs) → {saved.resolve()}")
-                print(json.dumps(pending_sequence, indent=2, ensure_ascii=False))
             if pending_changes is not None:
                 accumulated_changes = merge_changes(accumulated_changes, pending_changes)
-
-            # Write all accumulated changes + config in one go
             if accumulated_changes:
                 saved = save_changes(accumulated_changes)
-                total = sum(len(v) for v in accumulated_changes.values())
-                print(f"\n✅  All workspace changes saved ({total} attribute(s)) → {saved.resolve()}")
-                print(json.dumps(accumulated_changes, indent=2, ensure_ascii=False))
+                print(f"\n✅  Changes saved → {saved.resolve()}")
                 _apply_and_save_config(accumulated_changes)
-
             print("\n── Session complete. ──\n")
-            return  # back to outer loop → new mode selection
+            return
 
-        # ── Confirmation handling ─────────────────────────────────────────────
         has_pending = pending_sequence is not None or pending_changes is not None
 
         if has_pending and is_yes(user_input):
             if pending_sequence is not None:
                 saved = save_sequence(pending_sequence)
-                print(f"\n✅  Sequence confirmed & saved ({len(pending_sequence)} step(s)) → {saved.resolve()}\n")
-                # Add to history silently so LLM has context, but don't let it respond
-                messages.append({"role": "user",    "content": "Confirmed the sequence."})
-                messages.append({"role": "assistant","content": "Sequence saved."})
+                print(f"\n✅  Sequence confirmed ({len(pending_sequence)} step(s)) → {saved.resolve()}\n")
+                messages.append({"role": "user",      "content": "Confirmed the sequence."})
+                messages.append({"role": "assistant",  "content": "Sequence saved."})
                 pending_sequence = None
 
             if pending_changes is not None:
                 accumulated_changes = merge_changes(accumulated_changes, pending_changes)
-                attrs = sum(len(v) for v in pending_changes.values())
-                total = sum(len(v) for v in accumulated_changes.values())
-                print(f"✅  Changes noted ({attrs} new, {total} total). "
-                      f"Will be written to config.json when done.\n")
-                messages.append({"role": "user",    "content": "Confirmed the changes."})
-                messages.append({"role": "assistant","content": "Changes noted."})
+                total = sum(len(v) if isinstance(v, dict) else 1 for v in accumulated_changes.values())
+                print(f"✅  Changes noted ({total} total). Will be written on 'done'.\n")
+                messages.append({"role": "user",      "content": "Confirmed the changes."})
+                messages.append({"role": "assistant",  "content": "Changes noted."})
                 pending_changes = None
 
-            # Skip LLM — go straight back to user input
             user_input = input("Anything else? (or type 'done')\nYOU: ").strip()
             if is_finish(user_input):
-                # Write everything and return to mode selection
                 if accumulated_changes:
                     saved = save_changes(accumulated_changes)
-                    total = sum(len(v) for v in accumulated_changes.values())
-                    print(f"\n✅  All workspace changes saved ({total} attribute(s)) → {saved.resolve()}")
-                    print(json.dumps(accumulated_changes, indent=2, ensure_ascii=False))
+                    print(f"\n✅  Changes saved → {saved.resolve()}")
                     _apply_and_save_config(accumulated_changes)
                 print("\n── Session complete. ──\n")
                 return
@@ -717,12 +688,45 @@ def run_session(client: OpenAI, mode: str) -> None:
             pending_changes  = None
             messages.append({
                 "role": "user",
-                "content": "Rejected. Discard that proposal. Ask what I want to change or redo.",
+                "content": "Rejected. Discard that proposal and ask what I want to change.",
             })
             continue
 
-        # ── Normal chat turn ───────────────────────────────────────────────────
         messages.append({"role": "user", "content": user_input})
+
+
+def _run_pddl_sequence() -> None:
+    """
+    PDDL planning path for motion mode.
+    Loads positions.json, runs the PDDL planner, saves sequence.json.
+    """
+    from Vision_Module.config import USE_PDDL_PLANNER  # type: ignore
+    from pddl_planner import plan_sequence  # type: ignore
+
+    if not POSITIONS_PATH.exists():
+        print(f"❌ positions.json not found: {POSITIONS_PATH.resolve()}")
+        return
+
+    state = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+
+    print("\n── PDDL Planner ──")
+    print(f"  operation_mode : {state.get('workspace', {}).get('operation_mode', 'not set')}")
+    print(f"  kit_recipe     : {state.get('predicates', {}).get('kit_recipe', [])}")
+    print(f"  priority       : {state.get('predicates', {}).get('priority', [])}\n")
+
+    sequence = plan_sequence(
+        state,
+        output_path=str(SEQUENCE_PATH),
+        keep_pddl=True,
+    )
+
+    if sequence is None:
+        print("❌ PDDL planning failed. Check roles, recipes, and Fast Downward installation.")
+    else:
+        print(f"\n✅  Sequence written → {SEQUENCE_PATH.resolve()}")
+        print(json.dumps(sequence, indent=2))
+
+    print("\n── PDDL planning complete. ──\n")
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -732,7 +736,7 @@ def main():
     while True:
         mode = select_mode()
         if mode == "exit":
-            print("\n👋  Exiting. Goodbye!\n")
+            print("\n👋  Goodbye!\n")
             return
         run_session(client, mode)
 
@@ -741,4 +745,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\n👋  Exiting planner.\n")
+        print("\n\n👋  Exiting.\n")
