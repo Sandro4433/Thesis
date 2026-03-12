@@ -1,10 +1,17 @@
 [
   [
-    "Part_Red_Nr_2",
-    "Container_3_Pos_3"
+    "Part_Blue_Nr_3",
+    "Kit_0_Pos_1",
+    0.05
   ],
   [
-    "Part_Blue_Nr_3",
-    "Kit_0_Pos_3"
+    "Part_Blue_Nr_1",
+    "Kit_0_Pos_3",
+    0.05
+  ],
+  [
+    "Part_Blue_Nr_2",
+    "Kit_0_Pos_2",
+    0.05
   ]
 ]

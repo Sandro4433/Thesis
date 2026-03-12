@@ -1,11 +1,11 @@
 {
-  "Container_3_Pos_2": {
-    "Size": null
+  "Container_3": {
+    "role": "input"
   },
-  "Container_3_Pos_3": {
-    "Size": null
+  "Kit_0": {
+    "role": "output"
   },
-  "Container_3_Pos_4": {
-    "Size": null
+  "workspace": {
+    "operation_mode": "kitting"
   }
 }

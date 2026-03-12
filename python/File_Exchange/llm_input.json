@@ -1,161 +1,156 @@
 {
-  "slots": {
-    "Kit_0_Pos_1": {
-      "pos": [
-        0.5575469871992703,
-        0.509683261826017,
-        0.2
-      ],
-      "Role": null,
-      "child_part": null
-    },
-    "Kit_0_Pos_2": {
-      "pos": [
-        0.5146094495725165,
-        0.46777421909594386,
-        0.2
-      ],
-      "Role": null,
-      "child_part": null
-    },
-    "Kit_0_Pos_3": {
-      "pos": [
-        0.5744948408884605,
-        0.44936933096978937,
-        0.2
-      ],
-      "Role": null,
-      "child_part": null
-    },
-    "Kit_2_Pos_1": {
-      "pos": [
-        0.5658699690933217,
-        0.3129912640811188,
-        0.2
-      ],
-      "Role": null,
-      "child_part": {
-        "pos": [
-          0.5774820692539215,
-          0.31052251255512237,
-          0.2
-        ],
-        "Color": "Red",
-        "Size": null
-      }
-    },
-    "Kit_2_Pos_2": {
-      "pos": [
-        0.5154377720673029,
-        0.28048597984718493,
-        0.2
-      ],
-      "Role": null,
-      "child_part": {
-        "pos": [
-          0.5230641312599182,
-          0.27629901564121245,
-          0.2
-        ],
-        "Color": "Red",
-        "Size": null
-      }
-    },
-    "Kit_2_Pos_3": {
-      "pos": [
-        0.570450381128085,
-        0.25050910802363474,
-        0.2
-      ],
-      "Role": null,
-      "child_part": {
-        "pos": [
-          0.58658003282547,
-          0.24689008390903472,
-          0.2
-        ],
-        "Color": "Red",
-        "Size": null
-      }
-    },
-    "Container_3_Pos_1": {
-      "pos": [
-        0.20223174338156605,
-        0.5856971383152176,
-        0.2
-      ],
-      "Role": null,
-      "child_part": null
-    },
-    "Container_3_Pos_2": {
-      "pos": [
-        0.2219362796835011,
-        0.5262267150013911,
-        0.2
-      ],
-      "Role": null,
-      "child_part": {
-        "pos": [
-          0.2215134449005127,
-          0.5268736640214919,
-          0.2
-        ],
-        "Color": "Blue",
-        "Size": null
-      }
-    },
-    "Container_3_Pos_3": {
-      "pos": [
-        0.2908128799363153,
-        0.5137361610659552,
-        0.2
-      ],
-      "Role": null,
-      "child_part": {
-        "pos": [
-          0.28887535107135776,
-          0.5155699560642242,
-          0.2
-        ],
-        "Color": "Blue",
-        "Size": null
-      }
-    },
-    "Container_3_Pos_4": {
-      "pos": [
-        0.33014542956536386,
-        0.5625003952922654,
-        0.2
-      ],
-      "Role": null,
-      "child_part": {
-        "pos": [
-          0.33245375227928164,
-          0.5687785754203796,
-          0.2
-        ],
-        "Color": "Blue",
-        "Size": null
-      }
-    },
-    "Container_3_Pos_5": {
-      "pos": [
-        0.31044089326342883,
-        0.6219708186060918,
-        0.2
-      ],
-      "Role": null,
-      "child_part": null
-    },
-    "Container_3_Pos_6": {
-      "pos": [
-        0.2415642930106146,
-        0.6344613725415277,
-        0.2
-      ],
-      "Role": null,
-      "child_part": null
-    }
+  "workspace": {
+    "operation_mode": null,
+    "batch_size": null
   },
-  "parts": {}
+  "objects": {
+    "kits": [
+      "Kit_0",
+      "Kit_2"
+    ],
+    "containers": [
+      "Container_3"
+    ],
+    "parts": [
+      "Part_Blue_Nr_1",
+      "Part_Blue_Nr_2",
+      "Part_Blue_Nr_3",
+      "Part_Red_Nr_1",
+      "Part_Red_Nr_2",
+      "Part_Red_Nr_3"
+    ],
+    "slots": [
+      "Container_3_Pos_1",
+      "Container_3_Pos_2",
+      "Container_3_Pos_3",
+      "Container_3_Pos_4",
+      "Container_3_Pos_5",
+      "Container_3_Pos_6",
+      "Kit_0_Pos_1",
+      "Kit_0_Pos_2",
+      "Kit_0_Pos_3",
+      "Kit_2_Pos_1",
+      "Kit_2_Pos_2",
+      "Kit_2_Pos_3"
+    ]
+  },
+  "slot_belongs_to": {
+    "Kit_0_Pos_1": "Kit_0",
+    "Kit_0_Pos_2": "Kit_0",
+    "Kit_0_Pos_3": "Kit_0",
+    "Kit_2_Pos_1": "Kit_2",
+    "Kit_2_Pos_2": "Kit_2",
+    "Kit_2_Pos_3": "Kit_2",
+    "Container_3_Pos_1": "Container_3",
+    "Container_3_Pos_2": "Container_3",
+    "Container_3_Pos_3": "Container_3",
+    "Container_3_Pos_4": "Container_3",
+    "Container_3_Pos_5": "Container_3",
+    "Container_3_Pos_6": "Container_3"
+  },
+  "predicates": {
+    "at": [
+      {
+        "part": "Part_Blue_Nr_3",
+        "slot": "Container_3_Pos_2"
+      },
+      {
+        "part": "Part_Blue_Nr_2",
+        "slot": "Container_3_Pos_3"
+      },
+      {
+        "part": "Part_Blue_Nr_1",
+        "slot": "Container_3_Pos_4"
+      },
+      {
+        "part": "Part_Red_Nr_2",
+        "slot": "Kit_2_Pos_1"
+      },
+      {
+        "part": "Part_Red_Nr_3",
+        "slot": "Kit_2_Pos_2"
+      },
+      {
+        "part": "Part_Red_Nr_1",
+        "slot": "Kit_2_Pos_3"
+      }
+    ],
+    "slot_empty": [
+      "Container_3_Pos_1",
+      "Container_3_Pos_5",
+      "Container_3_Pos_6",
+      "Kit_0_Pos_1",
+      "Kit_0_Pos_2",
+      "Kit_0_Pos_3"
+    ],
+    "role": [
+      {
+        "object": "Container_3",
+        "role": null
+      },
+      {
+        "object": "Kit_0",
+        "role": null
+      },
+      {
+        "object": "Kit_2",
+        "role": null
+      }
+    ],
+    "color": [
+      {
+        "part": "Part_Blue_Nr_3",
+        "color": "blue"
+      },
+      {
+        "part": "Part_Blue_Nr_2",
+        "color": "blue"
+      },
+      {
+        "part": "Part_Blue_Nr_1",
+        "color": "blue"
+      },
+      {
+        "part": "Part_Red_Nr_2",
+        "color": "red"
+      },
+      {
+        "part": "Part_Red_Nr_3",
+        "color": "red"
+      },
+      {
+        "part": "Part_Red_Nr_1",
+        "color": "red"
+      }
+    ],
+    "size": [
+      {
+        "part": "Part_Blue_Nr_3",
+        "size": "standard"
+      },
+      {
+        "part": "Part_Blue_Nr_2",
+        "size": "standard"
+      },
+      {
+        "part": "Part_Blue_Nr_1",
+        "size": "standard"
+      },
+      {
+        "part": "Part_Red_Nr_2",
+        "size": "standard"
+      },
+      {
+        "part": "Part_Red_Nr_3",
+        "size": "standard"
+      },
+      {
+        "part": "Part_Red_Nr_1",
+        "size": "standard"
+      }
+    ],
+    "priority": [],
+    "kit_recipe": [],
+    "part_compatibility": []
+  }
 }

@@ -16,7 +16,6 @@ class Robot:
         self.set_mode_ptp()
 
         self._positions = {}
-        # Load positions from the shared exchange folder (stable paths)
         self._positions.update(self.load_points_snapshot_json(str(POSITIONS_JSON.resolve())))
         self._positions.update(self.load_points_jsonl(str(POSITIONS_FIXED_JSONL.resolve())))
 
@@ -45,9 +44,7 @@ class Robot:
             positions = self._positions
         self.set_mode_lin()
         return self.go_to_point_pose_only(
-            name,
-            positions,
-            offset=offset,
+            name, positions, offset=offset,
             use_current_orientation=use_current_orientation
         )
 
@@ -71,14 +68,12 @@ class Robot:
 
         self.set_mode_ptp()
         self.arm.set_joint_value_target(joints)
-
         success = self.arm.go(wait=True)
         self.arm.stop()
         self.arm.clear_pose_targets()
 
         if not success:
             raise MoveItCommanderException("❌ Joint PTP failed.")
-
         return success
 
     def MoveJointDelta(self, joint_index: int = 6, delta_deg: float = 0.0, target_name: str = ""):
@@ -88,11 +83,9 @@ class Robot:
         if target_name:
             entry = self._positions.get(target_name)
             if entry is None:
-                raise MoveItCommanderException(f"❌ Target '{target_name}' not found in loaded positions.")
+                raise MoveItCommanderException(f"❌ Target '{target_name}' not found.")
             raw_ori = entry.get("orientation_deg", None)
             if raw_ori is None:
-                # No orientation defined for this position (e.g. standalone parts
-                # with "orientation": null) — skip the gripper rotation entirely.
                 print(f"⚠ '{target_name}' has no orientation — skipping gripper rotation.")
                 return True
             use_deg = float(-raw_ori)
@@ -100,7 +93,6 @@ class Robot:
             use_deg = float(delta_deg)
 
         self.set_mode_ptp()
-
         current_joints = self.arm.get_current_joint_values()
         delta_rad = float(np.deg2rad(use_deg))
         new_joints = list(current_joints)
@@ -113,7 +105,6 @@ class Robot:
 
         if not success:
             raise MoveItCommanderException("❌ Joint delta move failed.")
-
         return success
 
     # --------------------------
@@ -126,7 +117,6 @@ class Robot:
             return False
 
         pose = entry["pose"]
-
         pose_goal = Pose()
         pose_goal.position.x = pose.position.x
         pose_goal.position.y = pose.position.y
@@ -145,14 +135,12 @@ class Robot:
 
         self.normalize_quaternion(pose_goal)
         self.arm.set_pose_target(pose_goal)
-
         success = self.arm.go(wait=True)
         self.arm.stop()
         self.arm.clear_pose_targets()
 
         if not success:
             raise MoveItCommanderException("❌ Pose-PTP/LIN failed.")
-
         return success
 
     # --------------------------
@@ -181,15 +169,14 @@ class Robot:
     # --------------------------
     def normalize_quaternion(self, pose):
         q = np.array([
-            pose.orientation.x,
-            pose.orientation.y,
-            pose.orientation.z,
-            pose.orientation.w
+            pose.orientation.x, pose.orientation.y,
+            pose.orientation.z, pose.orientation.w
         ])
         norm = np.linalg.norm(q)
         if norm > 0:
-            q = q / norm
-            pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = q
+            q /= norm
+            pose.orientation.x, pose.orientation.y, \
+            pose.orientation.z, pose.orientation.w = q
 
     # --------------------------
     #   LOADERS
@@ -203,27 +190,23 @@ class Robot:
         pose.orientation.y = data["quat"][1]
         pose.orientation.z = data["quat"][2]
         pose.orientation.w = data["quat"][3]
-
         return {
-            "pose": pose,
-            "joints": data.get("joints", None),
+            "pose":            pose,
+            "joints":          data.get("joints", None),
             "orientation_deg": data.get("orientation", None),
         }
 
-    def load_points_snapshot_json(self, save_file: str):
+    def load_points_snapshot_json(self, save_file: str) -> dict:
         """
-        Loads the new JSON snapshot:
-          {
-            "slots": { name: {pos,quat,orientation,...} },
-            "parts": { name: {...} }
-          }
+        Load robot positions from the new PDDL-friendly positions.json.
 
-        Robot positions are built from:
-          - each slot itself
-          - if slot has child_part, also create a derived target "<slot_name>__child"
-            (optional convenience)
+        Every entry in state["metric"] that has pos + quat becomes a named
+        motion target. This covers:
+          - slots (Kit_0_Pos_1, Container_3_Pos_2, …)   → place targets
+          - embedded parts (Part_Blue_Nr_1, …)           → pick targets
+          - standalone parts                              → pick targets
         """
-        positions = {}
+        positions: dict = {}
         try:
             with open(save_file, "r", encoding="utf-8") as f:
                 state = json.load(f)
@@ -234,75 +217,37 @@ class Robot:
             print(f"⚠ Failed to read {save_file}: {e}")
             return positions
 
-        slots = state.get("slots", {}) if isinstance(state, dict) else {}
-        if not isinstance(slots, dict):
+        metric = state.get("metric", {})
+        if not isinstance(metric, dict):
+            print(f"⚠ 'metric' section missing or invalid in {save_file}")
             return positions
 
-        for name, slot in slots.items():
+        for name, entry in metric.items():
             if not isinstance(name, str) or not name:
                 continue
-            if not isinstance(slot, dict):
+            if not isinstance(entry, dict):
                 continue
-
-            # reconstruct a flat record with name
-            record = dict(slot)
-            record["name"] = name
-
-            # must have pos/quat for motion
-            if "pos" in record and "quat" in record:
-                positions[name] = self._entry_to_pose_record(name, record)
-
-            # Expose child_part pose under its own name (e.g. "Part_Green_Nr_1")
-            # AND as the legacy "<slot>__child" alias for backward compatibility.
-            child = slot.get("child_part")
-            if isinstance(child, dict) and "pos" in child and "quat" in child:
-                child_record = dict(child)
-                # Named entry (preferred) ─ uses the part's actual name field
-                child_name = child.get("name") or f"{name}__child"
-                child_record["name"] = child_name
-                positions[child_name] = self._entry_to_pose_record(child_name, child_record)
-                # Legacy alias so old code using "<slot>__child" still works
-                legacy_name = f"{name}__child"
-                if legacy_name != child_name:
-                    positions[legacy_name] = positions[child_name]
-
-        # ── standalone parts (top-level "parts" section) ──────────────────────
-        # These are parts NOT currently sitting in a slot (e.g. on a table).
-        parts = state.get("parts", {})
-        if not isinstance(parts, dict):
-            return positions
-
-        for name, part in parts.items():
-            if not isinstance(name, str) or not name:
+            if "pos" not in entry or "quat" not in entry:
                 continue
-            if not isinstance(part, dict):
+            if entry["pos"] is None or entry["quat"] is None:
                 continue
-            if "pos" in part and "quat" in part:
-                record = dict(part)
-                record["name"] = name
-                positions[name] = self._entry_to_pose_record(name, record)
+            positions[name] = self._entry_to_pose_record(name, entry)
 
         return positions
 
-    def load_points_jsonl(self, save_file: str):
-        """
-        Keeps your old JSONL loader for fixed points.
-        """
-        positions = {}
+    def load_points_jsonl(self, save_file: str) -> dict:
+        """Load fixed named positions from the legacy JSONL file (Home, Camera_Home, etc.)."""
+        positions: dict = {}
         try:
             with open(save_file, "r") as f:
                 for line in f:
                     if not line.strip():
                         continue
                     data = json.loads(line.strip())
-
                     name = data.get("name")
                     if not isinstance(name, str) or not name:
                         continue
-
                     positions[name] = self._entry_to_pose_record(name, data)
-
         except FileNotFoundError:
             print(f"⚠ File not found: {save_file}")
-
         return positions
