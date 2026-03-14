@@ -241,62 +241,7 @@ def slim_scene(state: dict) -> dict:
     }
 
 
-def apply_sequence_to_scene(state: dict, sequence: list) -> dict:
-    """
-    Update the PDDL-friendly state after the robot has executed a sequence.
-    For each [pick_name, place_name, ...]:
-      - Removes (part, source_slot) from predicates.at
-      - Adds source_slot to predicates.slot_empty
-      - Removes dest_slot from predicates.slot_empty
-      - Adds (part, dest_slot) to predicates.at
-      - Updates metric[part] position to match metric[dest_slot]
-    Returns an updated deep copy.
-    """
-    import copy
-    state = copy.deepcopy(state)
-    preds = state.setdefault("predicates", {})
-    metric = state.setdefault("metric", {})
-
-    at_list:    List[Dict] = preds.setdefault("at", [])
-    empty_list: List[str]  = preds.setdefault("slot_empty", [])
-
-    for entry in sequence:
-        pick_name  = entry[0]   # part name
-        place_name = entry[1]   # destination slot name
-
-        # find which slot the part is currently in
-        source_slot: Optional[str] = None
-        for item in at_list:
-            if item["part"] == pick_name:
-                source_slot = item["slot"]
-                break
-
-        if source_slot is None:
-            print(f"⚠  apply_sequence: '{pick_name}' not found in predicates.at — skipping.")
-            continue
-
-        if place_name not in {e["slot"] for e in at_list} | set(empty_list):
-            print(f"⚠  apply_sequence: destination slot '{place_name}' unknown — skipping.")
-            continue
-
-        # update predicates.at
-        at_list[:] = [i for i in at_list if i["part"] != pick_name]
-        at_list.append({"part": pick_name, "slot": place_name})
-
-        # update slot_empty
-        if source_slot not in empty_list:
-            empty_list.append(source_slot)
-        if place_name in empty_list:
-            empty_list.remove(place_name)
-
-        # update metric for the moved part
-        dest_metric = metric.get(place_name, {})
-        if dest_metric and pick_name in metric:
-            for key in ("pos", "quat", "orientation"):
-                if key in dest_metric:
-                    metric[pick_name][key] = dest_metric[key]
-
-    return state
+# apply_sequence_to_scene removed — see Configuration_Module/Apply_Sequence_Changes.py
 
 
 # ── Config application helper ─────────────────────────────────────────────────
@@ -350,7 +295,9 @@ Allowed keys and values:
   "workspace"                            → {"operation_mode": "sorting"|"kitting", "batch_size": N}
   "priority"                             → [{"color": "blue", "order": 1}, ...]
   "kit_recipe"                           → [{"kit": "Kit_0", "color": "blue", "quantity": 2}, ...]
-  "part_compatibility"                   → [{"part_color": "blue", "allowed_in": ["Kit_0"]}, ...]
+                                           size is optional: {"kit": "Kit_0", "color": "blue", "size": "large", "quantity": 1}
+                                           omit size (or set null) to accept any size of that color
+  "part_compatibility"                   → [{"part_color": "blue", "allowed_in": ["Container_1"]}, ...]
 
 CRITICAL FORMAT RULES:
 - Use the RECEPTACLE name (e.g. "Container_3", "Kit_0") for role changes,
@@ -359,18 +306,31 @@ CRITICAL FORMAT RULES:
 - Never invent names. Use verbatim names from the INPUT JSON.
 - null means reset to default.
 
-Example:
+Example (kitting without size constraint):
 ```changes
 {
   "Container_3": {"role": "input"},
   "Kit_0": {"role": "output"},
-  "Part_Blue_Nr_1": {"size": "large"},
   "workspace": {"operation_mode": "kitting"},
   "kit_recipe": [
     {"kit": "Kit_0", "color": "blue", "quantity": 2},
     {"kit": "Kit_0", "color": "red",  "quantity": 1}
   ],
   "priority": [{"color": "blue", "order": 1}, {"color": "red", "order": 2}]
+}
+```
+
+Example (kitting with size constraint — 1 large blue + 1 standard blue + 1 red):
+```changes
+{
+  "Container_3": {"role": "input"},
+  "Kit_0": {"role": "output"},
+  "workspace": {"operation_mode": "kitting"},
+  "kit_recipe": [
+    {"kit": "Kit_0", "color": "blue", "size": "large",    "quantity": 1},
+    {"kit": "Kit_0", "color": "blue", "size": "standard", "quantity": 1},
+    {"kit": "Kit_0", "color": "red",                      "quantity": 1}
+  ]
 }
 ```
 """
@@ -511,18 +471,9 @@ def select_scene() -> dict:
     idx = _pick_from_list("\nWhich scene do you want to use?", options)
 
     if idx == 0:
-        print("\nStarting vision module ...")
-        # Run Vision_Main in a completely separate process so that
-        # pyrealsense2 (loaded inside Vision_Main's subprocess worker) and
-        # libapriltag never share the same process heap.
-        # Importing Vision_Main directly here pulls libapriltag into this
-        # process -- the same pattern that caused the malloc heap crash.
-        import subprocess as _sp
-        _vision_script = PROJECT_DIR / "Vision_Module" / "Vision_Main.py"
-        _result = _sp.run([sys.executable, str(_vision_script)], text=True)
-        if _result.returncode != 0:
-            print(f"ERROR: Vision module exited with code {_result.returncode}")
-            sys.exit(1)
+        print("\nStarting vision module …")
+        from Vision_Module.Vision_Main import main as vision_main  # type: ignore
+        vision_main()
         if not POSITIONS_PATH.exists():
             print(f"ERROR: Vision module did not produce {POSITIONS_PATH}")
             sys.exit(1)
@@ -553,20 +504,15 @@ def run_session(client: OpenAI, mode: str) -> None:
 
         from Execution_Module.Robot_Main import main as robot_main  # type: ignore
         robot_main()
+        # Robot_Main is fully synchronous (all MoveIt go(wait=True)) so when
+        # it returns here the robot has completely stopped moving.
         print("\n── Execution complete. ──\n")
 
-        if not POSITIONS_PATH.exists():
-            print("⚠  positions.json not found — cannot update after execution.")
-            return
-
-        state   = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
-        updated = apply_sequence_to_scene(state, sequence)
-
-        tmp = str(POSITIONS_PATH) + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(updated, f, indent=2, ensure_ascii=False)
-        Path(tmp).replace(POSITIONS_PATH)
-        print(f"✅  positions.json updated → {POSITIONS_PATH.resolve()}\n")
+        # Hand the completed sequence to the Configuration Module.
+        # apply_and_save updates predicates, slot_empty, and metric positions
+        # in positions.json, then archives a timestamped copy to Memory/.
+        from Configuration_Module.Apply_Sequence_Changes import apply_and_save  # type: ignore
+        apply_and_save(POSITIONS_PATH, sequence, save_memory=True)
         return
 
     # ── Option 2 (PDDL path): skip LLM dialogue, run planner directly ─────────
