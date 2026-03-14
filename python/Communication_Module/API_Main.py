@@ -184,7 +184,7 @@ def slim_scene(state: dict) -> dict:
             },
             "Container_3_Pos_1": {
                 "role": "input",
-                "child_part": {"name": "Part_Blue_Nr_1", "color": "blue", "size": "large"}
+                "child_part": {"name": "Part_1", "color": "blue", "size": "large"}
             }
         },
         "parts": {}                        ← standalone parts (not in a slot)
@@ -302,7 +302,7 @@ Allowed keys and values:
 CRITICAL FORMAT RULES:
 - Use the RECEPTACLE name (e.g. "Container_3", "Kit_0") for role changes,
   NOT individual slot names.
-- Use the PART name (e.g. "Part_Blue_Nr_1") for size/color changes.
+- Use the PART name (e.g. "Part_1") for size/color changes.
 - Never invent names. Use verbatim names from the INPUT JSON.
 - null means reset to default.
 
@@ -417,8 +417,8 @@ OUTPUT BLOCK — SEQUENCE
 ]
 ```
 
-pick_name  = part name from child_part.name  (e.g. "Part_Blue_Nr_1")
-           = standalone part key             (e.g. "Part_Red_Nr_2")
+pick_name  = part name from child_part.name  (e.g. "Part_1")
+           = standalone part key             (e.g. "Part_3")
 place_name = destination slot key           (e.g. "Kit_0_Pos_1")
 
 NEVER use slot names as pick targets. NEVER invent names.
@@ -584,7 +584,7 @@ def run_session(client: OpenAI, mode: str) -> None:
                     "content": (
                         f"Your changes block failed to parse: {e}\n"
                         "Use receptacle names (e.g. 'Container_3') for role changes.\n"
-                        "Use part names (e.g. 'Part_Blue_Nr_1') for size/color changes.\n"
+                        "Use part names (e.g. 'Part_1') for size/color changes.\n"
                         "Please rewrite the changes block."
                     ),
                 })

@@ -245,16 +245,19 @@ def compute_tag_targets_and_annotate(
         debug_show_overlay=False,
     )
 
-    # Numbering per color (stable)
-    counters: Dict[str, int] = {"Blue": 0, "Red": 0, "Green": 0}
+    # Single global counter — parts are numbered in detection order (spatially
+    # sorted by x then y position within each colour group).
+    # Color is stored as a separate field in the tag_targets entry so it
+    # no longer needs to be embedded in the name.
+    part_counter: int = 0
 
     for d in part_dets:
         color = str(d["color"])
-        if color not in counters:
+        if color not in {"Blue", "Red", "Green"}:
             continue
 
-        counters[color] += 1
-        name_suffix = f"Part_{color}_Nr_{counters[color]}"
+        part_counter += 1
+        name_suffix = f"Part_{part_counter}"
 
         # Convert board center (meters) -> workspace mm using your axis basis
         c_b = np.array([d["cx_b_m"], d["cy_b_m"]], dtype=np.float32)
@@ -293,7 +296,8 @@ def compute_tag_targets_and_annotate(
         )
 
         tag_targets.setdefault(-1000, []).append(
-            {"name_suffix": name_suffix, "x_mm": x_mm, "y_mm": y_mm, "orientation_deg": 0.0,
+            {"name_suffix": name_suffix, "x_mm": x_mm, "y_mm": y_mm,
+             "orientation_deg": 0.0, "color": color,
              "diameter_mm": float(d.get("diameter_mm", 0.0))}
         )
 
@@ -312,13 +316,13 @@ def targets_to_robot_entries(
     """
     Outputs objects WITHOUT groupname:
       - Slot: name="Kit_<tagid>_Pos_1" or "Container_<tagid>_Pos_6"
-      - Part: name="Part_<Color>_Nr_<k>"
+      - Part: name="Part_<k>"  (color stored separately in the Color field)
 
     Schema (human-readable, pretty on disk):
       Slot:
         { name, pos, quat, orientation, Role, child_part }
       Part:
-        { name, pos, quat, orientation, Color, Size, Fragility, Role }
+        { name, pos, quat, orientation, Color, Size, diameter_mm, Role }
 
     part_size_classes: ordered list of (label, min_mm, max_mm) tuples.
       The first range that contains the measured diameter wins.
@@ -331,10 +335,6 @@ def targets_to_robot_entries(
             if lo <= diameter_mm < hi:
                 return label
         return None
-    def _part_color_from_name(part_name: str) -> str:
-        # Expected: Part_<Color>_Nr_<k>
-        toks = part_name.split("_")
-        return toks[1] if len(toks) >= 2 else "Unknown"
 
     new_entries: List[Dict[str, Any]] = []
 
@@ -354,12 +354,15 @@ def targets_to_robot_entries(
             if is_part:
                 part_name = name_suffix
                 diameter_mm = float(t.get("diameter_mm", 0.0))
+                # Color is stored explicitly in the tag_targets entry — it is no
+                # longer embedded in the part name.
+                color = str(t.get("color") or "Unknown")
                 entry = {
                     "name": part_name,
                     "pos": [x_robot, y_robot, float(z_robot)],
                     "quat": camera_quat,
-                    "orientation": None,                 # will inherit from parent slot if assigned
-                    "Color": _part_color_from_name(part_name),
+                    "orientation": None,
+                    "Color": color,
                     "Size": _classify_size(diameter_mm),
                     "diameter_mm": round(diameter_mm, 1),
                     "Role": None,
