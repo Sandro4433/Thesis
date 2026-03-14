@@ -8,18 +8,31 @@
   "Kit_0": {
     "role": "output"
   },
+  "Kit_2": {
+    "role": "output"
+  },
   "workspace": {
     "operation_mode": "kitting"
   },
   "kit_recipe": [
     {
       "kit": "Kit_0",
-      "color": "red",
-      "quantity": 2
+      "color": "blue",
+      "quantity": 1
     },
     {
       "kit": "Kit_0",
+      "color": "red",
+      "quantity": 1
+    },
+    {
+      "kit": "Kit_2",
       "color": "blue",
+      "quantity": 1
+    },
+    {
+      "kit": "Kit_2",
+      "color": "red",
       "quantity": 1
     }
   ]
