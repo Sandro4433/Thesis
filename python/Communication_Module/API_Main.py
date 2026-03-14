@@ -16,11 +16,11 @@ if str(PROJECT_DIR) not in sys.path:
 # ── Config ────────────────────────────────────────────────────────────────────
 MODEL = "gpt-4.1"
 
-from paths import LLM_INPUT_JSON, LLM_RESPONSE_JSON, POSITIONS_JSON
+from paths import LLM_INPUT_JSON, LLM_RESPONSE_JSON, CONFIGURATION_JSON
 
-LLM_INPUT_PATH = Path(LLM_INPUT_JSON.resolve())
-POSITIONS_PATH = Path(POSITIONS_JSON.resolve())
-OUTPUT_DIR     = Path(LLM_RESPONSE_JSON.resolve()).parent
+LLM_INPUT_PATH     = Path(LLM_INPUT_JSON.resolve())
+CONFIGURATION_PATH = Path(CONFIGURATION_JSON.resolve())
+OUTPUT_DIR         = Path(LLM_RESPONSE_JSON.resolve()).parent
 SEQUENCE_PATH  = OUTPUT_DIR / "sequence.json"
 CHANGES_PATH   = OUTPUT_DIR / "workspace_changes.json"
 MEMORY_DIR     = PROJECT_DIR / "Memory"
@@ -172,7 +172,7 @@ def is_no(text: str) -> bool:
 
 def slim_scene(state: dict) -> dict:
     """
-    Produce the LLM-facing view from the new PDDL-friendly positions.json.
+    Produce the LLM-facing view from the new PDDL-friendly configuration.json.
 
     Returns:
     {
@@ -249,18 +249,18 @@ def slim_scene(state: dict) -> dict:
 def _apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
     from Configuration_Module.Apply_Config_Changes import apply_changes  # type: ignore
 
-    if not POSITIONS_PATH.exists():
-        print(f"⚠  positions.json not found at {POSITIONS_PATH.resolve()} — cannot apply changes.")
+    if not CONFIGURATION_PATH.exists():
+        print(f"⚠  configuration.json not found at {CONFIGURATION_PATH.resolve()} — cannot apply changes.")
         return
 
-    scene   = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+    scene   = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
     updated = apply_changes(scene, accumulated_changes)
 
-    tmp = str(POSITIONS_PATH) + ".tmp"
+    tmp = str(CONFIGURATION_PATH) + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(updated, f, indent=2, ensure_ascii=False)
-    Path(tmp).replace(POSITIONS_PATH)
-    print(f"✅  positions.json updated → {POSITIONS_PATH.resolve()}\n")
+    Path(tmp).replace(CONFIGURATION_PATH)
+    print(f"✅  configuration.json updated → {CONFIGURATION_PATH.resolve()}\n")
 
 
 # ── System prompts ────────────────────────────────────────────────────────────
@@ -499,7 +499,7 @@ def select_mode() -> str:
 def select_scene() -> dict:
     options = [
         "Live vision  (capture new image with camera)",
-        f"Current positions.json  ({POSITIONS_PATH})",
+        f"Current configuration.json  ({CONFIGURATION_PATH})",
     ]
     idx = _pick_from_list("\nWhich scene do you want to use?", options)
 
@@ -507,17 +507,17 @@ def select_scene() -> dict:
         print("\nStarting vision module …")
         from Vision_Module.Vision_Main import main as vision_main  # type: ignore
         vision_main()
-        if not POSITIONS_PATH.exists():
-            print(f"ERROR: Vision module did not produce {POSITIONS_PATH}")
+        if not CONFIGURATION_PATH.exists():
+            print(f"ERROR: Vision module did not produce {CONFIGURATION_PATH}")
             sys.exit(1)
         print("Loaded fresh scene from vision.")
     else:
-        if not POSITIONS_PATH.exists():
-            print(f"ERROR: positions.json not found at {POSITIONS_PATH.resolve()}")
+        if not CONFIGURATION_PATH.exists():
+            print(f"ERROR: configuration.json not found at {CONFIGURATION_PATH.resolve()}")
             sys.exit(1)
-        print(f"Loaded scene from: {POSITIONS_PATH}")
+        print(f"Loaded scene from: {CONFIGURATION_PATH}")
 
-    state = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+    state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
     return slim_scene(state)
 
 
@@ -549,9 +549,9 @@ def run_session(client: OpenAI, mode: str) -> None:
 
         # Hand the completed sequence to the Configuration Module.
         # apply_and_save updates predicates, slot_empty, and metric positions
-        # in positions.json, then archives a timestamped copy to Memory/.
+        # in configuration.json, then archives a timestamped copy to Memory/.
         from Configuration_Module.Apply_Sequence_Changes import apply_and_save  # type: ignore
-        apply_and_save(POSITIONS_PATH, sequence, save_memory=True)
+        apply_and_save(CONFIGURATION_PATH, sequence, save_memory=True)
         return
 
     # ── Option 2 (PDDL path): skip LLM dialogue, run planner directly ─────────
@@ -692,16 +692,16 @@ def run_session(client: OpenAI, mode: str) -> None:
 def _run_pddl_sequence() -> None:
     """
     PDDL planning path for motion mode.
-    Loads positions.json, runs the PDDL planner, saves sequence.json.
+    Loads configuration.json, runs the PDDL planner, saves sequence.json.
     """
     from Vision_Module.config import USE_PDDL_PLANNER  # type: ignore
     from pddl_planner import plan_sequence  # type: ignore
 
-    if not POSITIONS_PATH.exists():
-        print(f"❌ positions.json not found: {POSITIONS_PATH.resolve()}")
+    if not CONFIGURATION_PATH.exists():
+        print(f"❌ configuration.json not found: {CONFIGURATION_PATH.resolve()}")
         return
 
-    state = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+    state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
 
     print("\n── PDDL Planner ──")
     print(f"  operation_mode : {state.get('workspace', {}).get('operation_mode', 'not set')}")

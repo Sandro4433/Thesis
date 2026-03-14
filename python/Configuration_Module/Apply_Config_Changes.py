@@ -1,5 +1,5 @@
 # Apply_Config_Changes.py
-# Applies a workspace_changes dict to the new PDDL-friendly positions.json.
+# Applies a workspace_changes dict to the new PDDL-friendly configuration.json.
 #
 # Changes format (output by the LLM):
 # {
@@ -27,9 +27,9 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from paths import POSITIONS_JSON, LLM_RESPONSE_JSON
+from paths import CONFIGURATION_JSON, LLM_RESPONSE_JSON
 
-POSITIONS_PATH = Path(POSITIONS_JSON.resolve())
+CONFIGURATION_PATH = Path(CONFIGURATION_JSON.resolve())
 CHANGES_PATH   = Path(LLM_RESPONSE_JSON.resolve()).parent / "workspace_changes.json"
 
 
@@ -160,26 +160,26 @@ def apply_changes(
 # ── standalone entry point ────────────────────────────────────────────────────
 
 def main() -> None:
-    if not POSITIONS_PATH.exists():
-        print(f"ERROR: positions.json not found: {POSITIONS_PATH}")
+    if not CONFIGURATION_PATH.exists():
+        print(f"ERROR: configuration.json not found: {CONFIGURATION_PATH}")
         sys.exit(1)
     if not CHANGES_PATH.exists():
         print(f"ERROR: Changes file not found: {CHANGES_PATH}")
         sys.exit(1)
 
-    state   = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+    state   = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
     changes = json.loads(CHANGES_PATH.read_text(encoding="utf-8"))
 
-    print(f"Loaded positions: {POSITIONS_PATH}")
+    print(f"Loaded positions: {CONFIGURATION_PATH}")
     print(f"Loaded changes:   {CHANGES_PATH}")
 
     updated = apply_changes(state, changes)
 
-    tmp = str(POSITIONS_PATH) + ".tmp"
+    tmp = str(CONFIGURATION_PATH) + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(updated, f, indent=2, ensure_ascii=False)
-    Path(tmp).replace(POSITIONS_PATH)
-    print(f"Saved: {POSITIONS_PATH}")
+    Path(tmp).replace(CONFIGURATION_PATH)
+    print(f"Saved: {CONFIGURATION_PATH}")
 
 
 if __name__ == "__main__":

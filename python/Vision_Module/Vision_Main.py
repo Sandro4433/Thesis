@@ -12,7 +12,7 @@ import cv2
 from Vision_Module.config import (
     CONTAINER_TAG_IDS,
     KIT_TAG_IDS,
-    POSITIONS_PATH,
+    CONFIGURATION_PATH,
     LLM_INPUT_PATH,
     CHARUCO_ORIGIN_IN_ROBOT_M,
     CAMERA_HOME,
@@ -241,8 +241,8 @@ def main() -> None:
     # Save snapshots
     # ------------------------------------------------------------------
     state = entries_to_state(final_entries)
-    save_json_snapshot(POSITIONS_PATH, state, pretty=True)
-    print(f"Wrote JSON snapshot to: {POSITIONS_PATH}")
+    save_json_snapshot(CONFIGURATION_PATH, state, pretty=True)
+    print(f"Wrote JSON snapshot to: {CONFIGURATION_PATH}")
     save_llm_snapshot(LLM_INPUT_PATH, state, pretty=True)
     print(f"Wrote LLM input snapshot to: {LLM_INPUT_PATH}")
 

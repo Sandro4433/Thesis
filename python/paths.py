@@ -17,8 +17,7 @@ FILE_EXCHANGE_DIR = PROJECT_DIR / "File_Exchange"
 
 
 # Common files
-POSITIONS_JSON = FILE_EXCHANGE_DIR / "positions.json"
+CONFIGURATION_JSON = FILE_EXCHANGE_DIR / "configuration.json"
 LLM_INPUT_JSON = FILE_EXCHANGE_DIR / "llm_input.json"
-PATCH_LOG_JSON = FILE_EXCHANGE_DIR / "patch_log.json"
 LLM_RESPONSE_JSON = FILE_EXCHANGE_DIR / "llm_response.json"
 POSITIONS_FIXED_JSONL = FILE_EXCHANGE_DIR / "positions_fixed.jsonl"

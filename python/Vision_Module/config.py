@@ -2,9 +2,9 @@
 from typing import Dict, List, Any
 
 # Output (stable paths; independent of current working directory)
-from paths import POSITIONS_JSON, LLM_INPUT_JSON
+from paths import CONFIGURATION_JSON, LLM_INPUT_JSON
 
-POSITIONS_PATH = str(POSITIONS_JSON.resolve())
+CONFIGURATION_PATH = str(CONFIGURATION_JSON.resolve())
 LLM_INPUT_PATH = str(LLM_INPUT_JSON.resolve())
 
 # Define the Charuco origin in the ROBOT BASE FRAME. (METERS)

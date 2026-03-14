@@ -205,8 +205,7 @@ def compute_tag_targets_and_annotate(
     # ----------------------------
     ref_rgb = {
         "Blue": (40, 80, 130),
-        "Red": (130, 40, 40),
-        "Green": (50, 80, 50),
+        "Red":  (130, 40, 40),
     }
 
     # Tuning knobs:
@@ -223,16 +222,14 @@ def compute_tag_targets_and_annotate(
 
         # per-color tolerance overrides (start values)
         tol_rgb_by_color={
-            "Blue":  (45, 45, 45),   # widen to recover matte/dark blue
-            "Red":   (45, 45, 45),
-            "Green": (30, 30, 30),   # tighter to avoid highlights
+            "Blue": (45, 45, 45),   # widen to recover matte/dark blue
+            "Red":  (45, 45, 45),
         },
 
         # optional per-color morph tweaks (useful if blue gets fragmented)
         morph_by_color={
-            "Blue":  {"morph_kernel": 5, "open_iter": 0, "close_iter": 2},
-            "Green": {"morph_kernel": 7, "open_iter": 1, "close_iter": 2},
-            "Red":   {"morph_kernel": 7, "open_iter": 1, "close_iter": 2},
+            "Blue": {"morph_kernel": 5, "open_iter": 0, "close_iter": 2},
+            "Red":  {"morph_kernel": 7, "open_iter": 1, "close_iter": 2},
         },
 
         min_area_px=1000,
@@ -253,7 +250,7 @@ def compute_tag_targets_and_annotate(
 
     for d in part_dets:
         color = str(d["color"])
-        if color not in {"Blue", "Red", "Green"}:
+        if color not in {"Blue", "Red"}:
             continue
 
         part_counter += 1
