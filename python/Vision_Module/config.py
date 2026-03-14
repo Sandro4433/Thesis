@@ -5,7 +5,7 @@ from typing import Dict, List, Any
 from paths import CONFIGURATION_JSON, LLM_INPUT_JSON
 
 CONFIGURATION_PATH = str(CONFIGURATION_JSON.resolve())
-LLM_INPUT_PATH = str(LLM_INPUT_JSON.resolve())
+LLM_INPUT_PATH     = str(LLM_INPUT_JSON.resolve())
 
 # Define the Charuco origin in the ROBOT BASE FRAME. (METERS)
 CHARUCO_ORIGIN_IN_ROBOT_M: Dict[str, float] = {
