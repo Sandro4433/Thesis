@@ -254,14 +254,16 @@ def main() -> None:
     print(f"Saved annotated image to: {_latest_image_path}")
 
     # ------------------------------------------------------------------
-    # Display
+    # Display  (skipped when ROBOT_GUI_MODE=1 — the GUI shows the image)
     # ------------------------------------------------------------------
-    source_label = "CAMERA" if USE_CAMERA else f"IMAGE: {TEST_IMAGE_NAME}"
-    cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
-    cv2.setWindowTitle("Result", f"Result [{source_label}]")
-    cv2.imshow("Result", img_vis)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    import os as _os
+    if _os.environ.get("ROBOT_GUI_MODE") != "1":
+        source_label = "CAMERA" if USE_CAMERA else f"IMAGE: {TEST_IMAGE_NAME}"
+        cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
+        cv2.setWindowTitle("Result", f"Result [{source_label}]")
+        cv2.imshow("Result", img_vis)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

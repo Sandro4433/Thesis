@@ -1,35 +1,26 @@
 {
   "Container_1": {
-    "role": "output"
+    "role": "input"
   },
   "Container_3": {
+    "role": "input"
+  },
+  "Kit_0": {
     "role": "output"
   },
   "workspace": {
-    "operation_mode": "sorting"
+    "operation_mode": "kitting"
   },
-  "part_compatibility": [
+  "kit_recipe": [
     {
-      "part_color": "blue",
-      "allowed_in": [
-        "Container_1"
-      ]
-    },
-    {
-      "part_color": "red",
-      "allowed_in": [
-        "Container_3"
-      ]
-    }
-  ],
-  "priority": [
-    {
-      "color": "red",
-      "order": 1
-    },
-    {
+      "kit": "Kit_0",
       "color": "blue",
-      "order": 2
+      "quantity": 1
+    },
+    {
+      "kit": "Kit_0",
+      "color": "red",
+      "quantity": 1
     }
   ]
 }
