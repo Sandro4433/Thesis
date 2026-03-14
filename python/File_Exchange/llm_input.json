@@ -5,7 +5,8 @@
   },
   "objects": {
     "kits": [
-      "Kit_0"
+      "Kit_0",
+      "Kit_2"
     ],
     "containers": [
       "Container_1",
@@ -19,8 +20,7 @@
       "Part_5",
       "Part_6",
       "Part_7",
-      "Part_8",
-      "Part_9"
+      "Part_8"
     ],
     "slots": [
       "Container_1_Pos_1",
@@ -37,7 +37,10 @@
       "Container_3_Pos_6",
       "Kit_0_Pos_1",
       "Kit_0_Pos_2",
-      "Kit_0_Pos_3"
+      "Kit_0_Pos_3",
+      "Kit_2_Pos_1",
+      "Kit_2_Pos_2",
+      "Kit_2_Pos_3"
     ]
   },
   "slot_belongs_to": {
@@ -50,6 +53,9 @@
     "Container_1_Pos_4": "Container_1",
     "Container_1_Pos_5": "Container_1",
     "Container_1_Pos_6": "Container_1",
+    "Kit_2_Pos_1": "Kit_2",
+    "Kit_2_Pos_2": "Kit_2",
+    "Kit_2_Pos_3": "Kit_2",
     "Container_3_Pos_1": "Container_3",
     "Container_3_Pos_2": "Container_3",
     "Container_3_Pos_3": "Container_3",
@@ -60,49 +66,49 @@
   "predicates": {
     "at": [
       {
-        "part": "Part_7",
-        "slot": "Container_1_Pos_1"
-      },
-      {
-        "part": "Part_8",
-        "slot": "Container_1_Pos_2"
-      },
-      {
-        "part": "Part_9",
+        "part": "Part_6",
         "slot": "Container_1_Pos_3"
       },
       {
-        "part": "Part_6",
-        "slot": "Container_1_Pos_6"
+        "part": "Part_8",
+        "slot": "Container_1_Pos_4"
       },
       {
-        "part": "Part_1",
-        "slot": "Container_3_Pos_1"
-      },
-      {
-        "part": "Part_3",
-        "slot": "Container_3_Pos_2"
+        "part": "Part_7",
+        "slot": "Container_1_Pos_5"
       },
       {
         "part": "Part_5",
+        "slot": "Container_1_Pos_6"
+      },
+      {
+        "part": "Part_3",
         "slot": "Container_3_Pos_3"
       },
       {
         "part": "Part_4",
-        "slot": "Container_3_Pos_5"
+        "slot": "Container_3_Pos_4"
       },
       {
         "part": "Part_2",
+        "slot": "Container_3_Pos_5"
+      },
+      {
+        "part": "Part_1",
         "slot": "Container_3_Pos_6"
       }
     ],
     "slot_empty": [
-      "Container_1_Pos_4",
-      "Container_1_Pos_5",
-      "Container_3_Pos_4",
+      "Container_1_Pos_1",
+      "Container_1_Pos_2",
+      "Container_3_Pos_1",
+      "Container_3_Pos_2",
       "Kit_0_Pos_1",
       "Kit_0_Pos_2",
-      "Kit_0_Pos_3"
+      "Kit_0_Pos_3",
+      "Kit_2_Pos_1",
+      "Kit_2_Pos_2",
+      "Kit_2_Pos_3"
     ],
     "role": [
       {
@@ -116,11 +122,15 @@
       {
         "object": "Kit_0",
         "role": null
+      },
+      {
+        "object": "Kit_2",
+        "role": null
       }
     ],
     "color": [
       {
-        "part": "Part_7",
+        "part": "Part_6",
         "color": "red"
       },
       {
@@ -128,23 +138,15 @@
         "color": "red"
       },
       {
-        "part": "Part_9",
+        "part": "Part_7",
         "color": "red"
-      },
-      {
-        "part": "Part_6",
-        "color": "red"
-      },
-      {
-        "part": "Part_1",
-        "color": "blue"
-      },
-      {
-        "part": "Part_3",
-        "color": "blue"
       },
       {
         "part": "Part_5",
+        "color": "red"
+      },
+      {
+        "part": "Part_3",
         "color": "blue"
       },
       {
@@ -153,12 +155,16 @@
       },
       {
         "part": "Part_2",
+        "color": "blue"
+      },
+      {
+        "part": "Part_1",
         "color": "blue"
       }
     ],
     "size": [
       {
-        "part": "Part_7",
+        "part": "Part_6",
         "size": "standard"
       },
       {
@@ -166,23 +172,15 @@
         "size": "standard"
       },
       {
-        "part": "Part_9",
-        "size": "standard"
-      },
-      {
-        "part": "Part_6",
-        "size": "standard"
-      },
-      {
-        "part": "Part_1",
-        "size": "standard"
-      },
-      {
-        "part": "Part_3",
+        "part": "Part_7",
         "size": "standard"
       },
       {
         "part": "Part_5",
+        "size": "standard"
+      },
+      {
+        "part": "Part_3",
         "size": "standard"
       },
       {
@@ -191,6 +189,10 @@
       },
       {
         "part": "Part_2",
+        "size": "standard"
+      },
+      {
+        "part": "Part_1",
         "size": "standard"
       }
     ],
