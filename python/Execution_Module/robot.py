@@ -36,22 +36,35 @@ class Robot:
         self.arm.set_max_velocity_scaling_factor(0.1)
         self.arm.set_max_acceleration_scaling_factor(0.1)
 
+    def set_mode_ptp_fragile(self):
+        self.arm.set_planner_id("PTP")
+        self.arm.set_planning_pipeline_id("pilz_industrial_motion_planner")
+        self.arm.set_max_velocity_scaling_factor(0.2)
+        self.arm.set_max_acceleration_scaling_factor(0.2)
+
+    def set_mode_lin_fragile(self):
+        self.arm.set_planner_id("LIN")
+        self.arm.set_planning_pipeline_id("pilz_industrial_motion_planner")
+        self.arm.set_max_velocity_scaling_factor(0.05)
+        self.arm.set_max_acceleration_scaling_factor(0.05)
+
     # --------------------------
     #     MOTION FUNCTIONS
     # --------------------------
-    def MoveL(self, name, positions=None, offset=None, use_current_orientation: bool = False):
+    def MoveL(self, name, positions=None, offset=None, use_current_orientation: bool = False,
+              fragile: bool = False):
         if positions is None:
             positions = self._positions
-        self.set_mode_lin()
+        self.set_mode_lin_fragile() if fragile else self.set_mode_lin()
         return self.go_to_point_pose_only(
             name, positions, offset=offset,
             use_current_orientation=use_current_orientation
         )
 
-    def MoveJ(self, name, positions=None, offset=None):
+    def MoveJ(self, name, positions=None, offset=None, fragile: bool = False):
         if positions is None:
             positions = self._positions
-        self.set_mode_ptp()
+        self.set_mode_ptp_fragile() if fragile else self.set_mode_ptp()
         self.go_to_point_pose_only(name, positions, offset)
 
     def MoveJ_J(self, name, positions=None):

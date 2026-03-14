@@ -19,8 +19,7 @@
       "Part_4",
       "Part_5",
       "Part_6",
-      "Part_7",
-      "Part_8"
+      "Part_7"
     ],
     "slots": [
       "Container_1_Pos_1",
@@ -66,11 +65,11 @@
   "predicates": {
     "at": [
       {
-        "part": "Part_6",
+        "part": "Part_5",
         "slot": "Container_1_Pos_5"
       },
       {
-        "part": "Part_5",
+        "part": "Part_4",
         "slot": "Container_1_Pos_6"
       },
       {
@@ -118,11 +117,11 @@
     ],
     "color": [
       {
-        "part": "Part_6",
+        "part": "Part_5",
         "color": "red"
       },
       {
-        "part": "Part_5",
+        "part": "Part_4",
         "color": "red"
       },
       {
@@ -138,25 +137,21 @@
         "color": "blue"
       },
       {
-        "part": "Part_4",
-        "color": "blue"
-      },
-      {
-        "part": "Part_7",
+        "part": "Part_6",
         "color": "red"
       },
       {
-        "part": "Part_8",
+        "part": "Part_7",
         "color": "red"
       }
     ],
     "size": [
       {
-        "part": "Part_6",
+        "part": "Part_5",
         "size": "standard"
       },
       {
-        "part": "Part_5",
+        "part": "Part_4",
         "size": "standard"
       },
       {
@@ -172,20 +167,17 @@
         "size": "standard"
       },
       {
-        "part": "Part_4",
+        "part": "Part_6",
         "size": "standard"
       },
       {
         "part": "Part_7",
         "size": "standard"
-      },
-      {
-        "part": "Part_8",
-        "size": "standard"
       }
     ],
     "priority": [],
     "kit_recipe": [],
-    "part_compatibility": []
+    "part_compatibility": [],
+    "fragility": []
   }
 }

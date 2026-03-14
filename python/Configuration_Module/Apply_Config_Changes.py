@@ -79,6 +79,7 @@ def apply_changes(
     preds.setdefault("priority",          [])
     preds.setdefault("kit_recipe",        [])
     preds.setdefault("part_compatibility",[])
+    preds.setdefault("fragility",         [])
     result.setdefault("workspace", {"operation_mode": None, "batch_size": None})
 
     not_found: List[str] = []
@@ -143,6 +144,17 @@ def apply_changes(
                 elif attr_lower == "color":
                     _upsert_list(preds["color"], "part", key, {"color": (val or "").lower()})
                     print(f"  color: {key} → {val}")
+                elif attr_lower == "fragility":
+                    frag_val = (val or "normal").lower()
+                    if frag_val not in ("normal", "fragile"):
+                        print(f"  WARNING: fragility for '{key}' must be 'normal' or 'fragile' — skipped.")
+                    else:
+                        if frag_val == "fragile":
+                            _upsert_list(preds["fragility"], "part", key, {"fragility": "fragile"})
+                        else:
+                            # Remove entry (normal is the default — no entry needed)
+                            preds["fragility"] = [e for e in preds["fragility"] if e["part"] != key]
+                        print(f"  fragility: {key} → {frag_val}")
                 else:
                     print(f"  WARNING: unknown part attribute '{attr}' for '{key}' — skipped.")
             continue
