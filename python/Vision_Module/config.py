@@ -91,3 +91,7 @@ USE_PDDL_PLANNER: bool = True
 # After cloning and building: https://github.com/aibasel/downward
 # Set this to the full path of the fast-downward script, e.g.:
 #   FAST_DOWNWARD_PATH = "/home/user/downward/fast-downward.py"
+#
+# If set, Fast Downward is used with PDDL 2.1 action costs (enforces priority
+# ordering as a hard constraint). If empty, pyperplan is used as a fallback.
+FAST_DOWNWARD_PATH: str = "/home/hv/Master_Thesis_Sandro_Gabl/python/downward/fast-downward.py"
