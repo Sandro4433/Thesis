@@ -1,17 +1,31 @@
 {
-  "Part_3": {
+  "Part_1": {
     "size": "large"
   },
+  "Kit_0": {
+    "role": "input"
+  },
   "Container_1": {
+    "role": "output"
+  },
+  "Container_3": {
     "role": "output"
   },
   "workspace": {
     "operation_mode": "sorting"
   },
-  "priority": [
+  "part_compatibility": [
     {
-      "color": "red",
-      "order": 1
+      "part_color": "red",
+      "allowed_in": [
+        "Container_1"
+      ]
+    },
+    {
+      "part_color": "blue",
+      "allowed_in": [
+        "Container_3"
+      ]
     }
   ]
 }

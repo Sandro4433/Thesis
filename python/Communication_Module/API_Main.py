@@ -351,6 +351,38 @@ You will receive an INPUT JSON describing the current scene with:
   - "parts": standalone parts not currently in any slot.
 
 ──────────────────────────────────────────────────────────────
+SORTING TASK — INFERENCE RULES  (apply automatically)
+──────────────────────────────────────────────────────────────
+When the user asks to sort parts by color (or says "sort by color",
+"place parts in their containers", or similar):
+
+STEP A — infer destination containers from existing contents.
+  For every container in the scene, inspect the colors of the parts
+  already inside it (child_part.color across all its slots).
+  If ALL occupied slots share the SAME color → that container is the
+  designated destination for that color.
+
+  Example: Container_1 holds only red parts → Container_1 is the red destination.
+           Container_3 holds only blue parts → Container_3 is the blue destination.
+
+STEP B — identify the source receptacle(s).
+  Any kit or container that contains parts of MIXED colors, or whose
+  parts' colors match the destinations already inferred above but in
+  the wrong container, is the pick source → role = "input".
+
+STEP C — always emit ALL FOUR of these keys together for sorting tasks:
+  1. source receptacle(s)       → role = "input"
+  2. destination container(s)   → role = "output"
+  3. workspace                  → operation_mode = "sorting"
+  4. part_compatibility         → one entry per color mapping inferred in STEP A
+
+  NEVER output a sorting changes block without part_compatibility.
+  part_compatibility is what tells the planner which color goes where.
+
+STEP D — if a container holds parts of MORE THAN ONE color, do not
+  auto-assign it. Ask the user which color that container should receive.
+
+──────────────────────────────────────────────────────────────
 WORKFLOW
 ──────────────────────────────────────────────────────────────
 1. Give a SHORT scene summary: receptacles with their role, parts with color/size,
@@ -458,9 +490,10 @@ def select_mode() -> str:
         "Workspace reconfiguration  (change attributes, roles, recipes)",
         f"Motion sequence planning   ({planner_label})",
         "Execute robot motion       (run current sequence.json)",
+        "Scene update               (camera scan + selective memory merge)",
         "Exit",
     ])
-    return ["reconfig", "motion", "execute", "exit"][idx]
+    return ["reconfig", "motion", "execute", "scene_update", "exit"][idx]
 
 
 def select_scene() -> dict:
@@ -491,6 +524,12 @@ def select_scene() -> dict:
 # ── Main session loop ─────────────────────────────────────────────────────────
 
 def run_session(client: OpenAI, mode: str) -> None:
+
+    # ── Option 4: Scene update (camera + selective memory merge) ─────────────
+    if mode == "scene_update":
+        from Configuration_Module.Update_Scene import run_update_session  # type: ignore
+        run_update_session(client)
+        return
 
     # ── Option 3: Execute robot motion ────────────────────────────────────────
     if mode == "execute":

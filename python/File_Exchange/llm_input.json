@@ -13,7 +13,6 @@
     ],
     "parts": [
       "Part_1",
-      "Part_10",
       "Part_2",
       "Part_3",
       "Part_4",
@@ -61,39 +60,48 @@
   "predicates": {
     "at": [
       {
-        "part": "Part_5",
-        "slot": "Container_3_Pos_1"
+        "part": "Part_6",
+        "slot": "Container_1_Pos_1"
       },
       {
-        "part": "Part_3",
-        "slot": "Container_3_Pos_4"
+        "part": "Part_9",
+        "slot": "Container_1_Pos_2"
+      },
+      {
+        "part": "Part_8",
+        "slot": "Container_1_Pos_3"
+      },
+      {
+        "part": "Part_5",
+        "slot": "Container_1_Pos_4"
+      },
+      {
+        "part": "Part_4",
+        "slot": "Container_3_Pos_1"
       },
       {
         "part": "Part_2",
         "slot": "Container_3_Pos_5"
       },
       {
-        "part": "Part_4",
+        "part": "Part_3",
         "slot": "Container_3_Pos_6"
       },
       {
-        "part": "Part_7",
+        "part": "Part_1",
         "slot": "Kit_0_Pos_2"
       },
       {
-        "part": "Part_1",
+        "part": "Part_7",
         "slot": "Kit_0_Pos_3"
       }
     ],
     "slot_empty": [
-      "Container_1_Pos_1",
-      "Container_1_Pos_2",
-      "Container_1_Pos_3",
-      "Container_1_Pos_4",
       "Container_1_Pos_5",
       "Container_1_Pos_6",
       "Container_3_Pos_2",
       "Container_3_Pos_3",
+      "Container_3_Pos_4",
       "Kit_0_Pos_1"
     ],
     "role": [
@@ -112,35 +120,11 @@
     ],
     "color": [
       {
-        "part": "Part_5",
-        "color": "blue"
-      },
-      {
-        "part": "Part_3",
-        "color": "blue"
-      },
-      {
-        "part": "Part_2",
-        "color": "blue"
-      },
-      {
-        "part": "Part_4",
-        "color": "blue"
-      },
-      {
-        "part": "Part_7",
-        "color": "red"
-      },
-      {
-        "part": "Part_1",
-        "color": "blue"
-      },
-      {
-        "part": "Part_10",
-        "color": "red"
-      },
-      {
         "part": "Part_6",
+        "color": "red"
+      },
+      {
+        "part": "Part_9",
         "color": "red"
       },
       {
@@ -148,41 +132,37 @@
         "color": "red"
       },
       {
-        "part": "Part_9",
+        "part": "Part_5",
+        "color": "red"
+      },
+      {
+        "part": "Part_4",
+        "color": "blue"
+      },
+      {
+        "part": "Part_2",
+        "color": "blue"
+      },
+      {
+        "part": "Part_3",
+        "color": "blue"
+      },
+      {
+        "part": "Part_1",
+        "color": "blue"
+      },
+      {
+        "part": "Part_7",
         "color": "red"
       }
     ],
     "size": [
       {
-        "part": "Part_5",
-        "size": "standard"
-      },
-      {
-        "part": "Part_3",
-        "size": "standard"
-      },
-      {
-        "part": "Part_2",
-        "size": "standard"
-      },
-      {
-        "part": "Part_4",
-        "size": "standard"
-      },
-      {
-        "part": "Part_7",
-        "size": "large"
-      },
-      {
-        "part": "Part_1",
-        "size": "large"
-      },
-      {
-        "part": "Part_10",
-        "size": "standard"
-      },
-      {
         "part": "Part_6",
+        "size": "standard"
+      },
+      {
+        "part": "Part_9",
         "size": "standard"
       },
       {
@@ -190,8 +170,28 @@
         "size": "standard"
       },
       {
-        "part": "Part_9",
+        "part": "Part_5",
         "size": "standard"
+      },
+      {
+        "part": "Part_4",
+        "size": "standard"
+      },
+      {
+        "part": "Part_2",
+        "size": "standard"
+      },
+      {
+        "part": "Part_3",
+        "size": "standard"
+      },
+      {
+        "part": "Part_1",
+        "size": "standard"
+      },
+      {
+        "part": "Part_7",
+        "size": "large"
       }
     ],
     "priority": [],
