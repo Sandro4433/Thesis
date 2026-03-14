@@ -5,28 +5,24 @@
   },
   "objects": {
     "kits": [
-      "Kit_0",
-      "Kit_2"
+      "Kit_0"
     ],
     "containers": [
-      "Container_1",
       "Container_3"
     ],
     "parts": [
       "Part_Blue_Nr_1",
       "Part_Blue_Nr_2",
       "Part_Blue_Nr_3",
+      "Part_Blue_Nr_4",
+      "Part_Blue_Nr_5",
       "Part_Red_Nr_1",
       "Part_Red_Nr_2",
-      "Part_Red_Nr_3"
+      "Part_Red_Nr_3",
+      "Part_Red_Nr_4",
+      "Part_Red_Nr_5"
     ],
     "slots": [
-      "Container_1_Pos_1",
-      "Container_1_Pos_2",
-      "Container_1_Pos_3",
-      "Container_1_Pos_4",
-      "Container_1_Pos_5",
-      "Container_1_Pos_6",
       "Container_3_Pos_1",
       "Container_3_Pos_2",
       "Container_3_Pos_3",
@@ -35,25 +31,13 @@
       "Container_3_Pos_6",
       "Kit_0_Pos_1",
       "Kit_0_Pos_2",
-      "Kit_0_Pos_3",
-      "Kit_2_Pos_1",
-      "Kit_2_Pos_2",
-      "Kit_2_Pos_3"
+      "Kit_0_Pos_3"
     ]
   },
   "slot_belongs_to": {
     "Kit_0_Pos_1": "Kit_0",
     "Kit_0_Pos_2": "Kit_0",
     "Kit_0_Pos_3": "Kit_0",
-    "Container_1_Pos_1": "Container_1",
-    "Container_1_Pos_2": "Container_1",
-    "Container_1_Pos_3": "Container_1",
-    "Container_1_Pos_4": "Container_1",
-    "Container_1_Pos_5": "Container_1",
-    "Container_1_Pos_6": "Container_1",
-    "Kit_2_Pos_1": "Kit_2",
-    "Kit_2_Pos_2": "Kit_2",
-    "Kit_2_Pos_3": "Kit_2",
     "Container_3_Pos_1": "Container_3",
     "Container_3_Pos_2": "Container_3",
     "Container_3_Pos_3": "Container_3",
@@ -62,51 +46,19 @@
     "Container_3_Pos_6": "Container_3"
   },
   "predicates": {
-    "at": [
-      {
-        "part": "Part_Red_Nr_3",
-        "slot": "Container_1_Pos_3"
-      },
-      {
-        "part": "Part_Red_Nr_2",
-        "slot": "Container_1_Pos_4"
-      },
-      {
-        "part": "Part_Red_Nr_1",
-        "slot": "Container_1_Pos_5"
-      },
-      {
-        "part": "Part_Blue_Nr_2",
-        "slot": "Container_3_Pos_1"
-      },
-      {
-        "part": "Part_Blue_Nr_1",
-        "slot": "Container_3_Pos_2"
-      },
-      {
-        "part": "Part_Blue_Nr_3",
-        "slot": "Container_3_Pos_6"
-      }
-    ],
+    "at": [],
     "slot_empty": [
-      "Container_1_Pos_1",
-      "Container_1_Pos_2",
-      "Container_1_Pos_6",
+      "Container_3_Pos_1",
+      "Container_3_Pos_2",
       "Container_3_Pos_3",
       "Container_3_Pos_4",
       "Container_3_Pos_5",
+      "Container_3_Pos_6",
       "Kit_0_Pos_1",
       "Kit_0_Pos_2",
-      "Kit_0_Pos_3",
-      "Kit_2_Pos_1",
-      "Kit_2_Pos_2",
-      "Kit_2_Pos_3"
+      "Kit_0_Pos_3"
     ],
     "role": [
-      {
-        "object": "Container_1",
-        "role": null
-      },
       {
         "object": "Container_3",
         "role": null
@@ -114,15 +66,31 @@
       {
         "object": "Kit_0",
         "role": null
-      },
-      {
-        "object": "Kit_2",
-        "role": null
       }
     ],
     "color": [
       {
-        "part": "Part_Red_Nr_3",
+        "part": "Part_Blue_Nr_1",
+        "color": "blue"
+      },
+      {
+        "part": "Part_Blue_Nr_2",
+        "color": "blue"
+      },
+      {
+        "part": "Part_Blue_Nr_3",
+        "color": "blue"
+      },
+      {
+        "part": "Part_Blue_Nr_4",
+        "color": "blue"
+      },
+      {
+        "part": "Part_Blue_Nr_5",
+        "color": "blue"
+      },
+      {
+        "part": "Part_Red_Nr_1",
         "color": "red"
       },
       {
@@ -130,33 +98,21 @@
         "color": "red"
       },
       {
-        "part": "Part_Red_Nr_1",
+        "part": "Part_Red_Nr_3",
         "color": "red"
       },
       {
-        "part": "Part_Blue_Nr_2",
-        "color": "blue"
+        "part": "Part_Red_Nr_4",
+        "color": "red"
       },
       {
-        "part": "Part_Blue_Nr_1",
-        "color": "blue"
-      },
-      {
-        "part": "Part_Blue_Nr_3",
-        "color": "blue"
+        "part": "Part_Red_Nr_5",
+        "color": "red"
       }
     ],
     "size": [
       {
-        "part": "Part_Red_Nr_3",
-        "size": "standard"
-      },
-      {
-        "part": "Part_Red_Nr_2",
-        "size": "standard"
-      },
-      {
-        "part": "Part_Red_Nr_1",
+        "part": "Part_Blue_Nr_1",
         "size": "standard"
       },
       {
@@ -164,16 +120,39 @@
         "size": "standard"
       },
       {
-        "part": "Part_Blue_Nr_1",
+        "part": "Part_Blue_Nr_3",
+        "size": "large"
+      },
+      {
+        "part": "Part_Blue_Nr_4",
+        "size": "large"
+      },
+      {
+        "part": "Part_Blue_Nr_5",
         "size": "standard"
       },
       {
-        "part": "Part_Blue_Nr_3",
+        "part": "Part_Red_Nr_1",
+        "size": "large"
+      },
+      {
+        "part": "Part_Red_Nr_2",
+        "size": "large"
+      },
+      {
+        "part": "Part_Red_Nr_3",
+        "size": "standard"
+      },
+      {
+        "part": "Part_Red_Nr_4",
+        "size": "standard"
+      },
+      {
+        "part": "Part_Red_Nr_5",
         "size": "standard"
       }
     ],
     "priority": [],
-    "kit_recipe": [],
-    "part_compatibility": []
+    "kit_recipe": []
   }
 }

@@ -31,7 +31,7 @@ CHANGES_BLOCK_RE  = re.compile(r"```changes\s*(.*?)\s*```",  re.DOTALL | re.IGNO
 
 # Valid attribute values
 VALID_ROLE  = {"input", "output", None}
-VALID_SIZE  = {None, "large"}
+VALID_SIZE  = {"standard", "large"}
 VALID_COLOR = {"Blue", "Red", "blue", "red"}
 
 
@@ -511,9 +511,18 @@ def select_scene() -> dict:
     idx = _pick_from_list("\nWhich scene do you want to use?", options)
 
     if idx == 0:
-        print("\nStarting vision module …")
-        from Vision_Module.Vision_Main import main as vision_main  # type: ignore
-        vision_main()
+        print("\nStarting vision module ...")
+        # Run Vision_Main in a completely separate process so that
+        # pyrealsense2 (loaded inside Vision_Main's subprocess worker) and
+        # libapriltag never share the same process heap.
+        # Importing Vision_Main directly here pulls libapriltag into this
+        # process -- the same pattern that caused the malloc heap crash.
+        import subprocess as _sp
+        _vision_script = PROJECT_DIR / "Vision_Module" / "Vision_Main.py"
+        _result = _sp.run([sys.executable, str(_vision_script)], text=True)
+        if _result.returncode != 0:
+            print(f"ERROR: Vision module exited with code {_result.returncode}")
+            sys.exit(1)
         if not POSITIONS_PATH.exists():
             print(f"ERROR: Vision module did not produce {POSITIONS_PATH}")
             sys.exit(1)
