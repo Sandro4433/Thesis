@@ -1,14 +1,35 @@
 {
-  "Part_4": {
-    "fragility": "fragile"
+  "Container_1": {
+    "role": "output"
   },
-  "Part_5": {
-    "fragility": "fragile"
+  "Container_3": {
+    "role": "output"
   },
-  "Part_6": {
-    "fragility": "fragile"
+  "workspace": {
+    "operation_mode": "sorting"
   },
-  "Part_7": {
-    "fragility": "fragile"
-  }
+  "part_compatibility": [
+    {
+      "part_color": "blue",
+      "allowed_in": [
+        "Container_1"
+      ]
+    },
+    {
+      "part_color": "red",
+      "allowed_in": [
+        "Container_3"
+      ]
+    }
+  ],
+  "priority": [
+    {
+      "color": "red",
+      "order": 1
+    },
+    {
+      "color": "blue",
+      "order": 2
+    }
+  ]
 }
