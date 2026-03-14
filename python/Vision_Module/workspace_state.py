@@ -190,7 +190,6 @@ def entries_to_state(final_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
             "size":              size_list,
             "priority":          [],
             "kit_recipe":        [],
-            "part_compatibility":[],
         },
         "metric": metric,
     }
@@ -235,7 +234,7 @@ def load_json_snapshot(path: str) -> Dict[str, Any]:
         "predicates": {
             "at": [], "slot_empty": [], "role": [],
             "color": [], "size": [],
-            "priority": [], "kit_recipe": [], "part_compatibility": [],
+            "priority": [], "kit_recipe": [],
         },
         "metric": {},
     }

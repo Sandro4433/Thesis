@@ -25,6 +25,7 @@ from Vision_Module.config import (
     AXIS_LEN_M,
     TAG_AXIS_DRAW_LEN_M,
     Z_ROBOT_M,
+    PART_SIZE_CLASSES,
     REALSENSE_WIDTH,
     REALSENSE_HEIGHT,
     REALSENSE_FPS,
@@ -36,6 +37,29 @@ from Vision_Module.vision_apriltag import create_detector, detect_tags
 from Vision_Module.pipeline import compute_tag_targets_and_annotate, targets_to_robot_entries
 from Vision_Module.assign_parts import assign_parts_to_slots
 from Vision_Module.workspace_state import entries_to_state, save_json_snapshot, save_llm_snapshot
+
+# ── Safety guard ──────────────────────────────────────────────────────────────
+# pyrealsense2 and libapriltag corrupt each other's heap when loaded in the
+# same process.  Capture is deliberately done in a subprocess worker so that
+# pyrealsense2 never enters this process.  If something in the import chain
+# above has pulled it in anyway, fail loudly here rather than with a silent
+# malloc abort later.
+if "pyrealsense2" in sys.modules:
+    _offenders = [
+        name for name, mod in sys.modules.items()
+        if name != "pyrealsense2"
+        and getattr(mod, "__file__", None)
+        and "pyrealsense2" in str(getattr(mod, "__file__", ""))
+    ]
+    raise ImportError(
+        "pyrealsense2 was imported into the main Vision process — this will "
+        "cause a malloc heap-corruption crash when libapriltag is loaded.\n"
+        "Find which module imported it and guard it behind  "
+        "  if not USE_CAMERA  or move it into vision_capture_worker.py.\n"
+        f"Loaded sys.modules keys containing 'realsense': "
+        f"{[k for k in sys.modules if 'realsense' in k.lower()]}"
+    )
+# ─────────────────────────────────────────────────────────────────────────────
 
 # =============================================================================
 # IMAGE SOURCE TOGGLE
@@ -164,6 +188,12 @@ def main() -> None:
     # ------------------------------------------------------------------
     # AprilTag detection
     # ------------------------------------------------------------------
+    # Second checkpoint: catch any late import of pyrealsense2 (e.g. from a
+    # lazy-imported helper called during image capture) before libapriltag loads.
+    assert "pyrealsense2" not in sys.modules, (
+        "pyrealsense2 was imported after startup — check any code that ran "
+        "between program launch and this point (capture helper, config, etc.)."
+    )
     detector = create_detector(
         families="tag25h9",
         nthreads=1,
@@ -184,6 +214,7 @@ def main() -> None:
         kit_ids=KIT_TAG_IDS,
         container_ids=CONTAINER_TAG_IDS,
         tag_axis_draw_len=TAG_AXIS_DRAW_LEN_M,
+        part_size_classes=PART_SIZE_CLASSES,
     )
 
     del detector  # safe to release after compute_tag_targets_and_annotate is done
@@ -198,6 +229,7 @@ def main() -> None:
         camera_quat=CAMERA_HOME["quat"],
         kit_ids=KIT_TAG_IDS,
         container_ids=CONTAINER_TAG_IDS,
+        part_size_classes=PART_SIZE_CLASSES,
     )
 
     final_entries = assign_parts_to_slots(

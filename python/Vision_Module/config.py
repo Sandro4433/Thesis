@@ -63,6 +63,15 @@ TAG_AXIS_DRAW_LEN_M = 0.04            # meters
 # Robot output
 Z_ROBOT_M = 0.2
 
+# Part size classification by measured diameter.
+# Ranges are checked in order; the first match wins.
+# Any part whose diameter falls outside all ranges is labelled "unknown".
+PART_SIZE_CLASSES: list = [
+    #  (label,      min_mm (inclusive),  max_mm (exclusive))
+    ("standard",   0.0,                 60.0),
+    ("large",      60.0,                200.0),
+]
+
 # RealSense capture
 REALSENSE_WIDTH = 1920
 REALSENSE_HEIGHT = 1080

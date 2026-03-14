@@ -1,7 +1,7 @@
 # pipeline.py
 from __future__ import annotations
 
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import cv2
 import numpy as np
@@ -61,6 +61,7 @@ def compute_tag_targets_and_annotate(
     kit_ids: Set[int],
     container_ids: Set[int],
     tag_axis_draw_len: float,
+    part_size_classes: List[tuple] = None,
 ) -> Dict[int, List[Dict[str, float]]]:
     """
     Produces:
@@ -109,16 +110,6 @@ def compute_tag_targets_and_annotate(
         # Tag axis vector in board coords
         v_b_unit, n = _tag_axis_vector_board(r, H_inv)
 
-        cv2.putText(
-            img_vis,
-            f"X={tag_x_mm:.1f}mm  Y={tag_y_mm:.1f}mm",
-            (label_xy[0], label_xy[1] + 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (255, 0, 0),
-            2,
-        )
-
         # Degenerate axis
         if n <= 1e-9:
             if tag_id in kit_ids or tag_id in container_ids:
@@ -143,16 +134,6 @@ def compute_tag_targets_and_annotate(
         theta_x_deg = float(np.degrees(np.arctan2(vy, vx)))
         theta_x_deg = wrap_deg_180(theta_x_deg)
         tag_rot_deg_to_x = wrap_deg_90(theta_x_deg)
-
-        cv2.putText(
-            img_vis,
-            f"rot={tag_rot_deg_to_x:.1f} deg (to X)",
-            (label_xy[0], label_xy[1] + 60),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (255, 0, 0),
-            2,
-        )
 
         # Draw tag axis in image (VIS only)
         end_b = c_b + v_b_unit * float(tag_axis_draw_len)
@@ -207,17 +188,8 @@ def compute_tag_targets_and_annotate(
             cv2.circle(img_vis, pi, 6, draw_color, -1)
             cv2.putText(
                 img_vis,
-                f"{object_label}_{kp['name']} ({obj_x_mm:.0f},{obj_y_mm:.0f})mm",
+                f"{object_label}_{kp['name']}",
                 (pi[0] + 8, pi[1] - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
-                draw_color,
-                2,
-            )
-            cv2.putText(
-                img_vis,
-                f"rot={grip_rot_deg_to_x:.1f} deg (to X)",
-                (pi[0] + 8, pi[1] + 18),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.65,
                 draw_color,
@@ -291,6 +263,14 @@ def compute_tag_targets_and_annotate(
         y_mm = float(delta_b.dot(uy_unit_b)) * 1000.0
 
         # Visualization (VIS only)
+        diameter_mm = float(d.get("diameter_mm", 0.0))
+        size_label = "unknown"
+        if part_size_classes:
+            for label, lo, hi in part_size_classes:
+                if lo <= diameter_mm < hi:
+                    size_label = label
+                    break
+
         center = (int(round(d["cx_px"])), int(round(d["cy_px"])))
         cv2.circle(img_vis, center, 10, (255, 255, 255), 2)
         cv2.putText(
@@ -302,9 +282,19 @@ def compute_tag_targets_and_annotate(
             (255, 255, 255),
             2,
         )
+        cv2.putText(
+            img_vis,
+            f"{size_label}  ({diameter_mm:.1f}mm)",
+            (center[0] + 10, center[1] + 18),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (255, 255, 255),
+            2,
+        )
 
         tag_targets.setdefault(-1000, []).append(
-            {"name_suffix": name_suffix, "x_mm": x_mm, "y_mm": y_mm, "orientation_deg": 0.0}
+            {"name_suffix": name_suffix, "x_mm": x_mm, "y_mm": y_mm, "orientation_deg": 0.0,
+             "diameter_mm": float(d.get("diameter_mm", 0.0))}
         )
 
     return tag_targets
@@ -317,6 +307,7 @@ def targets_to_robot_entries(
     camera_quat: List[float],
     kit_ids: Set[int],
     container_ids: Set[int],
+    part_size_classes: List[tuple] = None,
 ) -> List[Dict[str, Any]]:
     """
     Outputs objects WITHOUT groupname:
@@ -328,7 +319,18 @@ def targets_to_robot_entries(
         { name, pos, quat, orientation, Role, child_part }
       Part:
         { name, pos, quat, orientation, Color, Size, Fragility, Role }
+
+    part_size_classes: ordered list of (label, min_mm, max_mm) tuples.
+      The first range that contains the measured diameter wins.
+      Parts with no diameter info or no matching range receive Size=None.
     """
+    def _classify_size(diameter_mm: float) -> Optional[str]:
+        if not part_size_classes or diameter_mm <= 0.0:
+            return None
+        for label, lo, hi in part_size_classes:
+            if lo <= diameter_mm < hi:
+                return label
+        return None
     def _part_color_from_name(part_name: str) -> str:
         # Expected: Part_<Color>_Nr_<k>
         toks = part_name.split("_")
@@ -351,13 +353,15 @@ def targets_to_robot_entries(
 
             if is_part:
                 part_name = name_suffix
+                diameter_mm = float(t.get("diameter_mm", 0.0))
                 entry = {
                     "name": part_name,
                     "pos": [x_robot, y_robot, float(z_robot)],
                     "quat": camera_quat,
                     "orientation": None,                 # will inherit from parent slot if assigned
                     "Color": _part_color_from_name(part_name),
-                    "Size": None,
+                    "Size": _classify_size(diameter_mm),
+                    "diameter_mm": round(diameter_mm, 1),
                     "Role": None,
                 }
                 new_entries.append(entry)

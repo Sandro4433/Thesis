@@ -53,30 +53,31 @@ def _to_board_m(cx_px: float, cy_px: float, H_inv: np.ndarray) -> Tuple[float, f
     return float(c_b[0]), float(c_b[1])
 
 
-def _component_is_circular(component_mask: np.ndarray) -> Tuple[bool, float, float]:
+def _component_is_circular(component_mask: np.ndarray) -> Tuple[bool, float, float, float]:
+    """Returns (is_circular, circularity, fill_ratio, radius_px)."""
     cnts, _ = cv2.findContours(component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not cnts:
-        return False, 0.0, 0.0
+        return False, 0.0, 0.0, 0.0
 
     c = max(cnts, key=cv2.contourArea)
     area = float(cv2.contourArea(c))
     if area <= 10.0:
-        return False, 0.0, 0.0
+        return False, 0.0, 0.0, 0.0
 
     peri = float(cv2.arcLength(c, True))
     if peri <= 1e-6:
-        return False, 0.0, 0.0
+        return False, 0.0, 0.0, 0.0
 
     circularity = (4.0 * np.pi * area) / (peri * peri)
 
     (_, _), r = cv2.minEnclosingCircle(c)
     if r <= 1e-6:
-        return False, circularity, 0.0
+        return False, circularity, 0.0, 0.0
 
     circle_area = np.pi * float(r) * float(r)
     fill_ratio = area / circle_area if circle_area > 1e-9 else 0.0
 
-    return True, circularity, fill_ratio
+    return True, circularity, fill_ratio, float(r)
 
 
 def detect_color_cluster_parts_on_board(
@@ -160,7 +161,7 @@ def detect_color_cluster_parts_on_board(
                 continue
 
             comp_mask = (labels == label_id).astype(np.uint8) * 255
-            ok, circ, fill = _component_is_circular(comp_mask)
+            ok, circ, fill, radius_px = _component_is_circular(comp_mask)
             if not ok:
                 continue
             if circ < float(circularity_min) or fill < float(fill_ratio_min):
@@ -170,6 +171,12 @@ def detect_color_cluster_parts_on_board(
             cx_px = float(cx)
             cy_px = float(cy)
             cx_b_m, cy_b_m = _to_board_m(cx_px, cy_px, H_inv)
+
+            # Convert pixel radius → physical diameter (mm) via the homography.
+            # Project a point on the circle edge into board coords and measure
+            # its distance from the centre; this naturally handles perspective.
+            edge_b_m, _ = _to_board_m(cx_px + radius_px, cy_px, H_inv)
+            diameter_mm = abs(edge_b_m - cx_b_m) * 2.0 * 1000.0
 
             detections.append(
                 {
@@ -181,6 +188,7 @@ def detect_color_cluster_parts_on_board(
                     "cy_b_m": cy_b_m,
                     "circularity": float(circ),
                     "fill_ratio": float(fill),
+                    "diameter_mm": float(diameter_mm),
                 }
             )
 
