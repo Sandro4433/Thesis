@@ -16,6 +16,9 @@ def pick_and_place(
     
     # Rotate gripper
     self.MoveJointDelta(joint_index=6, target_name=pick_name)
+
+    # Open gripper
+    self.gripper_open(gripper_open_width)
     
     # Go down to pick
     self.MoveL(pick_name, offset=(0.0, 0.0, approach_z_offset), use_current_orientation=True)
