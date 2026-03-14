@@ -1,7 +1,7 @@
 # pddl_planner.py
 #
 # Full PDDL planning pipeline:
-#   state (positions.json) → domain.pddl + problem.pddl → Fast Downward → sequence.json
+#   state (configuration.json) → domain.pddl + problem.pddl → Fast Downward → sequence.json
 #
 # Install Fast Downward:
 #   git clone https://github.com/aibasel/downward.git
@@ -50,7 +50,6 @@ DOMAIN_PDDL = """\
     (compatible ?p - part ?r - receptacle)
     (color-red ?p - part)
     (color-blue ?p - part)
-    (color-green ?p - part)
     (large ?p - part)
     (hand-empty)
     (holding ?p - part)
@@ -103,7 +102,7 @@ def _to_pddl_name(name: str) -> str:
 
 
 def state_to_pddl_problem(state: Dict[str, Any]) -> str:
-    """Generate a complete PDDL problem string from a positions.json state."""
+    """Generate a complete PDDL problem string from a configuration.json state."""
 
     objs         = state.get("objects", {})
     preds        = state.get("predicates", {})
@@ -184,8 +183,6 @@ def state_to_pddl_problem(state: Dict[str, Any]) -> str:
             init.append(f"    (color-red {part})")
         elif color == "blue":
             init.append(f"    (color-blue {part})")
-        elif color == "green":
-            init.append(f"    (color-green {part})")
 
     for entry in preds.get("size", []):
         if (entry.get("size") or "standard").lower() == "large":
@@ -647,7 +644,7 @@ def plan_sequence(
 
     Parameters
     ----------
-    state        : loaded positions.json dict
+    state        : loaded configuration.json dict
     output_path  : if given, saves sequence to this path as JSON
     keep_pddl    : if True, prints the generated PDDL for inspection
 
@@ -710,10 +707,10 @@ if __name__ == "__main__":
     if str(PROJECT_DIR) not in sys.path:
         sys.path.insert(0, str(PROJECT_DIR))
 
-    from paths import POSITIONS_JSON, LLM_RESPONSE_JSON
+    from paths import CONFIGURATION_JSON, LLM_RESPONSE_JSON
     from Vision_Module.config import FAST_DOWNWARD_PATH  # type: ignore
 
-    positions_path = str(POSITIONS_JSON.resolve())
+    positions_path = str(CONFIGURATION_JSON.resolve())
     sequence_path  = str(Path(LLM_RESPONSE_JSON.resolve()).parent / "sequence.json")
 
     print(f"Loading state from: {positions_path}")

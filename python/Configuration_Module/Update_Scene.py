@@ -3,8 +3,8 @@
 #
 # Workflow
 # ────────
-#   1. Load memory state (positions.json) — the ground truth with stable IDs.
-#   2. Trigger the vision pipeline → fresh positions.json (overwrites memory
+#   1. Load memory state (configuration.json) — the ground truth with stable IDs.
+#   2. Trigger the vision pipeline → fresh configuration.json (overwrites memory
 #      on disk, but we already hold memory in RAM).
 #   3. Match slots by exact name (AprilTag-derived, so naturally stable).
 #      Match parts by XY proximity (detection order varies, so proximity is
@@ -13,7 +13,7 @@
 #      max(existing Part_N) + 1, preserving all existing IDs.
 #   5. Compute a structured diff: new / removed / moved / unchanged.
 #   6. LLM dialogue: user picks which changes to apply.
-#   7. Merge only the confirmed changes into memory state, save positions.json,
+#   7. Merge only the confirmed changes into memory state, save configuration.json,
 #      and archive a timestamped copy to Memory/.
 
 from __future__ import annotations
@@ -30,9 +30,9 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from paths import POSITIONS_JSON  # type: ignore
+from paths import CONFIGURATION_JSON  # type: ignore
 
-POSITIONS_PATH = Path(POSITIONS_JSON.resolve())
+CONFIGURATION_PATH = Path(CONFIGURATION_JSON.resolve())
 
 # ── Tuning constants ──────────────────────────────────────────────────────────
 # Parts within this XY distance are considered the SAME physical part.
@@ -127,23 +127,40 @@ def _empty_state() -> Dict[str, Any]:
 
 def run_vision_and_load() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
-    Load memory BEFORE triggering Vision_Main (which overwrites positions.json).
+    Load memory BEFORE triggering Vision_Main (which overwrites configuration.json).
     Returns (memory_state, fresh_state).
+
+    Vision_Main is spawned as a clean subprocess so that libapriltag (pupil_apriltags)
+    never shares a process with the native libraries already loaded by API_Main.
+    This mirrors the pattern Vision_Main itself uses to isolate pyrealsense2 from
+    libapriltag via vision_capture_worker.py.
     """
+    import subprocess
+    import sys as _sys
+
     memory_state: Dict[str, Any] = (
-        json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
-        if POSITIONS_PATH.exists()
+        json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
+        if CONFIGURATION_PATH.exists()
         else _empty_state()
     )
 
+    vision_main_path = PROJECT_DIR / "Vision_Module" / "Vision_Main.py"
+
     print("\nStarting vision module …")
-    from Vision_Module.Vision_Main import main as vision_main  # type: ignore
-    vision_main()
+    result = subprocess.run(
+        [_sys.executable, str(vision_main_path)],
+        cwd=str(PROJECT_DIR),
+    )
 
-    if not POSITIONS_PATH.exists():
-        raise RuntimeError("Vision module did not produce positions.json.")
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Vision_Main subprocess exited with code {result.returncode}."
+        )
 
-    fresh_state = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+    if not CONFIGURATION_PATH.exists():
+        raise RuntimeError("Vision module did not produce configuration.json.")
+
+    fresh_state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
     print("Vision complete.\n")
     return memory_state, fresh_state
 
@@ -849,7 +866,7 @@ def run_update_session(client: Any) -> None:
       1. Run vision → compute diff → re-number parts.
       2. Show terminal summary.
       3. LLM dialogue to select changes.
-      4. Apply confirmed changes, save positions.json, archive to Memory/.
+      4. Apply confirmed changes, save configuration.json, archive to Memory/.
     """
     # ── Acquire both states ───────────────────────────────────────────────────
     try:
@@ -874,7 +891,7 @@ def run_update_session(client: Any) -> None:
     if not has_changes:
         print("\n✅  Camera scan matches memory exactly — nothing to update.\n")
         # Restore fresh state was already saved by Vision_Main; write back memory.
-        _save_atomic(POSITIONS_PATH, memory_state)
+        _save_atomic(CONFIGURATION_PATH, memory_state)
         return
 
     # ── Build LLM context ─────────────────────────────────────────────────────
@@ -947,9 +964,9 @@ def run_update_session(client: Any) -> None:
                     memory_state, fresh_renamed, diff, pending_update
                 )
             else:
-                print("  [No confirmed changes — positions.json left as-is.]\n")
+                print("  [No confirmed changes — configuration.json left as-is.]\n")
                 # Restore memory (vision_main overwrote it)
-                _save_atomic(POSITIONS_PATH, memory_state)
+                _save_atomic(CONFIGURATION_PATH, memory_state)
             print("\n── Scene update session complete. ──\n")
             return
 
@@ -986,7 +1003,7 @@ def _apply_and_save(
     diff:          Dict[str, Any],
     update_block:  Dict[str, Any],
 ) -> None:
-    """Merge, save positions.json, archive to Memory/."""
+    """Merge, save configuration.json, archive to Memory/."""
     merged = merge_confirmed(
         memory_state  = memory_state,
         fresh_renamed = fresh_renamed,
@@ -996,8 +1013,8 @@ def _apply_and_save(
         move_names    = update_block.get("move",   []),
     )
 
-    _save_atomic(POSITIONS_PATH, merged)
-    print(f"✅  positions.json updated → {POSITIONS_PATH.resolve()}")
+    _save_atomic(CONFIGURATION_PATH, merged)
+    print(f"✅  configuration.json updated → {CONFIGURATION_PATH.resolve()}")
 
     try:
         from Configuration_Module.Apply_Sequence_Changes import save_to_memory  # type: ignore

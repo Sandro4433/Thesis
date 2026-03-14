@@ -108,7 +108,7 @@ def detect_color_cluster_parts_on_board(
     """
     Detect parts by dense color clusters + shape test (circular).
     Per-color tuning:
-      - tol_rgb_by_color: {"Blue":(60,60,60), "Green":(30,30,30), ...}
+      - tol_rgb_by_color: {"Blue":(60,60,60), "Red":(45,45,45), ...}
       - morph_by_color: {"Blue":{"morph_kernel":5,"open_iter":0,"close_iter":2}, ...}
     """
     detections: List[Dict[str, float]] = []

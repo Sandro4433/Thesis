@@ -3,7 +3,7 @@
 # Configuration Module — post-execution state update.
 #
 # Receives the motion sequence produced by the PDDL planner (sequence.json)
-# and applies each pick-and-place step to the current positions.json, yielding
+# and applies each pick-and-place step to the current configuration.json, yielding
 # an accurate post-execution workspace state.
 #
 # What changes per step [pick_name, place_name, gripper_width]:
@@ -18,7 +18,7 @@
 #   python Apply_Sequence_Changes.py
 #
 # Output:
-#   - Overwrites positions.json with the post-execution state (atomic write).
+#   - Overwrites configuration.json with the post-execution state (atomic write).
 #   - Saves a timestamped copy to Memory/ so previous states are never lost.
 
 from __future__ import annotations
@@ -34,9 +34,9 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from paths import POSITIONS_JSON, LLM_RESPONSE_JSON
+from paths import CONFIGURATION_JSON, LLM_RESPONSE_JSON
 
-POSITIONS_PATH = Path(POSITIONS_JSON.resolve())
+CONFIGURATION_PATH = Path(CONFIGURATION_JSON.resolve())
 SEQUENCE_PATH  = Path(LLM_RESPONSE_JSON.resolve()).parent / "sequence.json"
 MEMORY_DIR     = PROJECT_DIR / "Memory"
 
@@ -146,21 +146,21 @@ def apply_and_save(
     save_memory: bool = True,
 ) -> Dict[str, Any]:
     """
-    Load positions.json, apply the sequence, overwrite positions.json, and
+    Load configuration.json, apply the sequence, overwrite configuration.json, and
     optionally archive a copy to Memory/.
 
     Called by API_Main immediately after Robot_Main returns (robot fully stopped).
 
     Parameters
     ----------
-    positions_path : path to positions.json
+    positions_path : path to configuration.json
     sequence       : list of [pick_name, place_name, gripper_width] entries
     save_memory    : if True, save a timestamped archive to Memory/
 
     Returns the updated state dict.
     """
     if not positions_path.exists():
-        print(f"⚠  positions.json not found at {positions_path} — post-execution update skipped.")
+        print(f"⚠  configuration.json not found at {positions_path} — post-execution update skipped.")
         return {}
 
     state = json.loads(positions_path.read_text(encoding="utf-8"))
@@ -168,9 +168,9 @@ def apply_and_save(
     print("\n── Applying sequence to workspace state ──")
     updated = apply_sequence(state, sequence)
 
-    # Overwrite positions.json
+    # Overwrite configuration.json
     _save_atomic(positions_path, updated)
-    print(f"✅  positions.json updated → {positions_path.resolve()}")
+    print(f"✅  configuration.json updated → {positions_path.resolve()}")
 
     # Archive to Memory/
     if save_memory:
@@ -183,8 +183,8 @@ def apply_and_save(
 # ── standalone entry point (for debugging) ───────────────────────────────────
 
 def main() -> None:
-    if not POSITIONS_PATH.exists():
-        print(f"ERROR: positions.json not found: {POSITIONS_PATH}")
+    if not CONFIGURATION_PATH.exists():
+        print(f"ERROR: configuration.json not found: {CONFIGURATION_PATH}")
         sys.exit(1)
     if not SEQUENCE_PATH.exists():
         print(f"ERROR: sequence.json not found: {SEQUENCE_PATH}")
@@ -193,7 +193,7 @@ def main() -> None:
     sequence = json.loads(SEQUENCE_PATH.read_text(encoding="utf-8"))
     print(f"Loaded sequence: {SEQUENCE_PATH}  ({len(sequence)} step(s))")
 
-    apply_and_save(POSITIONS_PATH, sequence, save_memory=True)
+    apply_and_save(CONFIGURATION_PATH, sequence, save_memory=True)
 
 
 if __name__ == "__main__":

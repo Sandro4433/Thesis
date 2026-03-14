@@ -4,7 +4,7 @@ import numpy as np
 from geometry_msgs.msg import Pose
 from moveit_commander.exception import MoveItCommanderException
 
-from paths import POSITIONS_JSON, POSITIONS_FIXED_JSONL
+from paths import CONFIGURATION_JSON, POSITIONS_FIXED_JSONL
 
 class Robot:
     def __init__(self, arm_name, hand_name, moveit_commander):
@@ -16,7 +16,7 @@ class Robot:
         self.set_mode_ptp()
 
         self._positions = {}
-        self._positions.update(self.load_points_snapshot_json(str(POSITIONS_JSON.resolve())))
+        self._positions.update(self.load_points_snapshot_json(str(CONFIGURATION_JSON.resolve())))
         self._positions.update(self.load_points_jsonl(str(POSITIONS_FIXED_JSONL.resolve())))
 
         print("Loaded positions:", list(self._positions.keys()))
@@ -198,7 +198,7 @@ class Robot:
 
     def load_points_snapshot_json(self, save_file: str) -> dict:
         """
-        Load robot positions from the new PDDL-friendly positions.json.
+        Load robot positions from the new PDDL-friendly configuration.json.
 
         Every entry in state["metric"] that has pos + quat becomes a named
         motion target. This covers:

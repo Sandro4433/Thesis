@@ -227,7 +227,7 @@ def save_json_snapshot(path: str, state: Dict[str, Any], pretty: bool = True) ->
 
 
 def load_json_snapshot(path: str) -> Dict[str, Any]:
-    """Load a positions.json file; return empty skeleton on failure."""
+    """Load a configuration.json file; return empty skeleton on failure."""
     _EMPTY: Dict[str, Any] = {
         "workspace":      {"operation_mode": None, "batch_size": None},
         "objects":        {"kits": [], "containers": [], "parts": [], "slots": []},
