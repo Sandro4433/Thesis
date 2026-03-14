@@ -4,7 +4,9 @@
     "batch_size": null
   },
   "objects": {
-    "kits": [],
+    "kits": [
+      "Kit_0"
+    ],
     "containers": [
       "Container_1",
       "Container_3"
@@ -30,10 +32,16 @@
       "Container_3_Pos_3",
       "Container_3_Pos_4",
       "Container_3_Pos_5",
-      "Container_3_Pos_6"
+      "Container_3_Pos_6",
+      "Kit_0_Pos_1",
+      "Kit_0_Pos_2",
+      "Kit_0_Pos_3"
     ]
   },
   "slot_belongs_to": {
+    "Kit_0_Pos_1": "Kit_0",
+    "Kit_0_Pos_2": "Kit_0",
+    "Kit_0_Pos_3": "Kit_0",
     "Container_1_Pos_1": "Container_1",
     "Container_1_Pos_2": "Container_1",
     "Container_1_Pos_3": "Container_1",
@@ -55,23 +63,38 @@
       },
       {
         "part": "Part_2",
+        "slot": "Container_1_Pos_2"
+      },
+      {
+        "part": "Part_3",
         "slot": "Container_1_Pos_3"
       },
       {
+        "part": "Part_4",
+        "slot": "Container_1_Pos_4"
+      },
+      {
         "part": "Part_5",
+        "slot": "Container_3_Pos_1"
+      },
+      {
+        "part": "Part_6",
         "slot": "Container_3_Pos_2"
+      },
+      {
+        "part": "Part_7",
+        "slot": "Container_3_Pos_3"
       }
     ],
     "slot_empty": [
-      "Container_1_Pos_2",
-      "Container_1_Pos_4",
       "Container_1_Pos_5",
       "Container_1_Pos_6",
-      "Container_3_Pos_1",
-      "Container_3_Pos_3",
       "Container_3_Pos_4",
       "Container_3_Pos_5",
-      "Container_3_Pos_6"
+      "Container_3_Pos_6",
+      "Kit_0_Pos_1",
+      "Kit_0_Pos_2",
+      "Kit_0_Pos_3"
     ],
     "role": [
       {
@@ -80,6 +103,10 @@
       },
       {
         "object": "Container_3",
+        "role": null
+      },
+      {
+        "object": "Kit_0",
         "role": null
       }
     ],
@@ -93,16 +120,16 @@
         "color": "blue"
       },
       {
-        "part": "Part_5",
-        "color": "red"
-      },
-      {
         "part": "Part_3",
         "color": "blue"
       },
       {
         "part": "Part_4",
         "color": "blue"
+      },
+      {
+        "part": "Part_5",
+        "color": "red"
       },
       {
         "part": "Part_6",
@@ -123,15 +150,15 @@
         "size": "standard"
       },
       {
-        "part": "Part_5",
-        "size": "standard"
-      },
-      {
         "part": "Part_3",
         "size": "standard"
       },
       {
         "part": "Part_4",
+        "size": "standard"
+      },
+      {
+        "part": "Part_5",
         "size": "standard"
       },
       {
