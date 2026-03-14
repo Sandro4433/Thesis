@@ -247,6 +247,13 @@ def main() -> None:
     print(f"Wrote LLM input snapshot to: {LLM_INPUT_PATH}")
 
     # ------------------------------------------------------------------
+    # Save annotated image
+    # ------------------------------------------------------------------
+    _latest_image_path = Path(__file__).resolve().parents[1] / "File_Exchange" / "latest_image.png"
+    cv2.imwrite(str(_latest_image_path), img_vis)
+    print(f"Saved annotated image to: {_latest_image_path}")
+
+    # ------------------------------------------------------------------
     # Display
     # ------------------------------------------------------------------
     source_label = "CAMERA" if USE_CAMERA else f"IMAGE: {TEST_IMAGE_NAME}"

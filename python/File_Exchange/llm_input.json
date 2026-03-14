@@ -60,16 +60,16 @@
   "predicates": {
     "at": [
       {
-        "part": "Part_8",
+        "part": "Part_7",
         "slot": "Container_1_Pos_1"
       },
       {
-        "part": "Part_9",
+        "part": "Part_8",
         "slot": "Container_1_Pos_2"
       },
       {
-        "part": "Part_7",
-        "slot": "Container_1_Pos_5"
+        "part": "Part_9",
+        "slot": "Container_1_Pos_3"
       },
       {
         "part": "Part_6",
@@ -97,8 +97,8 @@
       }
     ],
     "slot_empty": [
-      "Container_1_Pos_3",
       "Container_1_Pos_4",
+      "Container_1_Pos_5",
       "Container_3_Pos_4",
       "Kit_0_Pos_1",
       "Kit_0_Pos_2",
@@ -120,15 +120,15 @@
     ],
     "color": [
       {
+        "part": "Part_7",
+        "color": "red"
+      },
+      {
         "part": "Part_8",
         "color": "red"
       },
       {
         "part": "Part_9",
-        "color": "red"
-      },
-      {
-        "part": "Part_7",
         "color": "red"
       },
       {
@@ -158,15 +158,15 @@
     ],
     "size": [
       {
+        "part": "Part_7",
+        "size": "standard"
+      },
+      {
         "part": "Part_8",
         "size": "standard"
       },
       {
         "part": "Part_9",
-        "size": "standard"
-      },
-      {
-        "part": "Part_7",
         "size": "standard"
       },
       {
