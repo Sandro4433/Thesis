@@ -32,7 +32,8 @@ CHANGES_BLOCK_RE  = re.compile(r"```changes\s*(.*?)\s*```",  re.DOTALL | re.IGNO
 # Valid attribute values
 VALID_ROLE  = {"input", "output", None}
 VALID_SIZE  = {"standard", "large"}
-VALID_COLOR = {"Blue", "Red", "blue", "red"}
+VALID_COLOR     = {"Blue", "Red", "blue", "red"}
+VALID_FRAGILITY = {"normal", "fragile", None}
 
 
 # ── Block parsing ─────────────────────────────────────────────────────────────
@@ -89,10 +90,13 @@ def extract_changes_block(text: str) -> Dict[str, Any]:
                 raise ValueError(f"'{obj_name}'.size must be null or 'large'.")
             if attr_lower == "color" and val not in VALID_COLOR:
                 raise ValueError(f"'{obj_name}'.color must be 'Blue' or 'Red'.")
-            if attr_lower not in ("role", "size", "color", "Role", "Size", "Color"):
+            if attr_lower == "fragility" and val not in VALID_FRAGILITY:
+                raise ValueError(f"'{obj_name}'.fragility must be 'normal' or 'fragile'.")
+            if attr_lower not in ("role", "size", "color", "fragility",
+                                  "Role", "Size", "Color", "Fragility"):
                 raise ValueError(
                     f"'{obj_name}': unknown attribute '{attr}'. "
-                    f"Allowed: role, size, color."
+                    f"Allowed: role, size, color, fragility."
                 )
     return data
 
@@ -209,6 +213,12 @@ def slim_scene(state: dict) -> dict:
         e["part"]: e["slot"] for e in preds.get("at", [])
     }
 
+    # fragility lookup (built once, used for both slots and standalone parts)
+    frag_map: Dict[str, str] = {
+        e["part"]: e.get("fragility", "normal")
+        for e in preds.get("fragility", [])
+    }
+
     # build slot view
     slots_view: Dict[str, Any] = {}
     for slot_name in objs.get("slots", []):
@@ -221,15 +231,20 @@ def slim_scene(state: dict) -> dict:
         if slot_name not in slots_view:
             continue
         slots_view[slot_name]["child_part"] = {
-            "name":  part_name,
-            "color": color_map.get(part_name),
-            "size":  size_map.get(part_name),
+            "name":      part_name,
+            "color":     color_map.get(part_name),
+            "size":      size_map.get(part_name),
+            "fragility": frag_map.get(part_name, "normal"),
         }
 
     # standalone parts (in objects.parts but not in any slot)
     in_slot_set = set(part_in_slot.keys())
     parts_view: Dict[str, Any] = {
-        p: {"color": color_map.get(p), "size": size_map.get(p)}
+        p: {
+            "color":     color_map.get(p),
+            "size":      size_map.get(p),
+            "fragility": frag_map.get(p, "normal"),
+        }
         for p in objs.get("parts", [])
         if p not in in_slot_set
     }
@@ -292,6 +307,7 @@ Allowed keys and values:
   RECEPTACLE name (Kit_*, Container_*)   → "role": "input" | "output" | null
   PART name (Part_*)                     → "size": null | "large"
                                          → "color": "Blue" | "Red"
+                                         → "fragility": "normal" | "fragile"
   "workspace"                            → {"operation_mode": "sorting"|"kitting", "batch_size": N}
   "priority"                             → [{"color": "blue", "order": 1}, ...]
   "kit_recipe"                           → [{"kit": "Kit_0", "color": "blue", "quantity": 2}, ...]
@@ -490,10 +506,31 @@ def select_mode() -> str:
         "Workspace reconfiguration  (change attributes, roles, recipes)",
         f"Motion sequence planning   ({planner_label})",
         "Execute robot motion       (run current sequence.json)",
-        "Scene update               (camera scan + selective memory merge)",
         "Exit",
     ])
-    return ["reconfig", "motion", "execute", "scene_update", "exit"][idx]
+    return ["reconfig", "motion", "execute", "exit"][idx]
+
+
+def select_reconfig_source() -> str:
+    idx = _pick_from_list("\nHow do you want to load the scene?", [
+        "Fresh scan — new picture, start from scratch (no memory)",
+        "Fresh scan — new picture, keep high-level config from memory",
+        "Memory    — use existing configuration.json as-is",
+    ])
+    return ["reconfig_fresh", "reconfig_update", "reconfig_memory"][idx]
+
+
+def _run_vision_subprocess() -> None:
+    """Run Vision_Main in a clean subprocess (avoids libapriltag segfault)."""
+    import subprocess as _sp
+    vision_main_path = PROJECT_DIR / "Vision_Module" / "Vision_Main.py"
+    print("\nStarting vision module …")
+    result = _sp.run([sys.executable, str(vision_main_path)], cwd=str(PROJECT_DIR))
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Vision_Main subprocess exited with code {result.returncode}."
+        )
+    print("Vision complete.\n")
 
 
 def select_scene() -> dict:
@@ -504,9 +541,11 @@ def select_scene() -> dict:
     idx = _pick_from_list("\nWhich scene do you want to use?", options)
 
     if idx == 0:
-        print("\nStarting vision module …")
-        from Vision_Module.Vision_Main import main as vision_main  # type: ignore
-        vision_main()
+        try:
+            _run_vision_subprocess()
+        except RuntimeError as e:
+            print(f"\n❌  Vision failed: {e}\n")
+            sys.exit(1)
         if not CONFIGURATION_PATH.exists():
             print(f"ERROR: Vision module did not produce {CONFIGURATION_PATH}")
             sys.exit(1)
@@ -524,12 +563,6 @@ def select_scene() -> dict:
 # ── Main session loop ─────────────────────────────────────────────────────────
 
 def run_session(client: OpenAI, mode: str) -> None:
-
-    # ── Option 4: Scene update (camera + selective memory merge) ─────────────
-    if mode == "scene_update":
-        from Configuration_Module.Update_Scene import run_update_session  # type: ignore
-        run_update_session(client)
-        return
 
     # ── Option 3: Execute robot motion ────────────────────────────────────────
     if mode == "execute":
@@ -561,8 +594,41 @@ def run_session(client: OpenAI, mode: str) -> None:
             _run_pddl_sequence()
             return
 
-    # ── Options 1 & 2 (LLM path) ─────────────────────────────────────────────
-    scene = select_scene()
+    # ── Option 1: Reconfiguration — choose scene source ──────────────────────
+    if mode == "reconfig":
+        sub = select_reconfig_source()
+
+        if sub == "reconfig_fresh":
+            try:
+                _run_vision_subprocess()
+            except RuntimeError as e:
+                print(f"\n❌  Vision failed: {e}\n")
+                return
+            if not CONFIGURATION_PATH.exists():
+                print(f"ERROR: configuration.json not found at {CONFIGURATION_PATH.resolve()}")
+                return
+            print("Loaded fresh scene from vision.")
+
+        elif sub == "reconfig_update":
+            from Configuration_Module.Update_Scene import run_update_session  # type: ignore
+            run_update_session(client)
+            # run_update_session saves the merged state to configuration.json
+            if not CONFIGURATION_PATH.exists():
+                print(f"ERROR: configuration.json not found at {CONFIGURATION_PATH.resolve()}")
+                return
+
+        else:  # reconfig_memory
+            if not CONFIGURATION_PATH.exists():
+                print(f"ERROR: configuration.json not found at {CONFIGURATION_PATH.resolve()}")
+                return
+            print(f"Loaded scene from: {CONFIGURATION_PATH}")
+
+        state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
+        scene = slim_scene(state)
+
+    else:
+        # ── Option 2 (LLM motion path) — still uses select_scene() ──────────
+        scene = select_scene()
 
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": build_system_prompt(mode)},

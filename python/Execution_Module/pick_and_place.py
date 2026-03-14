@@ -6,46 +6,50 @@ def pick_and_place(
     approach_z_offset: float = -0.05,
     gripper_open_width: float = 0.075,
     gripper_close_width: float = 0.05,
+    fragile: bool = False,
 ):
-   
     # Home
     self.MoveJ_J(home_name)
 
     # Approach pick location
-    self.MoveJ(pick_name)
-    
+    self.MoveJ(pick_name, fragile=fragile)
+
     # Rotate gripper
     self.MoveJointDelta(joint_index=6, target_name=pick_name)
 
     # Open gripper
     self.gripper_open(gripper_open_width)
-    
+
     # Go down to pick
-    self.MoveL(pick_name, offset=(0.0, 0.0, approach_z_offset), use_current_orientation=True)
+    self.MoveL(pick_name, offset=(0.0, 0.0, approach_z_offset),
+               use_current_orientation=True, fragile=fragile)
 
     # Close gripper
     self.gripper_close(gripper_close_width)
 
     # Retreat up
-    self.MoveL(pick_name, offset=(0.0, 0.0, 0.1), use_current_orientation=True)
+    self.MoveL(pick_name, offset=(0.0, 0.0, 0.1),
+               use_current_orientation=True, fragile=fragile)
 
     # Home
     self.MoveJ_J(home_name)
 
     # Approach place location
-    self.MoveJ(place_name)
+    self.MoveJ(place_name, fragile=fragile)
 
     # Rotate gripper
     self.MoveJointDelta(joint_index=6, target_name=place_name)
-    
+
     # Go down to place
-    self.MoveL(place_name, offset=(0.0, 0.0, approach_z_offset), use_current_orientation=True)
+    self.MoveL(place_name, offset=(0.0, 0.0, approach_z_offset),
+               use_current_orientation=True, fragile=fragile)
 
     # Open gripper
     self.gripper_open(gripper_open_width)
 
     # Retreat up
-    self.MoveL(place_name, offset=(0.0, 0.0, 0.1), use_current_orientation=True)
+    self.MoveL(place_name, offset=(0.0, 0.0, 0.1),
+               use_current_orientation=True, fragile=fragile)
 
     # Home
     self.MoveJ_J(home_name)
