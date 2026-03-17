@@ -1,26 +1,11 @@
 {
-  "Container_1": {
-    "role": "input"
+  "Part_1": {
+    "fragility": "fragile"
   },
-  "Container_3": {
-    "role": "input"
+  "Part_2": {
+    "fragility": "fragile"
   },
-  "Kit_0": {
-    "role": "output"
-  },
-  "workspace": {
-    "operation_mode": "kitting"
-  },
-  "kit_recipe": [
-    {
-      "kit": "Kit_0",
-      "color": "blue",
-      "quantity": 1
-    },
-    {
-      "kit": "Kit_0",
-      "color": "red",
-      "quantity": 1
-    }
-  ]
+  "Part_3": {
+    "fragility": "fragile"
+  }
 }
