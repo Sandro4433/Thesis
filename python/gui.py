@@ -700,14 +700,14 @@ class RobotGUI:
             "\nHow do you want to load the scene?\n"
             "  [1] New Configuration — Capture new image and configure from scratch\n"
             "  [2] Update Configuration — Update configuration with new vision data\n"
-            "  [3] Load Configuration — Load old configuration from memory\n",
+            "  [3] Edit Configuration — Edit current configuration (no new image)\n",
             "robot",
         )
 
         items = [
             ("New Config",    C["bg_accent"], lambda: self._run_reconfig_sub("reconfig_fresh")),
             ("Update Config", C["bg_accent"], lambda: self._run_reconfig_sub("reconfig_update")),
-            ("Load Config",   C["bg_accent"], lambda: self._run_reconfig_sub("reconfig_memory")),
+            ("Edit Config",   C["bg_accent"], lambda: self._run_reconfig_sub("reconfig_memory")),
             ("Cancel",        C["bg_red"],    self._show_main_menu),
         ]
         for text, color, cmd in items:
@@ -717,12 +717,7 @@ class RobotGUI:
         """Launch the reconfig worker with a pre-selected sub-option so the
         backend's select_reconfig_source() is bypassed entirely."""
         self._reconfig_sub = sub
-        if sub == "reconfig_memory":
-            self._config_from_memory = True
-            self._image_ready = False
-            self._load_image()           # show placeholder immediately
-        else:
-            self._config_from_memory = False
+        self._config_from_memory = False
         self._run("reconfig")
 
     def _cancel_configure(self) -> None:
@@ -769,6 +764,17 @@ class RobotGUI:
         try:
             if mode == "execute":
                 self._run_execute_subprocess()
+                # After execution, take a fresh picture and update the config
+                # with actual part positions.  The config is truth for identity.
+                try:
+                    import Communication_Module.API_Main as api  # type: ignore
+                    if api.CONFIGURATION_PATH.exists():
+                        import json as _json
+                        config = _json.loads(api.CONFIGURATION_PATH.read_text(encoding="utf-8"))
+                        from Configuration_Module.Update_Scene import run_post_execution_rescan  # type: ignore
+                        run_post_execution_rescan(config)
+                except Exception as exc:
+                    print(f"  ⚠  Post-execution rescan failed: {exc}")
                 return
 
             self._patch_pick_from_list()
@@ -860,6 +866,18 @@ class RobotGUI:
                 elif kind == "done":
                     self._busy = False
                     self._set_status("Ready", C["fg_success"])
+                    # Force an immediate image check — don't wait for the
+                    # 2.5 s _poll_image cycle, which may not have run yet
+                    # after a subprocess wrote a new latest_image.png.
+                    try:
+                        if LATEST_IMAGE_PATH.exists():
+                            mtime = LATEST_IMAGE_PATH.stat().st_mtime
+                            if mtime != self._img_mtime:
+                                self._img_mtime = mtime
+                                self._image_ready = True
+                                self._last_render_size = (0, 0)
+                    except Exception:
+                        pass
                     self._load_image()
                     if self._current_mode == "reconfig":
                         self._refresh_scene_from_config()
@@ -964,9 +982,6 @@ class RobotGUI:
         if "Loaded fresh scene from vision" in stripped:
             self._config_from_memory = False
             self._image_ready = True
-        elif stripped.startswith("Loaded scene from:"):
-            self._config_from_memory = True
-            # Don't update image now; _load_image is called after session ends
 
         # ── detect start of new mode (scene description is next) ─────────────
         if "── Mode:" in stripped:

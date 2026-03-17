@@ -62,6 +62,7 @@ def compute_tag_targets_and_annotate(
     container_ids: Set[int],
     tag_axis_draw_len: float,
     part_size_classes: List[tuple] = None,
+    draw_parts: bool = True,
 ) -> Dict[int, List[Dict[str, float]]]:
     """
     Produces:
@@ -197,7 +198,8 @@ def compute_tag_targets_and_annotate(
             )
 
             tag_targets[tag_id].append(
-                {"name_suffix": str(kp["name"]), "x_mm": obj_x_mm, "y_mm": obj_y_mm, "orientation_deg": grip_rot_deg_to_x}
+                {"name_suffix": str(kp["name"]), "x_mm": obj_x_mm, "y_mm": obj_y_mm, "orientation_deg": grip_rot_deg_to_x,
+                 "cx_px": int(pi[0]), "cy_px": int(pi[1])}
             )
 
     # ----------------------------
@@ -272,30 +274,32 @@ def compute_tag_targets_and_annotate(
                     break
 
         center = (int(round(d["cx_px"])), int(round(d["cy_px"])))
-        cv2.circle(img_vis, center, 10, (255, 255, 255), 2)
-        cv2.putText(
-            img_vis,
-            name_suffix,
-            (center[0] + 10, center[1] - 10),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (255, 255, 255),
-            2,
-        )
-        cv2.putText(
-            img_vis,
-            f"{size_label}  ({diameter_mm:.1f}mm)",
-            (center[0] + 10, center[1] + 18),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (255, 255, 255),
-            2,
-        )
+        if draw_parts:
+            cv2.circle(img_vis, center, 10, (255, 255, 255), 2)
+            cv2.putText(
+                img_vis,
+                name_suffix,
+                (center[0] + 10, center[1] - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (255, 255, 255),
+                2,
+            )
+            cv2.putText(
+                img_vis,
+                f"{size_label}  ({diameter_mm:.1f}mm)",
+                (center[0] + 10, center[1] + 18),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (255, 255, 255),
+                2,
+            )
 
         tag_targets.setdefault(-1000, []).append(
             {"name_suffix": name_suffix, "x_mm": x_mm, "y_mm": y_mm,
              "orientation_deg": 0.0, "color": color,
-             "diameter_mm": float(d.get("diameter_mm", 0.0))}
+             "diameter_mm": float(d.get("diameter_mm", 0.0)),
+             "cx_px": center[0], "cy_px": center[1]}
         )
 
     return tag_targets
@@ -388,3 +392,41 @@ def targets_to_robot_entries(
             new_entries.append(entry)
 
     return new_entries
+
+
+# ── Re-annotation helper (used after config update to redraw part labels) ─────
+
+def annotate_parts(
+    img: np.ndarray,
+    part_annotations: List[Dict[str, Any]],
+    fragile_set: Optional[Set[str]] = None,
+) -> None:
+    """
+    Draw part circles and labels on an image.  Modifies *img* in-place.
+
+    Parameters
+    ----------
+    img              : BGR image (e.g. the base annotated image without parts)
+    part_annotations : list of dicts with keys: name, cx_px, cy_px,
+                       size_label, diameter_mm
+    fragile_set      : set of part names that are fragile
+    """
+    fragile_set = fragile_set or set()
+    for p in part_annotations:
+        name   = p["name"]
+        cx, cy = int(p["cx_px"]), int(p["cy_px"])
+        size_label   = p.get("size_label", "")
+        diameter_mm  = float(p.get("diameter_mm", 0.0))
+
+        cv2.circle(img, (cx, cy), 10, (255, 255, 255), 2)
+        cv2.putText(img, name,
+                    (cx + 10, cy - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        cv2.putText(img, f"{size_label}  ({diameter_mm:.1f}mm)",
+                    (cx + 10, cy + 18),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+        if name in fragile_set:
+            cv2.putText(img, "FRAGILE",
+                        (cx + 10, cy + 44),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 100, 255), 2)

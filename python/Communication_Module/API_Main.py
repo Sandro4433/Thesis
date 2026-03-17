@@ -28,6 +28,7 @@ MEMORY_DIR     = PROJECT_DIR / "Memory"
 # Fenced-block regexes
 SEQUENCE_BLOCK_RE = re.compile(r"```sequence\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 CHANGES_BLOCK_RE  = re.compile(r"```changes\s*(.*?)\s*```",  re.DOTALL | re.IGNORECASE)
+MAPPING_BLOCK_RE  = re.compile(r"```mapping\s*(.*?)\s*```",  re.DOTALL | re.IGNORECASE)
 
 # Valid attribute values
 VALID_ROLE  = {"input", "output", None}
@@ -98,6 +99,24 @@ def extract_changes_block(text: str) -> Dict[str, Any]:
                     f"'{obj_name}': unknown attribute '{attr}'. "
                     f"Allowed: role, size, color, fragility."
                 )
+    return data
+
+
+def extract_mapping_block(text: str) -> Dict[str, str]:
+    """Parse ```mapping``` block from LLM response → {fresh_name: old_name|"new"}."""
+    m = MAPPING_BLOCK_RE.search(text or "")
+    if not m:
+        raise ValueError("No ```mapping``` block found.")
+    data = json.loads(m.group(1).strip())
+    if not isinstance(data, dict) or len(data) == 0:
+        raise ValueError("Mapping block must be a non-empty JSON object.")
+    for k, v in data.items():
+        if not isinstance(k, str) or not isinstance(v, str):
+            raise ValueError(f"Mapping entries must be string→string, got {k!r}→{v!r}")
+        if not k.startswith("Part_"):
+            raise ValueError(f"Keys must be Part_* names from the new scan, got {k!r}")
+        if v != "new" and not v.startswith("Part_"):
+            raise ValueError(f"Values must be old Part_* names or 'new', got {v!r}")
     return data
 
 
@@ -276,6 +295,40 @@ def _apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
         json.dump(updated, f, indent=2, ensure_ascii=False)
     Path(tmp).replace(CONFIGURATION_PATH)
     print(f"✅  configuration.json updated → {CONFIGURATION_PATH.resolve()}\n")
+
+    _refresh_annotated_image(updated)
+
+
+def _refresh_annotated_image(state: Dict[str, Any]) -> None:
+    """Redraw latest_image.png with current part names + FRAGILE labels."""
+    file_exchange = PROJECT_DIR / "File_Exchange"
+    base_path  = file_exchange / "latest_image_base.png"
+    pmap_path  = file_exchange / "latest_pixel_map.json"
+    out_path   = file_exchange / "latest_image.png"
+
+    if not base_path.exists() or not pmap_path.exists():
+        return
+
+    try:
+        import cv2
+        from Vision_Module.pipeline import annotate_parts  # type: ignore
+
+        img = cv2.imread(str(base_path))
+        if img is None:
+            return
+
+        pixel_map = json.loads(pmap_path.read_text(encoding="utf-8"))
+
+        fragile_set: set = set()
+        for entry in state.get("predicates", {}).get("fragility", []):
+            if entry.get("fragility") == "fragile":
+                fragile_set.add(entry["part"])
+
+        annotate_parts(img, pixel_map, fragile_set=fragile_set)
+        cv2.imwrite(str(out_path), img)
+        print(f"✅  Annotated image updated → {out_path}")
+    except Exception as exc:
+        print(f"  ⚠  Image refresh failed: {exc}")
 
 
 # ── System prompts ────────────────────────────────────────────────────────────
@@ -560,6 +613,231 @@ def select_scene() -> dict:
     return slim_scene(state)
 
 
+# ── Scene update dialogue (LLM-guided) ──────────────────────────────────────
+
+def _build_update_system_prompt() -> str:
+    return """\
+You are a robot workspace update assistant. A new camera scan has been taken
+and you must determine how the freshly detected parts correspond to the parts
+in the previous configuration, so that part identities and high-level
+attributes (like fragility) are preserved.
+
+CONTEXT:
+- Receptacles (Kit_*, Container_*) have AprilTags — their names are stable
+  and do not change between scans. Receptacle changes are handled automatically.
+- Parts (Part_*) are detected by colour and shape. The vision system numbers
+  them sequentially, so the NAMES can change between scans even if the parts
+  themselves have not moved.
+- An automatic position + colour matching analysis is provided. Parts that
+  were found at the same position with the same colour are pre-matched.
+
+YOUR JOB:
+1. Review the old scene, the new scan, and the auto-match analysis.
+2. Summarise what changed for the user: which parts were confirmed, which
+   are ambiguous (appeared at a different position or a different colour
+   is now at an old position), which old parts are missing, and which
+   detections look new.
+3. If any part identities are ambiguous (e.g. two parts were swapped,
+   a part was moved to a different slot, or a part was replaced with a
+   different one), ask the user ONE focused question at a time.
+4. Once ALL part identities are resolved, output the mapping block.
+
+IMPORTANT:
+- A "swap" means two parts exchanged positions. Both parts still exist;
+  they just moved. Map each fresh detection to the correct old identity.
+- If a part was removed from the scene, it simply won't appear in the
+  new scan. Do NOT list removed parts as keys in the mapping.
+- If a brand-new part was added, map it to "new".
+- The mapping must list EVERY Part_* from the new scan as a key.
+
+──────────────────────────────────────────────────────────────
+OUTPUT BLOCK — PART IDENTITY MAPPING
+──────────────────────────────────────────────────────────────
+When all identities are resolved, output:
+
+```mapping
+{
+  "<new_scan_part_name>": "<old_config_part_name_or_new>"
+}
+```
+
+Example — two parts swapped, one new, one removed:
+```mapping
+{
+  "Part_1": "Part_1",
+  "Part_2": "Part_5",
+  "Part_3": "Part_3",
+  "Part_4": "Part_2",
+  "Part_5": "new"
+}
+```
+(Old Part_4 does not appear as any value → it was removed from the scene.)
+
+Keys   = part names from the NEW scan (exactly as in the new scene JSON)
+Values = part names from the OLD config, or "new" for additions
+
+──────────────────────────────────────────────────────────────
+CONFIRMATION
+──────────────────────────────────────────────────────────────
+Always ask "Confirm this mapping?" after presenting the mapping block.
+If rejected, ask what needs to change and produce a corrected mapping.
+"""
+
+
+def _run_update_dialogue(client: OpenAI) -> None:
+    """
+    LLM-guided scene update dialogue.
+
+    1. Captures a new camera image (via prepare_update).
+    2. Presents the old scene, new scan, and auto-match analysis to the LLM.
+    3. The LLM converses with the user to resolve ambiguous part identities.
+    4. Once confirmed, applies the mapping and saves.
+    """
+    from Configuration_Module.Update_Scene import (       # type: ignore
+        prepare_update, build_update_context, apply_update_mapping,
+    )
+
+    print("\n── Comparing old configuration with new scan ──\n")
+
+    try:
+        old_state, fresh_state = prepare_update()
+    except Exception:
+        return          # error already printed by prepare_update
+
+    old_scene = slim_scene(old_state)
+    new_scene = slim_scene(fresh_state)
+    context   = build_update_context(old_state, fresh_state)
+
+    print(context + "\n")
+
+    messages: List[Dict[str, str]] = [
+        {"role": "system", "content": _build_update_system_prompt()},
+        {
+            "role": "user",
+            "content": (
+                "OLD SCENE (previous configuration):\n"
+                + json.dumps(old_scene, indent=2, ensure_ascii=False)
+                + "\n\nNEW SCAN (fresh camera image):\n"
+                + json.dumps(new_scene, indent=2, ensure_ascii=False)
+                + "\n\nAUTO-MATCH ANALYSIS:\n"
+                + context
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "Compare the old and new scenes. Summarise what changed "
+                "and resolve any ambiguous part identities."
+            ),
+        },
+    ]
+
+    pending_mapping: Optional[Dict[str, str]] = None
+
+    while True:
+        assistant_text = chat(client, messages)
+        print(f"\nASSISTANT:\n{assistant_text}\n")
+        messages.append({"role": "assistant", "content": assistant_text})
+
+        # ── try to extract mapping block ──────────────────────────────────────
+        try:
+            pending_mapping = extract_mapping_block(assistant_text)
+
+            # Validate completeness: every fresh part must be in the mapping
+            fresh_parts = set(fresh_state.get("objects", {}).get("parts", []))
+            mapped_keys = set(pending_mapping.keys())
+            missing_keys = fresh_parts - mapped_keys
+            extra_keys   = mapped_keys - fresh_parts
+
+            if missing_keys:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"Mapping is missing these parts from the new scan: "
+                        f"{sorted(missing_keys)}. Please include ALL parts."
+                    ),
+                })
+                pending_mapping = None
+                continue
+            if extra_keys:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"Mapping includes parts not in the new scan: "
+                        f"{sorted(extra_keys)}. Please fix."
+                    ),
+                })
+                pending_mapping = None
+                continue
+
+            # Validate: old names in values must actually exist in old config
+            old_parts = set(old_state.get("objects", {}).get("parts", []))
+            for fresh_name, target in pending_mapping.items():
+                if target != "new" and target not in old_parts:
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"'{target}' is not a part in the old config. "
+                            f"Old parts are: {sorted(old_parts)}. Please fix."
+                        ),
+                    })
+                    pending_mapping = None
+                    break
+            if pending_mapping is None:
+                continue
+
+            n_preserved = sum(1 for v in pending_mapping.values() if v != "new")
+            n_new       = sum(1 for v in pending_mapping.values() if v == "new")
+            mapped_old  = {v for v in pending_mapping.values() if v != "new"}
+            n_removed   = len(old_parts - mapped_old)
+            print(
+                f"  [Mapping: {n_preserved} preserved, "
+                f"{n_new} new, {n_removed} removed]\n"
+            )
+
+        except ValueError as e:
+            if "```mapping" in (assistant_text or ""):
+                print(f"  [WARNING: mapping block parse error — {e}]")
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"Your mapping block failed to parse: {e}\n"
+                        "Please rewrite it."
+                    ),
+                })
+                pending_mapping = None
+                continue
+        except Exception:
+            pass
+
+        # ── user input ────────────────────────────────────────────────────────
+        user_input = input("YOU: ").strip()
+        if not user_input:
+            continue
+
+        if is_finish(user_input) and pending_mapping is None:
+            print("\n── Scene update cancelled. Old config restored. ──\n")
+            return
+
+        if pending_mapping is not None and is_yes(user_input):
+            apply_update_mapping(old_state, fresh_state, pending_mapping)
+            print("Loaded fresh scene from vision.")   # signal for GUI
+            return
+
+        if pending_mapping is not None and is_no(user_input):
+            pending_mapping = None
+            messages.append({
+                "role": "user",
+                "content": (
+                    "Mapping rejected. Ask what needs to change and "
+                    "produce a corrected mapping."
+                ),
+            })
+            continue
+
+        messages.append({"role": "user", "content": user_input})
+
+
 # ── Main session loop ─────────────────────────────────────────────────────────
 
 def run_session(client: OpenAI, mode: str) -> None:
@@ -584,7 +862,13 @@ def run_session(client: OpenAI, mode: str) -> None:
         # apply_and_save updates predicates, slot_empty, and metric positions
         # in configuration.json, then archives a timestamped copy to Memory/.
         from Configuration_Module.Apply_Sequence_Changes import apply_and_save  # type: ignore
-        apply_and_save(CONFIGURATION_PATH, sequence, save_memory=True)
+        updated = apply_and_save(CONFIGURATION_PATH, sequence, save_memory=True)
+
+        # Take a fresh picture and merge with the post-execution config.
+        # The config is truth for part identity — no user interaction needed.
+        if updated:
+            from Configuration_Module.Update_Scene import run_post_execution_rescan  # type: ignore
+            run_post_execution_rescan(updated)
         return
 
     # ── Option 2 (PDDL path): skip LLM dialogue, run planner directly ─────────
@@ -610,9 +894,8 @@ def run_session(client: OpenAI, mode: str) -> None:
             print("Loaded fresh scene from vision.")
 
         elif sub == "reconfig_update":
-            from Configuration_Module.Update_Scene import run_update_session  # type: ignore
-            run_update_session(client)
-            # run_update_session saves the merged state to configuration.json
+            _run_update_dialogue(client)
+            # _run_update_dialogue saves the merged state to configuration.json
             if not CONFIGURATION_PATH.exists():
                 print(f"ERROR: configuration.json not found at {CONFIGURATION_PATH.resolve()}")
                 return
