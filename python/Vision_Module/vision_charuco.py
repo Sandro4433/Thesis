@@ -112,5 +112,5 @@ def draw_origin_and_axes(img: np.ndarray, origin_axes: OriginAxes) -> None:
     cv2.arrowedLine(img, o, px, (0, 0, 255), 4, tipLength=0.25)
     cv2.arrowedLine(img, o, py, (0, 255, 0), 4, tipLength=0.25)
 
-    cv2.putText(img, "X", (px[0] + 10, px[1] + 10), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
-    cv2.putText(img, "Y", (py[0] + 10, py[1] + 10), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
+    cv2.putText(img, "X", (px[0] + 10, px[1] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
+    cv2.putText(img, "Y", (py[0] + 30, py[1] + 10), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)

@@ -481,18 +481,18 @@ def apply_update_mapping(
 
     # ── save ──────────────────────────────────────────────────────────────────
     _save_atomic(CONFIGURATION_PATH, merged)
-    print(f"✅  configuration.json updated → {CONFIGURATION_PATH.resolve()}")
+    print("✅  Configuration updated.")
 
     try:
         from Configuration_Module.Apply_Sequence_Changes import save_to_memory  # type: ignore
         mem_path = save_to_memory(merged, label="scene_update")
-        print(f"✅  State archived → {mem_path.resolve()}\n")
+        print("✅  State archived.")
     except ImportError:
         MEMORY_DIR.mkdir(parents=True, exist_ok=True)
         ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
         arc_path = MEMORY_DIR / f"configuration_scene_update_{ts}.json"
         _save_atomic(arc_path, merged)
-        print(f"✅  State archived → {arc_path.resolve()}\n")
+        print("✅  State archived.")
 
     # ── redraw annotated image with updated IDs + fragility ───────────────
     _redraw_annotated_image(rename_map, merged)
@@ -556,7 +556,7 @@ def _redraw_annotated_image(
         annotate_parts(img, updated_annotations, fragile_set=fragile_set)
 
         cv2.imwrite(str(out_path), img)
-        print(f"✅  Annotated image updated → {out_path}")
+        print("✅  Image updated.")
 
     except Exception as exc:
         print(f"  ⚠  Image re-annotation failed: {exc}")
@@ -713,18 +713,18 @@ def run_post_execution_rescan(config_state: Dict[str, Any]) -> Dict[str, Any]:
 
     # ── save ──────────────────────────────────────────────────────────────
     _save_atomic(CONFIGURATION_PATH, merged)
-    print(f"✅  configuration.json updated → {CONFIGURATION_PATH.resolve()}")
+    print("✅  Configuration updated.")
 
     try:
         from Configuration_Module.Apply_Sequence_Changes import save_to_memory  # type: ignore
         mem_path = save_to_memory(merged, label="post_exec_rescan")
-        print(f"✅  State archived → {mem_path.resolve()}\n")
+        print("✅  State archived.")
     except ImportError:
         MEMORY_DIR.mkdir(parents=True, exist_ok=True)
         ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
         arc_path = MEMORY_DIR / f"configuration_post_exec_{ts}.json"
         _save_atomic(arc_path, merged)
-        print(f"✅  State archived → {arc_path.resolve()}\n")
+        print("✅  State archived.")
 
     # ── redraw image with confirmed IDs + fragility ───────────────────────
     _redraw_annotated_image(rename_map, merged)
