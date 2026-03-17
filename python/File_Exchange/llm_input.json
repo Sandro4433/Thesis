@@ -16,9 +16,7 @@
       "Part_1",
       "Part_2",
       "Part_3",
-      "Part_4",
-      "Part_5",
-      "Part_6"
+      "Part_4"
     ],
     "slots": [
       "Container_1_Pos_1",
@@ -64,18 +62,6 @@
   "predicates": {
     "at": [
       {
-        "part": "Part_6",
-        "slot": "Container_1_Pos_1"
-      },
-      {
-        "part": "Part_5",
-        "slot": "Container_1_Pos_4"
-      },
-      {
-        "part": "Part_4",
-        "slot": "Container_1_Pos_5"
-      },
-      {
         "part": "Part_3",
         "slot": "Container_3_Pos_1"
       },
@@ -89,8 +75,11 @@
       }
     ],
     "slot_empty": [
+      "Container_1_Pos_1",
       "Container_1_Pos_2",
       "Container_1_Pos_3",
+      "Container_1_Pos_4",
+      "Container_1_Pos_5",
       "Container_1_Pos_6",
       "Container_3_Pos_2",
       "Container_3_Pos_5",
@@ -122,18 +111,6 @@
     ],
     "color": [
       {
-        "part": "Part_6",
-        "color": "red"
-      },
-      {
-        "part": "Part_5",
-        "color": "red"
-      },
-      {
-        "part": "Part_4",
-        "color": "red"
-      },
-      {
         "part": "Part_3",
         "color": "blue"
       },
@@ -144,22 +121,14 @@
       {
         "part": "Part_1",
         "color": "blue"
+      },
+      {
+        "part": "Part_4",
+        "color": "red"
       }
     ],
     "size": [
       {
-        "part": "Part_6",
-        "size": "standard"
-      },
-      {
-        "part": "Part_5",
-        "size": "standard"
-      },
-      {
-        "part": "Part_4",
-        "size": "standard"
-      },
-      {
         "part": "Part_3",
         "size": "standard"
       },
@@ -169,6 +138,10 @@
       },
       {
         "part": "Part_1",
+        "size": "standard"
+      },
+      {
+        "part": "Part_4",
         "size": "standard"
       }
     ],
