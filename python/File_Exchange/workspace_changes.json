@@ -1,11 +1,5 @@
 {
-  "Part_1": {
-    "fragility": "fragile"
-  },
-  "Part_2": {
-    "fragility": "fragile"
-  },
   "Part_3": {
-    "fragility": "fragile"
+    "fragility": "normal"
   }
 }

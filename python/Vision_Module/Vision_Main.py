@@ -1,5 +1,6 @@
 # Vision_Main.py
 from pathlib import Path
+import json
 import sys
 
 # Allow running this file directly (by path) as well as importing it from python/Main.py
@@ -34,7 +35,7 @@ from Vision_Module.config import (
 
 from Vision_Module.vision_charuco import detect_board_homography, choose_origin_and_axes, draw_origin_and_axes
 from Vision_Module.vision_apriltag import create_detector, detect_tags
-from Vision_Module.pipeline import compute_tag_targets_and_annotate, targets_to_robot_entries
+from Vision_Module.pipeline import compute_tag_targets_and_annotate, targets_to_robot_entries, annotate_parts
 from Vision_Module.assign_parts import assign_parts_to_slots
 from Vision_Module.workspace_state import entries_to_state, save_json_snapshot, save_llm_snapshot
 
@@ -215,7 +216,42 @@ def main() -> None:
         container_ids=CONTAINER_TAG_IDS,
         tag_axis_draw_len=TAG_AXIS_DRAW_LEN_M,
         part_size_classes=PART_SIZE_CLASSES,
+        draw_parts=False,           # parts are drawn below after saving base image
     )
+
+    # Save base image (tags + slots annotated, NO part labels) for re-annotation
+    # after config updates.  This image serves as a clean starting point when
+    # part IDs change during an "Update Config" session.
+    _file_exchange = Path(__file__).resolve().parents[1] / "File_Exchange"
+    _file_exchange.mkdir(parents=True, exist_ok=True)
+    _base_image_path = _file_exchange / "latest_image_base.png"
+    cv2.imwrite(str(_base_image_path), img_vis)
+
+    # Build part annotation list from tag_targets and draw onto img_vis
+    _part_annotations = []
+    for p in tag_targets.get(-1000, []):
+        diameter_mm = float(p.get("diameter_mm", 0.0))
+        size_label = "unknown"
+        if PART_SIZE_CLASSES:
+            for label, lo, hi in PART_SIZE_CLASSES:
+                if lo <= diameter_mm < hi:
+                    size_label = label
+                    break
+        _part_annotations.append({
+            "name": p["name_suffix"],
+            "cx_px": p["cx_px"],
+            "cy_px": p["cy_px"],
+            "color": p.get("color", "Unknown"),
+            "size_label": size_label,
+            "diameter_mm": diameter_mm,
+        })
+
+    annotate_parts(img_vis, _part_annotations)
+
+    # Save pixel map for re-annotation after config updates
+    _pixel_map_path = _file_exchange / "latest_pixel_map.json"
+    with open(str(_pixel_map_path), "w", encoding="utf-8") as f:
+        json.dump(_part_annotations, f, indent=2, ensure_ascii=False)
 
     del detector  # safe to release after compute_tag_targets_and_annotate is done
 
