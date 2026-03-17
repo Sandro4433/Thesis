@@ -31,7 +31,7 @@ CHANGES_BLOCK_RE  = re.compile(r"```changes\s*(.*?)\s*```",  re.DOTALL | re.IGNO
 
 # Valid attribute values
 VALID_ROLE  = {"input", "output", None}
-VALID_SIZE  = {"standard", "large"}
+VALID_SIZE  = {"standard", "large", None}
 VALID_COLOR     = {"Blue", "Red", "blue", "red"}
 VALID_FRAGILITY = {"normal", "fragile", None}
 
