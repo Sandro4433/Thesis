@@ -300,7 +300,7 @@ def _apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
 
 
 def _refresh_annotated_image(state: Dict[str, Any]) -> None:
-    """Redraw latest_image.png with current part names + FRAGILE labels."""
+    """Redraw latest_image.png with current part names, sizes, and FRAGILE labels."""
     file_exchange = PROJECT_DIR / "File_Exchange"
     base_path  = file_exchange / "latest_image_base.png"
     pmap_path  = file_exchange / "latest_pixel_map.json"
@@ -319,14 +319,26 @@ def _refresh_annotated_image(state: Dict[str, Any]) -> None:
 
         pixel_map = json.loads(pmap_path.read_text(encoding="utf-8"))
 
+        # Build lookups from current config state
+        preds = state.get("predicates", {})
+
         fragile_set: set = set()
-        for entry in state.get("predicates", {}).get("fragility", []):
+        for entry in preds.get("fragility", []):
             if entry.get("fragility") == "fragile":
                 fragile_set.add(entry["part"])
 
+        # Override size_label from config (vision's original may be wrong
+        # or the user may have changed it via the LLM)
+        size_map = {e["part"]: e.get("size", "standard")
+                    for e in preds.get("size", [])}
+        for p in pixel_map:
+            name = p.get("name", "")
+            if name in size_map:
+                p["size_label"] = size_map[name]
+
         annotate_parts(img, pixel_map, fragile_set=fragile_set)
         cv2.imwrite(str(out_path), img)
-        print(f"✅  Image updated.")
+        print("✅  Image updated.")
     except Exception as exc:
         print(f"  ⚠  Image refresh failed: {exc}")
 

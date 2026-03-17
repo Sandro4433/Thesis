@@ -537,21 +537,27 @@ def _redraw_annotated_image(
 
         pixel_map = json.loads(pmap_path.read_text(encoding="utf-8"))
 
-        # Build fragile set from merged state
+        # Build lookups from merged state
+        preds = merged_state.get("predicates", {})
+
         fragile_set: set = set()
-        for entry in merged_state.get("predicates", {}).get("fragility", []):
+        for entry in preds.get("fragility", []):
             if entry.get("fragility") == "fragile":
                 fragile_set.add(entry["part"])
 
-        # Apply rename_map to pixel annotations
+        # Override size_label from config state
+        size_map = {e["part"]: e.get("size", "standard")
+                    for e in preds.get("size", [])}
+
+        # Apply rename_map and size overrides to pixel annotations
         updated_annotations = []
         for p in pixel_map:
             old_name = p["name"]
             new_name = rename_map.get(old_name, old_name)
-            updated_annotations.append({
-                **p,
-                "name": new_name,
-            })
+            entry = {**p, "name": new_name}
+            if new_name in size_map:
+                entry["size_label"] = size_map[new_name]
+            updated_annotations.append(entry)
 
         annotate_parts(img, updated_annotations, fragile_set=fragile_set)
 
