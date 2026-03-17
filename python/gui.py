@@ -27,7 +27,7 @@ import threading
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import tkinter as tk
 from tkinter import font as tkfont
@@ -127,6 +127,17 @@ class RobotGUI:
         self._first_menu_shown     = False   # greeting shown exactly once
         self._current_mode: str    = ""      # "reconfig" | "motion" | "execute"
         self._reconfig_sub: str    = ""      # pre-selected reconfig sub-option
+
+        # split-view state (used during "Update Config")
+        self._split_mode           = False
+        self._split_photo_old: Optional[Any] = None   # prevent GC
+        self._split_photo_new: Optional[Any] = None   # prevent GC
+
+        # zoom/pan state: keyed by label widget id → dict
+        # Each entry: {"level": float, "cx": float, "cy": float}
+        # cx, cy are relative crop center (0.0–1.0), level 1.0 = fit
+        self._zoom: Dict[int, Dict[str, float]] = {}
+        self._pan_start: Optional[tuple] = None       # (x, y, cx, cy) at drag start
 
         # accumulator for multi-line scene text arriving in fragments
         self._scene_buffer: str = ""
@@ -369,6 +380,59 @@ class RobotGUI:
             fg=C["fg_muted"], font=(FONT, 11),
         )
         self._img_lbl.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+
+        # ── split-view PanedWindow (hidden by default, shown during Update Config)
+        self._split_pane = tk.PanedWindow(
+            img_frame,
+            orient=tk.HORIZONTAL,
+            bg=C["bg_main"],
+            sashwidth=6,
+            sashrelief=tk.FLAT,
+            bd=0,
+            handlesize=0,
+        )
+        # Not packed yet — _enter_split_view() will pack it
+
+        # Left = new image
+        self._split_left = tk.Frame(self._split_pane, bg=C["bg_title"])
+        self._split_pane.add(self._split_left, stretch="always", minsize=80)
+        tk.Label(self._split_left, text="NEW SCAN", bg=C["bg_main"],
+                 fg=C["fg_muted"], font=(FONT, 7, "bold")).pack(fill=tk.X)
+        self._split_lbl_new = tk.Label(
+            self._split_left, bg=C["bg_title"],
+            text="Waiting for\nnew scan…",
+            fg=C["fg_muted"], font=(FONT, 10, "italic"),
+        )
+        self._split_lbl_new.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+
+        # Right = old image
+        self._split_right = tk.Frame(self._split_pane, bg=C["bg_title"])
+        self._split_pane.add(self._split_right, stretch="always", minsize=80)
+        tk.Label(self._split_right, text="PREVIOUS CONFIG", bg=C["bg_main"],
+                 fg=C["fg_muted"], font=(FONT, 7, "bold")).pack(fill=tk.X)
+        self._split_lbl_old = tk.Label(
+            self._split_right, bg=C["bg_title"],
+            text="No previous\nimage.",
+            fg=C["fg_muted"], font=(FONT, 10, "italic"),
+        )
+        self._split_lbl_old.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+
+        # Re-render both images when the sash is dragged
+        self._split_resize_id: Optional[str] = None
+
+        def _on_split_configure(event):
+            if not self._split_mode:
+                return
+            if self._split_resize_id:
+                self.root.after_cancel(self._split_resize_id)
+            self._split_resize_id = self.root.after(100, self._reload_split_images)
+
+        self._split_pane.bind("<Configure>", _on_split_configure)
+        self._split_pane.bind("<B1-Motion>", _on_split_configure)
+
+        # ── zoom/pan bindings for all image labels ────────────────────────────
+        for lbl in (self._img_lbl, self._split_lbl_new, self._split_lbl_old):
+            self._bind_zoom_pan(lbl)
 
         # Re-scale the image live when the container frame is resized (e.g. by
         # dragging a pane divider).  We bind to the *frame* so we always get the
@@ -718,6 +782,8 @@ class RobotGUI:
         backend's select_reconfig_source() is bypassed entirely."""
         self._reconfig_sub = sub
         self._config_from_memory = False
+        if sub == "reconfig_update":
+            self._enter_split_view()
         self._run("reconfig")
 
     def _cancel_configure(self) -> None:
@@ -866,6 +932,9 @@ class RobotGUI:
                 elif kind == "done":
                     self._busy = False
                     self._set_status("Ready", C["fg_success"])
+                    # Exit split view if active (Update Config finished)
+                    if self._split_mode:
+                        self._exit_split_view()
                     # Force an immediate image check — don't wait for the
                     # 2.5 s _poll_image cycle, which may not have run yet
                     # after a subprocess wrote a new latest_image.png.
@@ -907,6 +976,11 @@ class RobotGUI:
                     self._img_mtime = mtime
                     self._image_ready = True
                     self._last_render_size = (0, 0)  # force re-render for new file
+                    # Reset zoom for whichever label will display the new image
+                    if self._split_mode:
+                        self._reset_zoom(self._split_lbl_new)
+                    else:
+                        self._reset_zoom(self._img_lbl)
                     self._load_image()
         except Exception:
             pass
@@ -917,11 +991,8 @@ class RobotGUI:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _load_image(self, w: int = 0, h: int = 0) -> None:
-        # Never show a leftover image from a previous session — wait until the
-        # vision module produces a fresh one (or the user loads from memory).
         if not self._image_ready and not self._config_from_memory:
             return
-        # Memory-only config: show placeholder text instead of image
         if self._config_from_memory:
             self._img_lbl.configure(
                 image="",
@@ -935,41 +1006,275 @@ class RobotGUI:
         if not LATEST_IMAGE_PATH.exists():
             return
         try:
-            # Use caller-supplied dimensions (from resize event) when available;
-            # otherwise query the frame — never the label, whose size is locked
-            # to whatever image is already displayed on it.
             if not w or not h:
                 w = self._img_frame.winfo_width()
                 h = self._img_frame.winfo_height()
             w = max(w, 40)
             h = max(h, 40)
 
-            # Skip if the rendered size hasn't changed — prevents the feedback
-            # loop where placing a new image on the label causes the frame to
-            # emit another <Configure> event, triggering an infinite cascade.
             if (w, h) == self._last_render_size:
                 return
             self._last_render_size = (w, h)
 
-            if HAS_PIL:
-                img = Image.open(LATEST_IMAGE_PATH)
-                img.thumbnail((w - 4, h - 4), Image.LANCZOS)
-                photo = ImageTk.PhotoImage(img)
+            if self._split_mode:
+                try:
+                    tw = max(self._split_left.winfo_width() - 4, 40)
+                    th = max(self._split_left.winfo_height() - 4, 40)
+                except Exception:
+                    tw, th = max((w - 6) // 2, 40), h
+                photo = self._render_zoomed(
+                    self._split_lbl_new, LATEST_IMAGE_PATH, tw, th)
+                if photo is None:
+                    # Fallback without zoom
+                    photo = tk.PhotoImage(file=str(LATEST_IMAGE_PATH))
+                self._split_photo_new = photo
+                self._split_lbl_new.configure(image=photo, text="")
             else:
-                photo = tk.PhotoImage(file=str(LATEST_IMAGE_PATH))
-                scale = min(w / photo.width(), h / photo.height())
-                if scale < 1:
-                    step = max(1, int(1 / scale))
-                    photo = photo.subsample(step, step)
-
-            self._photo_ref = photo
-            self._img_lbl.configure(image=photo, text="")
+                photo = self._render_zoomed(
+                    self._img_lbl, LATEST_IMAGE_PATH, w - 4, h - 4)
+                if photo is None:
+                    photo = tk.PhotoImage(file=str(LATEST_IMAGE_PATH))
+                self._photo_ref = photo
+                self._img_lbl.configure(image=photo, text="")
 
             ts = datetime.fromtimestamp(LATEST_IMAGE_PATH.stat().st_mtime)
             self._img_ts.configure(text=f"Updated {ts.strftime('%H:%M:%S')}")
 
         except Exception as exc:
-            self._img_lbl.configure(text=f"Image error:\n{exc}", image="")
+            target = self._split_lbl_new if self._split_mode else self._img_lbl
+            target.configure(text=f"Image error:\n{exc}", image="")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Split-view (Update Config: old vs new side-by-side)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _enter_split_view(self) -> None:
+        """
+        Snapshot the current image into the right (old) pane and switch
+        the image area to a side-by-side layout with a draggable sash.
+        """
+        self._split_mode = True
+
+        # Save a copy of the current image so it survives vision overwriting
+        self._split_old_path = PROJECT_DIR / "File_Exchange" / "latest_image_old.png"
+        try:
+            if LATEST_IMAGE_PATH.exists():
+                import shutil
+                shutil.copy2(str(LATEST_IMAGE_PATH), str(self._split_old_path))
+        except Exception:
+            pass
+
+        # Reset zoom for both split labels
+        self._reset_zoom(self._split_lbl_new)
+        self._reset_zoom(self._split_lbl_old)
+
+        # Load old image into the right label
+        self._load_split_old()
+
+        # Reset new-scan label
+        self._split_lbl_new.configure(
+            image="", text="Waiting for\nnew scan…",
+            fg=C["fg_muted"], font=(FONT, 10, "italic"))
+
+        # Swap visibility: hide single label, show split pane
+        self._img_lbl.pack_forget()
+        self._split_pane.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        self._last_render_size = (0, 0)   # force re-render on next load
+
+        # Set sash to 50/50 once geometry has settled
+        def _set_sash():
+            try:
+                pw = self._split_pane.winfo_width()
+                if pw > 10:
+                    self._split_pane.sash_place(0, pw // 2, 0)
+            except Exception:
+                pass
+        self.root.after(150, _set_sash)
+
+    def _exit_split_view(self) -> None:
+        """Merge back to a single image view."""
+        self._split_mode = False
+        self._split_photo_old = None
+        self._split_photo_new = None
+        self._split_pane.pack_forget()
+        self._img_lbl.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        self._last_render_size = (0, 0)   # force re-render
+        # Reset zoom for all labels
+        self._reset_zoom(self._img_lbl)
+        self._reset_zoom(self._split_lbl_new)
+        self._reset_zoom(self._split_lbl_old)
+        # Clean up snapshot
+        try:
+            if hasattr(self, '_split_old_path') and self._split_old_path.exists():
+                self._split_old_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    def _load_split_old(self) -> None:
+        """Load the old-image snapshot into the right split pane."""
+        path = getattr(self, '_split_old_path', None)
+        if not path or not path.exists() or not HAS_PIL:
+            self._split_lbl_old.configure(
+                image="", text="Previous image\nnot available.",
+                fg=C["fg_muted"], font=(FONT, 10, "italic"))
+            return
+        try:
+            rw = max(self._split_right.winfo_width() - 4, 40)
+            rh = max(self._split_right.winfo_height() - 4, 40)
+            photo = self._render_zoomed(self._split_lbl_old, path, rw, rh)
+            if photo is None:
+                raise RuntimeError("render failed")
+            self._split_photo_old = photo
+            self._split_lbl_old.configure(image=photo, text="")
+        except Exception:
+            self._split_lbl_old.configure(
+                image="", text="Previous image\nnot available.",
+                fg=C["fg_muted"], font=(FONT, 10, "italic"))
+
+    def _reload_split_images(self) -> None:
+        """Re-render both split images at their current pane sizes."""
+        if not self._split_mode:
+            return
+        # Force _load_image to re-render the new-scan side
+        self._last_render_size = (0, 0)
+        self._load_image()
+        # Re-render the old side
+        self._load_split_old()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Zoom & pan (mouse-wheel zoom, click-drag pan, double-click reset)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _get_zoom(self, lbl: tk.Label) -> Dict[str, float]:
+        """Return the zoom state for a label, creating it if needed."""
+        lid = id(lbl)
+        if lid not in self._zoom:
+            self._zoom[lid] = {"level": 1.0, "cx": 0.5, "cy": 0.5}
+        return self._zoom[lid]
+
+    def _reset_zoom(self, lbl: tk.Label) -> None:
+        self._zoom[id(lbl)] = {"level": 1.0, "cx": 0.5, "cy": 0.5}
+
+    def _bind_zoom_pan(self, lbl: tk.Label) -> None:
+        """Bind scroll-to-zoom, drag-to-pan, and double-click-to-reset."""
+        # Linux scroll
+        lbl.bind("<Button-4>", lambda e: self._on_scroll(e, lbl, +1))
+        lbl.bind("<Button-5>", lambda e: self._on_scroll(e, lbl, -1))
+        # Windows / macOS scroll
+        lbl.bind("<MouseWheel>", lambda e: self._on_scroll(
+            e, lbl, +1 if e.delta > 0 else -1))
+        # Pan with left-click drag
+        lbl.bind("<ButtonPress-1>",  lambda e: self._on_pan_start(e, lbl))
+        lbl.bind("<B1-Motion>",      lambda e: self._on_pan_drag(e, lbl))
+        # Double-click to reset zoom
+        lbl.bind("<Double-Button-1>", lambda e: self._on_zoom_reset(lbl))
+
+    def _on_scroll(self, event, lbl: tk.Label, direction: int) -> None:
+        if not HAS_PIL:
+            return
+        z = self._get_zoom(lbl)
+        old_level = z["level"]
+
+        # Zoom step: ~15% per scroll tick
+        factor = 1.15 if direction > 0 else 1.0 / 1.15
+        new_level = max(1.0, min(old_level * factor, 10.0))
+        z["level"] = new_level
+
+        # Shift crop center toward cursor position on zoom-in
+        if new_level > 1.0:
+            lw = lbl.winfo_width()  or 1
+            lh = lbl.winfo_height() or 1
+            mx = max(0.0, min(event.x / lw, 1.0))
+            my = max(0.0, min(event.y / lh, 1.0))
+            blend = 0.15
+            z["cx"] = z["cx"] + (mx - z["cx"]) * blend
+            z["cy"] = z["cy"] + (my - z["cy"]) * blend
+            self._clamp_pan(z)
+        else:
+            z["cx"], z["cy"] = 0.5, 0.5
+
+        self._refresh_zoomed_label(lbl)
+
+    def _on_pan_start(self, event, lbl: tk.Label) -> None:
+        z = self._get_zoom(lbl)
+        if z["level"] <= 1.0:
+            self._pan_start = None
+            return
+        self._pan_start = (event.x, event.y, z["cx"], z["cy"])
+
+    def _on_pan_drag(self, event, lbl: tk.Label) -> None:
+        if self._pan_start is None:
+            return
+        z = self._get_zoom(lbl)
+        if z["level"] <= 1.0:
+            return
+        sx, sy, scx, scy = self._pan_start
+        lw = lbl.winfo_width()  or 1
+        lh = lbl.winfo_height() or 1
+        dx = -(event.x - sx) / lw / z["level"] * 2
+        dy = -(event.y - sy) / lh / z["level"] * 2
+        z["cx"] = scx + dx
+        z["cy"] = scy + dy
+        self._clamp_pan(z)
+        self._refresh_zoomed_label(lbl)
+
+    def _on_zoom_reset(self, lbl: tk.Label) -> None:
+        self._reset_zoom(lbl)
+        self._pan_start = None
+        self._refresh_zoomed_label(lbl)
+
+    @staticmethod
+    def _clamp_pan(z: Dict[str, float]) -> None:
+        """Keep crop center within bounds so we don't pan off the edge."""
+        half = 0.5 / z["level"]
+        z["cx"] = max(half, min(z["cx"], 1.0 - half))
+        z["cy"] = max(half, min(z["cy"], 1.0 - half))
+
+    def _refresh_zoomed_label(self, lbl: tk.Label) -> None:
+        """Re-render the correct image for a given label."""
+        if lbl is self._img_lbl:
+            self._last_render_size = (0, 0)
+            self._load_image()
+        elif lbl is self._split_lbl_new:
+            self._last_render_size = (0, 0)
+            self._load_image()
+        elif lbl is self._split_lbl_old:
+            self._load_split_old()
+
+    def _render_zoomed(
+        self, lbl: tk.Label, img_path, max_w: int, max_h: int,
+    ) -> Optional[Any]:
+        """
+        Open an image, apply zoom/crop/pan, thumbnail to max_w×max_h,
+        and return a PhotoImage.  Returns None on failure.
+        """
+        if not HAS_PIL:
+            return None
+        try:
+            img = Image.open(img_path)
+            z = self._get_zoom(lbl)
+            level = z["level"]
+
+            if level > 1.0:
+                iw, ih = img.size
+                cw = iw / level
+                ch = ih / level
+                cx = z["cx"] * iw
+                cy = z["cy"] * ih
+                x0 = int(max(0, cx - cw / 2))
+                y0 = int(max(0, cy - ch / 2))
+                x1 = int(min(iw, x0 + cw))
+                y1 = int(min(ih, y0 + ch))
+                if x1 - x0 < cw and x0 > 0:
+                    x0 = max(0, int(x1 - cw))
+                if y1 - y0 < ch and y0 > 0:
+                    y0 = max(0, int(y1 - ch))
+                img = img.crop((x0, y0, x1, y1))
+
+            img.thumbnail((max_w, max_h), Image.LANCZOS)
+            return ImageTk.PhotoImage(img)
+        except Exception:
+            return None
 
     # ─────────────────────────────────────────────────────────────────────────
     # Chat display helpers
