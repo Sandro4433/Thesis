@@ -50,6 +50,21 @@ def _tag_pose_in_workspace_mm(
     return tag_x_mm, tag_y_mm
 
 
+# ── Image annotation colours (BGR) ───────────────────────────────────────────
+_CLR_TAG    = (0, 255, 255)     # yellow for tag borders and labels (matches slot dots)
+_CLR_KIT    = (0, 255, 255)     # yellow for kit slot dots
+_CLR_CONT   = (0, 200, 255)    # orange for container slot dots
+_CLR_PART   = (255, 255, 255)  # white for part circles and labels
+_CLR_FRAG   = (0, 100, 255)    # orange-red for FRAGILE label
+
+
+def _part_display_name(internal_name: str) -> str:
+    """Convert Part_1 → 'Part 1' for image display only."""
+    if internal_name.startswith("Part_"):
+        return "Part " + internal_name[5:]
+    return internal_name
+
+
 def compute_tag_targets_and_annotate(
     img_vis: np.ndarray,
     img_raw: np.ndarray,
@@ -90,7 +105,7 @@ def compute_tag_targets_and_annotate(
                 img_vis,
                 tuple(pts_i_int[i]),
                 tuple(pts_i_int[(i + 1) % 4]),
-                (255, 0, 0),
+                _CLR_TAG,
                 3,
             )
 
@@ -98,11 +113,11 @@ def compute_tag_targets_and_annotate(
 
         # Label by group (VIS only)
         if tag_id in kit_ids:
-            cv2.putText(img_vis, f"Kit (ID: {tag_id})", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+            cv2.putText(img_vis, f"Kit {tag_id}", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, _CLR_TAG, 2)
         elif tag_id in container_ids:
-            cv2.putText(img_vis, f"Container (ID: {tag_id})", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+            cv2.putText(img_vis, f"Container {tag_id}", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, _CLR_TAG, 2)
         else:
-            cv2.putText(img_vis, f"ID: {tag_id}", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+            cv2.putText(img_vis, f"ID: {tag_id}", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, _CLR_TAG, 2)
 
         # Tag center in board coords
         c_b = _tag_center_to_board_m(r, H_inv)
@@ -136,13 +151,6 @@ def compute_tag_targets_and_annotate(
         theta_x_deg = wrap_deg_180(theta_x_deg)
         tag_rot_deg_to_x = wrap_deg_90(theta_x_deg)
 
-        # Draw tag axis in image (VIS only)
-        end_b = c_b + v_b_unit * float(tag_axis_draw_len)
-        end_i = project(H, np.array([end_b], dtype=np.float32))[0]
-        p0 = tuple(np.round(r.center).astype(int))
-        p1 = tuple(np.round(end_i).astype(int))
-        cv2.arrowedLine(img_vis, p0, p1, (255, 255, 0), 3, tipLength=0.25)
-
         # Unknown tag: save only center
         if tag_id not in kit_ids and tag_id not in container_ids:
             tag_targets[tag_id] = [{"name_suffix": "Pos_0", "x_mm": tag_x_mm, "y_mm": tag_y_mm, "orientation_deg": tag_rot_deg_to_x}]
@@ -150,13 +158,11 @@ def compute_tag_targets_and_annotate(
 
         # Choose point-set based on tag group
         if tag_id in kit_ids:
-            object_label = "Kit"
             point_set = kit_points
-            draw_color = (0, 255, 255)
+            draw_color = _CLR_KIT
         else:
-            object_label = "Container"
             point_set = container_points
-            draw_color = (0, 200, 255)
+            draw_color = _CLR_CONT
 
         tag_targets[tag_id] = []
 
@@ -187,14 +193,12 @@ def compute_tag_targets_and_annotate(
             pi = tuple(np.round(p_i).astype(int))
 
             cv2.circle(img_vis, pi, 6, draw_color, -1)
+            # Show only the position number (e.g. "1" instead of "Container_0_Pos_1")
+            pos_num = str(kp["name"]).replace("Pos_", "")
             cv2.putText(
-                img_vis,
-                f"{object_label}_{kp['name']}",
+                img_vis, pos_num,
                 (pi[0] + 8, pi[1] - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
-                draw_color,
-                2,
+                cv2.FONT_HERSHEY_SIMPLEX, 0.65, draw_color, 2,
             )
 
             tag_targets[tag_id].append(
@@ -210,44 +214,27 @@ def compute_tag_targets_and_annotate(
         "Red":  (130, 40, 40),
     }
 
-    # Tuning knobs:
-    # - tol_rgb: widen if you miss parts; tighten if you get background detections
-    # - min_area_px: cluster-size threshold (increase to reject noise)
-    # - circularity_min/fill_ratio_min: how "circle-like" the cluster must be
     part_dets = detect_color_cluster_parts_on_board(
         bgr=img_raw,
         H_inv=H_inv,
         ref_rgb=ref_rgb,
-
-        # fallback (used if color not in dict)
         tol_rgb=(45, 45, 45),
-
-        # per-color tolerance overrides (start values)
         tol_rgb_by_color={
-            "Blue": (45, 45, 45),   # widen to recover matte/dark blue
+            "Blue": (45, 45, 45),
             "Red":  (45, 45, 45),
         },
-
-        # optional per-color morph tweaks (useful if blue gets fragmented)
         morph_by_color={
             "Blue": {"morph_kernel": 5, "open_iter": 0, "close_iter": 2},
             "Red":  {"morph_kernel": 7, "open_iter": 1, "close_iter": 2},
         },
-
         min_area_px=1000,
         circularity_min=0.35,
         fill_ratio_min=0.45,
-
-        # debug (optional)
         debug_mask_color="Blue",
         debug_show_mask=False,
         debug_show_overlay=False,
     )
 
-    # Single global counter — parts are numbered in detection order (spatially
-    # sorted by x then y position within each colour group).
-    # Color is stored as a separate field in the tag_targets entry so it
-    # no longer needs to be embedded in the name.
     part_counter: int = 0
 
     for d in part_dets:
@@ -275,25 +262,15 @@ def compute_tag_targets_and_annotate(
 
         center = (int(round(d["cx_px"])), int(round(d["cy_px"])))
         if draw_parts:
-            cv2.circle(img_vis, center, 10, (255, 255, 255), 2)
-            cv2.putText(
-                img_vis,
-                name_suffix,
-                (center[0] + 10, center[1] - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (255, 255, 255),
-                2,
-            )
-            cv2.putText(
-                img_vis,
-                f"{size_label}  ({diameter_mm:.1f}mm)",
-                (center[0] + 10, center[1] + 18),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (255, 255, 255),
-                2,
-            )
+            display = _part_display_name(name_suffix)
+            cv2.circle(img_vis, center, 10, _CLR_PART, 2)
+            cv2.putText(img_vis, display,
+                        (center[0] + 10, center[1] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, _CLR_PART, 2)
+            if size_label == "large":
+                cv2.putText(img_vis, "large",
+                            (center[0] + 10, center[1] + 18),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, _CLR_PART, 2)
 
         tag_targets.setdefault(-1000, []).append(
             {"name_suffix": name_suffix, "x_mm": x_mm, "y_mm": y_mm,
@@ -319,15 +296,7 @@ def targets_to_robot_entries(
       - Slot: name="Kit_<tagid>_Pos_1" or "Container_<tagid>_Pos_6"
       - Part: name="Part_<k>"  (color stored separately in the Color field)
 
-    Schema (human-readable, pretty on disk):
-      Slot:
-        { name, pos, quat, orientation, Role, child_part }
-      Part:
-        { name, pos, quat, orientation, Color, Size, diameter_mm, Role }
-
     part_size_classes: ordered list of (label, min_mm, max_mm) tuples.
-      The first range that contains the measured diameter wins.
-      Parts with no diameter info or no matching range receive Size=None.
     """
     def _classify_size(diameter_mm: float) -> Optional[str]:
         if not part_size_classes or diameter_mm <= 0.0:
@@ -355,8 +324,6 @@ def targets_to_robot_entries(
             if is_part:
                 part_name = name_suffix
                 diameter_mm = float(t.get("diameter_mm", 0.0))
-                # Color is stored explicitly in the tag_targets entry — it is no
-                # longer embedded in the part name.
                 color = str(t.get("color") or "Unknown")
                 entry = {
                     "name": part_name,
@@ -387,7 +354,7 @@ def targets_to_robot_entries(
                 "quat": camera_quat,
                 "orientation": float(t["orientation_deg"]),
                 "Role": None,
-                "child_part": None,                   # will be set if a part is assigned
+                "child_part": None,
             }
             new_entries.append(entry)
 
@@ -403,30 +370,27 @@ def annotate_parts(
 ) -> None:
     """
     Draw part circles and labels on an image.  Modifies *img* in-place.
-
-    Parameters
-    ----------
-    img              : BGR image (e.g. the base annotated image without parts)
-    part_annotations : list of dicts with keys: name, cx_px, cy_px,
-                       size_label, diameter_mm
-    fragile_set      : set of part names that are fragile
     """
     fragile_set = fragile_set or set()
     for p in part_annotations:
         name   = p["name"]
         cx, cy = int(p["cx_px"]), int(p["cy_px"])
-        size_label   = p.get("size_label", "")
-        diameter_mm  = float(p.get("diameter_mm", 0.0))
+        size_label = p.get("size_label", "")
+        display = _part_display_name(name)
 
-        cv2.circle(img, (cx, cy), 10, (255, 255, 255), 2)
-        cv2.putText(img, name,
+        cv2.circle(img, (cx, cy), 10, _CLR_PART, 2)
+        cv2.putText(img, display,
                     (cx + 10, cy - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-        cv2.putText(img, f"{size_label}  ({diameter_mm:.1f}mm)",
-                    (cx + 10, cy + 18),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, _CLR_PART, 2)
+
+        next_y = cy + 18
+        if size_label == "large":
+            cv2.putText(img, "large",
+                        (cx + 10, next_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, _CLR_PART, 2)
+            next_y += 26
 
         if name in fragile_set:
             cv2.putText(img, "FRAGILE",
-                        (cx + 10, cy + 44),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 100, 255), 2)
+                        (cx + 10, next_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, _CLR_FRAG, 2)

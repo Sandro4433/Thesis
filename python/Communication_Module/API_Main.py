@@ -294,7 +294,7 @@ def _apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(updated, f, indent=2, ensure_ascii=False)
     Path(tmp).replace(CONFIGURATION_PATH)
-    print(f"✅  configuration.json updated → {CONFIGURATION_PATH.resolve()}\n")
+    print(f"✅  Configuration updated.")
 
     _refresh_annotated_image(updated)
 
@@ -326,7 +326,7 @@ def _refresh_annotated_image(state: Dict[str, Any]) -> None:
 
         annotate_parts(img, pixel_map, fragile_set=fragile_set)
         cv2.imwrite(str(out_path), img)
-        print(f"✅  Annotated image updated → {out_path}")
+        print(f"✅  Image updated.")
     except Exception as exc:
         print(f"  ⚠  Image refresh failed: {exc}")
 
@@ -408,128 +408,74 @@ Example (kitting with size constraint — 1 large blue + 1 standard blue + 1 red
 def build_system_prompt(mode: str) -> str:
     if mode == "reconfig":
         return """\
-You are a robot workspace configurator. Your job is to track user-specified
-attribute changes to workspace objects and output a structured changes block.
+You are a robot workspace configurator.
 
-You will receive an INPUT JSON describing the current scene with:
-  - "workspace": current operation_mode and batch_size.
-  - "slots": named workspace positions (Kit_* or Container_*).
-    Each slot has: role (null|"input"|"output"), child_part {name, color, size}.
-    The role shown is the role of the parent receptacle (container or kit),
-    applied to all its slots.
-  - "parts": standalone parts not currently in any slot.
+COMMUNICATION RULES — FOLLOW STRICTLY:
+- Be extremely concise. No filler, no greetings, no repetition.
+- Never restate the scene JSON or repeat information the user already has.
+- Do NOT output a scene summary. The scene description panel handles that.
+- Your FIRST message must be ONLY: "What would you like to change?"
+- Ask at most ONE clarification question per turn. No multi-part questions.
+- When outputting a changes block, add ONLY "Confirm?" after it. No explanation.
+- After confirmation, respond ONLY with: "Anything else?"
+- After rejection, respond ONLY with: "What should I change?"
 
-──────────────────────────────────────────────────────────────
-SORTING TASK — INFERENCE RULES  (apply automatically)
-──────────────────────────────────────────────────────────────
-When the user asks to sort parts by color (or says "sort by color",
-"place parts in their containers", or similar):
+You will receive an INPUT JSON with:
+  - "workspace": operation_mode, batch_size
+  - "slots": Kit_*/Container_* positions with role and child_part
+  - "parts": standalone parts
 
-STEP A — infer destination containers from existing contents.
-  For every container in the scene, inspect the colors of the parts
-  already inside it (child_part.color across all its slots).
-  If ALL occupied slots share the SAME color → that container is the
-  designated destination for that color.
+SORTING INFERENCE (apply automatically when user says "sort"):
+A — Infer destination containers from existing same-color contents.
+B — Source = receptacles with mixed colors → role="input".
+C — Always emit: source roles, destination roles, workspace, part_compatibility.
+D — If a container has mixed colors, ask which color it should receive.
 
-  Example: Container_1 holds only red parts → Container_1 is the red destination.
-           Container_3 holds only blue parts → Container_3 is the blue destination.
+""" + _CHANGES_BLOCK_RULES + """
 
-STEP B — identify the source receptacle(s).
-  Any kit or container that contains parts of MIXED colors, or whose
-  parts' colors match the destinations already inferred above but in
-  the wrong container, is the pick source → role = "input".
-
-STEP C — always emit ALL FOUR of these keys together for sorting tasks:
-  1. source receptacle(s)       → role = "input"
-  2. destination container(s)   → role = "output"
-  3. workspace                  → operation_mode = "sorting"
-  4. part_compatibility         → one entry per color mapping inferred in STEP A
-
-  NEVER output a sorting changes block without part_compatibility.
-  part_compatibility is what tells the planner which color goes where.
-
-STEP D — if a container holds parts of MORE THAN ONE color, do not
-  auto-assign it. Ask the user which color that container should receive.
-
-──────────────────────────────────────────────────────────────
-WORKFLOW
-──────────────────────────────────────────────────────────────
-1. Give a SHORT scene summary: receptacles with their role, parts with color/size,
-   current operation_mode.
-2. Ask what attributes the user wants to change.
-3. If truly ambiguous, ask ONE focused clarification question. Otherwise go to step 4.
-4. Once you understand the request: output the changes block and ask "Confirm?"
-
-""" + _CHANGES_BLOCK_RULES + """\
-
-──────────────────────────────────────────────────────────────
-CONFIRMATION
-──────────────────────────────────────────────────────────────
-- After proposing changes, always ask: "Confirm?"
-- If confirmed → changes are saved. Ask if there is more to change.
-- If rejected → discard and ask what to change.
+CONFIRMATION:
+- After proposing changes: output block + "Confirm?"
+- Confirmed → "Anything else?"
+- Rejected → "What should I change?"
 
 """ + _COMMON_RULES
 
     else:  # motion
         return """\
-You are a robot task planner. Your job is to translate natural-language task
-descriptions into an ordered sequence of pick-and-place actions.
+You are a robot task planner.
 
-You will receive an INPUT JSON describing the current scene with:
-  - "workspace": current operation_mode and batch_size.
-  - "slots": named workspace positions (Kit_* or Container_*).
-    Each slot has: role (null|"input"|"output"), child_part {name, color, size}.
-  - "parts": standalone parts not in any slot.
+COMMUNICATION RULES — FOLLOW STRICTLY:
+- Be extremely concise. No filler, no greetings, no repetition.
+- Never restate the scene JSON or repeat information the user already has.
+- Do NOT output a scene summary. The scene description panel handles that.
+- Your FIRST message must be ONLY: "What task do you want to execute?"
+- Ask at most ONE clarification question per turn.
+- When outputting a sequence block, add ONLY "Confirm?" after it.
+- After confirmation: "Anything else?"
+- After rejection: "What should I change?"
 
-──────────────────────────────────────────────────────────────
-ROLE RESTRICTIONS — ENFORCE STRICTLY
-──────────────────────────────────────────────────────────────
-  - role = "input"  → CAN be picked FROM, CANNOT be placed INTO.
-  - role = "output" → CAN be placed INTO, CANNOT be picked FROM.
-  - role = null     → no restriction; either pick or place is allowed.
+You will receive an INPUT JSON with:
+  - "workspace": operation_mode, batch_size
+  - "slots": Kit_*/Container_* positions with role and child_part
+  - "parts": standalone parts
 
-If a conflict exists, do NOT output a sequence. Explain the conflict and ask:
-"Would you like to switch to reconfiguration mode to fix this?"
-If yes → output exactly: SWITCH_TO_RECONFIG
+ROLE RESTRICTIONS:
+  - role="input" → pick FROM only.  role="output" → place INTO only.  null → either.
+  If conflict: explain briefly + "Switch to reconfiguration mode?" → if yes: SWITCH_TO_RECONFIG
 
-──────────────────────────────────────────────────────────────
-GRIPPER WIDTH
-──────────────────────────────────────────────────────────────
-  - size = null (standard) → gripper_close_width = 0.05 (omit from sequence)
-  - size = "large"         → gripper_close_width = 0.06 (include as 3rd element)
+GRIPPER WIDTH:
+  - standard → 0.05 (omit)   - "large" → 0.06 (include as 3rd element)
 
-──────────────────────────────────────────────────────────────
-WORKFLOW
-──────────────────────────────────────────────────────────────
-1. Give a SHORT scene summary: part counts, roles, operation_mode.
-2. Ask what task the user wants.
-3. Check roles for all objects BEFORE proposing anything.
-4. Ask ONE clarification if truly ambiguous. Otherwise go to step 5.
-5. Output the sequence block and ask "Confirm?"
-
-──────────────────────────────────────────────────────────────
-OUTPUT BLOCK — SEQUENCE
-──────────────────────────────────────────────────────────────
+OUTPUT:
 ```sequence
-[
-  ["<pick_name>", "<place_name>"],
-  ["<pick_name>", "<place_name>", 0.06]
-]
+[["<pick>", "<place>"], ["<pick>", "<place>", 0.06]]
 ```
+pick = part name, place = slot name. Never use slots as pick targets.
 
-pick_name  = part name from child_part.name  (e.g. "Part_1")
-           = standalone part key             (e.g. "Part_3")
-place_name = destination slot key           (e.g. "Kit_0_Pos_1")
-
-NEVER use slot names as pick targets. NEVER invent names.
-
-──────────────────────────────────────────────────────────────
-CONFIRMATION
-──────────────────────────────────────────────────────────────
-- After proposing a sequence, always ask: "Confirm?"
-- If confirmed → sequence is saved. Ask if there is more to plan.
-- If rejected → discard and ask what to change.
+CONFIRMATION:
+- Output block + "Confirm?"
+- Confirmed → "Anything else?"
+- Rejected → "What should I change?"
 
 """ + _COMMON_RULES
 
@@ -617,70 +563,36 @@ def select_scene() -> dict:
 
 def _build_update_system_prompt() -> str:
     return """\
-You are a robot workspace update assistant. A new camera scan has been taken
-and you must determine how the freshly detected parts correspond to the parts
-in the previous configuration, so that part identities and high-level
-attributes (like fragility) are preserved.
+You resolve part identities after a new camera scan.
+
+COMMUNICATION RULES — FOLLOW STRICTLY:
+- Be extremely concise. No filler, no greetings, no preamble.
+- Never repeat the scene JSONs or the auto-match analysis back to the user.
+- If ALL parts are auto-matched with no ambiguities: immediately output the
+  mapping block + "Confirm?" — nothing else.
+- If there ARE ambiguities: list ONLY the unresolved parts (one line each),
+  then ask ONE focused question. Example:
+    "Part_3 (blue) detected at Part_5's old position. Part_5 was red.
+     Is this the same part (moved) or a new part?"
+- After each answer, either ask the next ambiguity or output the mapping.
+- After the mapping block, add ONLY "Confirm?" — no summary, no explanation.
 
 CONTEXT:
-- Receptacles (Kit_*, Container_*) have AprilTags — their names are stable
-  and do not change between scans. Receptacle changes are handled automatically.
-- Parts (Part_*) are detected by colour and shape. The vision system numbers
-  them sequentially, so the NAMES can change between scans even if the parts
-  themselves have not moved.
-- An automatic position + colour matching analysis is provided. Parts that
-  were found at the same position with the same colour are pre-matched.
+- Receptacles have AprilTags → names are stable, handled automatically.
+- Parts are detected by colour/shape → names can change between scans.
+- Auto-match analysis is provided. Trust it for confirmed matches.
 
-YOUR JOB:
-1. Review the old scene, the new scan, and the auto-match analysis.
-2. Summarise what changed for the user: which parts were confirmed, which
-   are ambiguous (appeared at a different position or a different colour
-   is now at an old position), which old parts are missing, and which
-   detections look new.
-3. If any part identities are ambiguous (e.g. two parts were swapped,
-   a part was moved to a different slot, or a part was replaced with a
-   different one), ask the user ONE focused question at a time.
-4. Once ALL part identities are resolved, output the mapping block.
+MAPPING RULES:
+- Keys = ALL Part_* names from the NEW scan.
+- Values = old Part_* name (identity preserved) or "new" (addition).
+- Parts absent from both keys and values → removed.
+- Swaps: two parts exchanged positions. Map each detection to its correct old identity.
 
-IMPORTANT:
-- A "swap" means two parts exchanged positions. Both parts still exist;
-  they just moved. Map each fresh detection to the correct old identity.
-- If a part was removed from the scene, it simply won't appear in the
-  new scan. Do NOT list removed parts as keys in the mapping.
-- If a brand-new part was added, map it to "new".
-- The mapping must list EVERY Part_* from the new scan as a key.
-
-──────────────────────────────────────────────────────────────
-OUTPUT BLOCK — PART IDENTITY MAPPING
-──────────────────────────────────────────────────────────────
-When all identities are resolved, output:
-
+OUTPUT:
 ```mapping
-{
-  "<new_scan_part_name>": "<old_config_part_name_or_new>"
-}
+{"<new_name>": "<old_name_or_new>", ...}
 ```
-
-Example — two parts swapped, one new, one removed:
-```mapping
-{
-  "Part_1": "Part_1",
-  "Part_2": "Part_5",
-  "Part_3": "Part_3",
-  "Part_4": "Part_2",
-  "Part_5": "new"
-}
-```
-(Old Part_4 does not appear as any value → it was removed from the scene.)
-
-Keys   = part names from the NEW scan (exactly as in the new scene JSON)
-Values = part names from the OLD config, or "new" for additions
-
-──────────────────────────────────────────────────────────────
-CONFIRMATION
-──────────────────────────────────────────────────────────────
-Always ask "Confirm this mapping?" after presenting the mapping block.
-If rejected, ask what needs to change and produce a corrected mapping.
+Then: "Confirm?"
 """
 
 
@@ -697,7 +609,7 @@ def _run_update_dialogue(client: OpenAI) -> None:
         prepare_update, build_update_context, apply_update_mapping,
     )
 
-    print("\n── Comparing old configuration with new scan ──\n")
+    print("\n── Scene update ──\n")
 
     try:
         old_state, fresh_state = prepare_update()
@@ -708,26 +620,18 @@ def _run_update_dialogue(client: OpenAI) -> None:
     new_scene = slim_scene(fresh_state)
     context   = build_update_context(old_state, fresh_state)
 
-    print(context + "\n")
-
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": _build_update_system_prompt()},
         {
             "role": "user",
             "content": (
-                "OLD SCENE (previous configuration):\n"
+                "OLD SCENE:\n"
                 + json.dumps(old_scene, indent=2, ensure_ascii=False)
-                + "\n\nNEW SCAN (fresh camera image):\n"
+                + "\n\nNEW SCAN:\n"
                 + json.dumps(new_scene, indent=2, ensure_ascii=False)
-                + "\n\nAUTO-MATCH ANALYSIS:\n"
+                + "\n\nAUTO-MATCH:\n"
                 + context
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                "Compare the old and new scenes. Summarise what changed "
-                "and resolve any ambiguous part identities."
+                + "\n\nResolve identities and output the mapping."
             ),
         },
     ]
@@ -786,15 +690,6 @@ def _run_update_dialogue(client: OpenAI) -> None:
             if pending_mapping is None:
                 continue
 
-            n_preserved = sum(1 for v in pending_mapping.values() if v != "new")
-            n_new       = sum(1 for v in pending_mapping.values() if v == "new")
-            mapped_old  = {v for v in pending_mapping.values() if v != "new"}
-            n_removed   = len(old_parts - mapped_old)
-            print(
-                f"  [Mapping: {n_preserved} preserved, "
-                f"{n_new} new, {n_removed} removed]\n"
-            )
-
         except ValueError as e:
             if "```mapping" in (assistant_text or ""):
                 print(f"  [WARNING: mapping block parse error — {e}]")
@@ -819,7 +714,7 @@ def _run_update_dialogue(client: OpenAI) -> None:
             print("\n── Scene update cancelled. Old config restored. ──\n")
             return
 
-        if pending_mapping is not None and is_yes(user_input):
+        if pending_mapping is not None and (is_yes(user_input) or is_finish(user_input)):
             apply_update_mapping(old_state, fresh_state, pending_mapping)
             print("Loaded fresh scene from vision.")   # signal for GUI
             return
@@ -918,13 +813,10 @@ def run_session(client: OpenAI, mode: str) -> None:
         {
             "role": "user",
             "content": (
-                "INPUT SCENE JSON (sole source of truth — use these names verbatim):\n"
+                "SCENE JSON:\n"
                 + json.dumps(scene, indent=2, ensure_ascii=False)
+                + "\n\nAsk what I want to do."
             ),
-        },
-        {
-            "role": "user",
-            "content": "Please give your scene summary and ask what task I want.",
         },
     ]
 
@@ -946,7 +838,6 @@ def run_session(client: OpenAI, mode: str) -> None:
 
         try:
             pending_sequence = extract_sequence_block(assistant_text)
-            print(f"  [Sequence proposal: {len(pending_sequence)} step(s)]\n")
         except Exception as e:
             if "```sequence" in (assistant_text or ""):
                 print(f"  [WARNING: sequence block parse error — {e}]")
@@ -962,8 +853,6 @@ def run_session(client: OpenAI, mode: str) -> None:
 
         try:
             pending_changes = extract_changes_block(assistant_text)
-            attrs = sum(len(v) if isinstance(v, dict) else 1 for v in pending_changes.values())
-            print(f"  [Changes proposal: {len(pending_changes)} key(s), ~{attrs} value(s)]\n")
         except Exception as e:
             if "```changes" in (assistant_text or ""):
                 print(f"  [WARNING: changes block parse error — {e}]")
@@ -984,14 +873,14 @@ def run_session(client: OpenAI, mode: str) -> None:
 
         if is_finish(user_input):
             if pending_sequence is not None:
-                saved = save_sequence(pending_sequence)
-                print(f"\n✅  Sequence saved ({len(pending_sequence)} pairs) → {saved.resolve()}")
+                save_sequence(pending_sequence)
+                print("✅  Sequence saved.")
             if pending_changes is not None:
                 accumulated_changes = merge_changes(accumulated_changes, pending_changes)
             if accumulated_changes:
-                saved = save_changes(accumulated_changes)
-                print(f"\n✅  Changes saved → {saved.resolve()}")
+                save_changes(accumulated_changes)
                 _apply_and_save_config(accumulated_changes)
+                print("✅  Changes saved.")
             print("\n── Session complete. ──\n")
             return
 
@@ -1000,25 +889,24 @@ def run_session(client: OpenAI, mode: str) -> None:
         if has_pending and is_yes(user_input):
             if pending_sequence is not None:
                 saved = save_sequence(pending_sequence)
-                print(f"\n✅  Sequence confirmed ({len(pending_sequence)} step(s)) → {saved.resolve()}\n")
+                print(f"✅  Sequence confirmed.\n")
                 messages.append({"role": "user",      "content": "Confirmed the sequence."})
                 messages.append({"role": "assistant",  "content": "Sequence saved."})
                 pending_sequence = None
 
             if pending_changes is not None:
                 accumulated_changes = merge_changes(accumulated_changes, pending_changes)
-                total = sum(len(v) if isinstance(v, dict) else 1 for v in accumulated_changes.values())
-                print(f"✅  Changes noted ({total} total). Will be written on 'done'.\n")
+                print(f"✅  Changes noted.\n")
                 messages.append({"role": "user",      "content": "Confirmed the changes."})
                 messages.append({"role": "assistant",  "content": "Changes noted."})
                 pending_changes = None
 
-            user_input = input("Anything else? (or type 'done')\nYOU: ").strip()
+            user_input = input("Anything else?\nYOU: ").strip()
             if is_finish(user_input):
                 if accumulated_changes:
-                    saved = save_changes(accumulated_changes)
-                    print(f"\n✅  Changes saved → {saved.resolve()}")
+                    save_changes(accumulated_changes)
                     _apply_and_save_config(accumulated_changes)
+                    print("✅  Changes saved.")
                 print("\n── Session complete. ──\n")
                 return
             if user_input:
@@ -1026,7 +914,6 @@ def run_session(client: OpenAI, mode: str) -> None:
             continue
 
         if has_pending and is_no(user_input):
-            print("  [Proposal rejected.]\n")
             pending_sequence = None
             pending_changes  = None
             messages.append({

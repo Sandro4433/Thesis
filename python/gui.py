@@ -121,7 +121,6 @@ class RobotGUI:
         self._image_ready       = False          # True only after a new image is taken this session
 
         # scene-routing state
-        self._awaiting_scene_desc  = False   # next ASSISTANT: block → scene panel
         self._config_from_memory   = False   # show placeholder instead of image
         self._in_configure_mode    = False   # only Cancel in button bar
         self._first_menu_shown     = False   # greeting shown exactly once
@@ -138,10 +137,6 @@ class RobotGUI:
         # cx, cy are relative crop center (0.0–1.0), level 1.0 = fit
         self._zoom: Dict[int, Dict[str, float]] = {}
         self._pan_start: Optional[tuple] = None       # (x, y, cx, cy) at drag start
-
-        # accumulator for multi-line scene text arriving in fragments
-        self._scene_buffer: str = ""
-        self._scene_capture = False          # currently capturing scene text
 
         # log window (created on demand, never destroyed — just hidden/shown)
         self._log_win: Optional[tk.Toplevel] = None
@@ -543,96 +538,91 @@ class RobotGUI:
         self._scene_text.see("1.0")
         self._scene_text.configure(state=tk.DISABLED)
 
-    def _flush_scene_buffer(self) -> None:
-        """Split _scene_buffer into scene description (→ panel) and trailing
-        follow-up question (→ chat).  The LLM always ends its first response
-        with a question asking what the user wants to do; we peel that off so
-        it appears in the conversation panel where the user can see it.
-
-        Once a successful split is made we stop capturing so that the extra
-        trailing write("\n") that Python's print() emits does not cause a
-        second flush of the same content."""
-        full = self._scene_buffer.strip()
-        if not full:
-            return
-
-        # Try to split on the last blank line
-        parts = full.rsplit("\n\n", 1)
-        if len(parts) == 2:
-            scene_part, question_part = parts
-            q = question_part.strip()
-            # Treat it as a follow-up if it contains "?" or is short prose
-            if q and ("?" in q or len(q) < 350):
-                self._set_scene_content(scene_part.strip())
-                # Show the question in the chat panel and log
-                self._chat.insert(tk.END, "\n" + q + "\n", "robot")
-                self._chat.see(tk.END)
-                self._log_append("\n" + q + "\n", "robot")
-                # Stop capturing — prevents double-print from print()'s extra \n
-                self._scene_capture = False
-                return
-
-        # No clear split — put everything in the scene panel and stop
-        self._set_scene_content(full)
-        self._scene_capture = False
-
     def _refresh_scene_from_config(self) -> None:
-        """After a reconfig session, ask the LLM for a fresh natural-language
-        scene summary and display it in the scene panel."""
+        """Build scene summary from config file. Always shows ALL high-level
+        attributes, displaying 'none' for those not yet configured."""
         try:
             import json
             import Communication_Module.API_Main as api  # type: ignore
             if not api.CONFIGURATION_PATH.exists():
                 return
             state = json.loads(api.CONFIGURATION_PATH.read_text(encoding="utf-8"))
-            scene = api.slim_scene(state)
-            self._set_scene_placeholder("Updating scene description…")
-            threading.Thread(
-                target=self._llm_scene_summary,
-                args=(scene,),
-                daemon=True,
-            ).start()
-        except Exception as exc:
-            self._set_scene_placeholder("Could not reload scene:\n" + str(exc))
+            preds = state.get("predicates", {})
+            lines = []
 
-    def _llm_scene_summary(self, scene: dict) -> None:
-        """Background thread: call the LLM to summarise the updated scene."""
-        try:
-            import json
-            from openai import OpenAI  # type: ignore
-            client = OpenAI()
-            resp = client.chat.completions.create(
-                model="gpt-4.1",
-                max_tokens=400,
-                temperature=0.1,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a concise robot workspace describer. "
-                            "Given a scene JSON, write a short natural-language "
-                            "paragraph that covers: the operation mode, every "
-                            "receptacle (name, role, what parts it holds with "
-                            "their colour/size), and any kit recipe or priority "
-                            "rules.  Be complete but brief — no bullet lists, "
-                            "no headers, plain prose only."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(scene, indent=2, ensure_ascii=False),
-                    },
-                ],
-            )
-            summary = (resp.choices[0].message.content or "").strip()
-            self.root.after(0, lambda: self._set_scene_content(summary))
+            # Mode
+            ws = state.get("workspace", {})
+            mode = ws.get("operation_mode") or "not set"
+            batch = ws.get("batch_size")
+            mode_str = mode
+            if batch:
+                mode_str += f" (batch: {batch})"
+            lines.append(f"Mode: {mode_str}")
+
+            # Roles
+            roles = preds.get("role", [])
+            assigned = [e for e in roles if e.get("role")]
+            lines.append("")
+            if assigned:
+                lines.append("Roles:")
+                for e in sorted(assigned, key=lambda x: x["object"]):
+                    lines.append(f"  {e['object']} = {e['role']}")
+            else:
+                lines.append("Roles: none")
+
+            # Fragility
+            frag = [e["part"] for e in preds.get("fragility", [])
+                    if e.get("fragility") == "fragile"]
+            lines.append("")
+            if frag:
+                lines.append(f"Fragile: {', '.join(sorted(frag))}")
+            else:
+                lines.append("Fragile: none")
+
+            # Priority
+            prio = preds.get("priority", [])
+            lines.append("")
+            if prio:
+                prio_str = ", ".join(
+                    f"{e.get('color')} (#{e.get('order')})"
+                    for e in sorted(prio, key=lambda x: x.get("order", 0))
+                )
+                lines.append(f"Priority: {prio_str}")
+            else:
+                lines.append("Priority: none")
+
+            # Kit recipe
+            recipe = preds.get("kit_recipe", [])
+            lines.append("")
+            if recipe:
+                lines.append("Kit recipe:")
+                for e in recipe:
+                    size = e.get("size")
+                    size_str = f" {size}" if size else ""
+                    lines.append(
+                        f"  {e.get('kit')}: {e.get('quantity')}x"
+                        f" {e.get('color')}{size_str}"
+                    )
+            else:
+                lines.append("Kit recipe: none")
+
+            # Part compatibility
+            compat = preds.get("part_compatibility", [])
+            lines.append("")
+            if compat:
+                lines.append("Compatibility:")
+                for e in compat:
+                    lines.append(
+                        f"  {e.get('part_color')} → "
+                        f"{', '.join(e.get('allowed_in', []))}"
+                    )
+            else:
+                lines.append("Compatibility: none")
+
+            self._set_scene_content("\n".join(lines))
+
         except Exception as exc:
-            self.root.after(
-                0,
-                lambda: self._set_scene_placeholder(
-                    "Could not generate summary:\n" + str(exc)
-                ),
-            )
+            self._set_scene_placeholder("Could not load scene:\n" + str(exc))
 
     # ─────────────────────────────────────────────────────────────────────────
     # Log window
@@ -814,9 +804,6 @@ class RobotGUI:
         self._busy = True
         self._current_mode = mode
         self._in_configure_mode = True
-        self._awaiting_scene_desc = False
-        self._scene_buffer = ""
-        self._scene_capture = False
 
         self._set_status("Running...", C["fg_muted"])
         self._show_cancel_bar()
@@ -1288,39 +1275,9 @@ class RobotGUI:
             self._config_from_memory = False
             self._image_ready = True
 
-        # ── detect start of new mode (scene description is next) ─────────────
+        # ── detect start of new mode → populate scene panel from config ──────
         if "── Mode:" in stripped:
-            self._awaiting_scene_desc = True
-            self._scene_buffer = ""
-            self._scene_capture = False
-            # Clear the scene panel until the new description arrives
-            self._set_scene_placeholder("Loading scene description…")
-
-        # ── route scene description to the scene panel ────────────────────────
-        # The backend prints:  "\nASSISTANT:\n{scene_text}\n"
-        # This arrives as a single write() call most of the time, but we
-        # handle fragmented delivery robustly via the capture buffer.
-
-        if self._awaiting_scene_desc:
-            if not self._scene_capture and "ASSISTANT:" in text:
-                # First ASSISTANT block after mode start.
-                # Capture it, then split scene description from trailing question.
-                self._scene_capture = True
-                after = text.split("ASSISTANT:", 1)[1]
-                self._scene_buffer = after
-                self._awaiting_scene_desc = False
-                self._flush_scene_buffer()
-                return
-        elif self._scene_capture:
-            # Stop capturing when the conversation moves on.
-            if "ASSISTANT:" in text or stripped.startswith("YOU:")                     or stripped.startswith("[Sequence") or stripped.startswith("[Changes"):
-                self._scene_capture = False
-                # fall through — append this text to chat below
-            else:
-                # Still within the first ASSISTANT block (fragmented delivery)
-                self._scene_buffer += text
-                self._flush_scene_buffer()
-                return
+            self._refresh_scene_from_config()
 
         # ── normal chat append ────────────────────────────────────────────────
         if tag == "robot":
