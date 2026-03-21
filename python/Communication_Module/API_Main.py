@@ -31,8 +31,7 @@ CHANGES_BLOCK_RE  = re.compile(r"```changes\s*(.*?)\s*```",  re.DOTALL | re.IGNO
 MAPPING_BLOCK_RE  = re.compile(r"```mapping\s*(.*?)\s*```",  re.DOTALL | re.IGNORECASE)
 
 # Valid attribute values
-VALID_ROLE  = {"input", "output", None}
-VALID_SIZE  = {"standard", "large", None}
+VALID_ROLE      = {"input", "output", None}
 VALID_COLOR     = {"Blue", "Red", "blue", "red"}
 VALID_FRAGILITY = {"normal", "fragile", None}
 
@@ -50,7 +49,7 @@ def extract_sequence_block(text: str) -> List[List]:
         if not isinstance(entry, list) or len(entry) not in (2, 3):
             raise ValueError(
                 f"Entry {i} must be [pick_name, place_name] or "
-                f"[pick_name, place_name, 0.06], got: {entry!r}"
+                f"[pick_name, place_name, 0.05], got: {entry!r}"
             )
         if not isinstance(entry[0], str) or not isinstance(entry[1], str):
             raise ValueError(f"Entry {i}: pick_name and place_name must be strings.")
@@ -87,17 +86,15 @@ def extract_changes_block(text: str) -> Dict[str, Any]:
             attr_lower = attr.lower()
             if attr_lower == "role" and val not in VALID_ROLE:
                 raise ValueError(f"'{obj_name}'.role must be 'input', 'output', or null.")
-            if attr_lower == "size" and val not in VALID_SIZE:
-                raise ValueError(f"'{obj_name}'.size must be null or 'large'.")
             if attr_lower == "color" and val not in VALID_COLOR:
                 raise ValueError(f"'{obj_name}'.color must be 'Blue' or 'Red'.")
             if attr_lower == "fragility" and val not in VALID_FRAGILITY:
                 raise ValueError(f"'{obj_name}'.fragility must be 'normal' or 'fragile'.")
-            if attr_lower not in ("role", "size", "color", "fragility",
-                                  "Role", "Size", "Color", "Fragility"):
+            if attr_lower not in ("role", "color", "fragility",
+                                  "Role", "Color", "Fragility"):
                 raise ValueError(
                     f"'{obj_name}': unknown attribute '{attr}'. "
-                    f"Allowed: role, size, color, fragility."
+                    f"Allowed: role, color, fragility."
                 )
     return data
 
@@ -207,7 +204,7 @@ def slim_scene(state: dict) -> dict:
             },
             "Container_3_Pos_1": {
                 "role": "input",
-                "child_part": {"name": "Part_1", "color": "blue", "size": "large"}
+                "child_part": {"name": "Part_1", "color": "blue"}
             }
         },
         "parts": {}                        ← standalone parts (not in a slot)
@@ -225,7 +222,6 @@ def slim_scene(state: dict) -> dict:
 
     # part attributes
     color_map = {e["part"]: e.get("color") for e in preds.get("color", [])}
-    size_map  = {e["part"]: e.get("size")  for e in preds.get("size",  [])}
 
     # part → slot mapping
     part_in_slot: Dict[str, str] = {
@@ -252,7 +248,6 @@ def slim_scene(state: dict) -> dict:
         slots_view[slot_name]["child_part"] = {
             "name":      part_name,
             "color":     color_map.get(part_name),
-            "size":      size_map.get(part_name),
             "fragility": frag_map.get(part_name, "normal"),
         }
 
@@ -261,7 +256,6 @@ def slim_scene(state: dict) -> dict:
     parts_view: Dict[str, Any] = {
         p: {
             "color":     color_map.get(p),
-            "size":      size_map.get(p),
             "fragility": frag_map.get(p, "normal"),
         }
         for p in objs.get("parts", [])
@@ -300,7 +294,7 @@ def _apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
 
 
 def _refresh_annotated_image(state: Dict[str, Any]) -> None:
-    """Redraw latest_image.png with current part names, sizes, and FRAGILE labels."""
+    """Redraw latest_image.png with current part names and FRAGILE labels."""
     file_exchange = PROJECT_DIR / "File_Exchange"
     base_path  = file_exchange / "latest_image_base.png"
     pmap_path  = file_exchange / "latest_pixel_map.json"
@@ -319,22 +313,13 @@ def _refresh_annotated_image(state: Dict[str, Any]) -> None:
 
         pixel_map = json.loads(pmap_path.read_text(encoding="utf-8"))
 
-        # Build lookups from current config state
+        # Build fragility lookup from current config state
         preds = state.get("predicates", {})
 
         fragile_set: set = set()
         for entry in preds.get("fragility", []):
             if entry.get("fragility") == "fragile":
                 fragile_set.add(entry["part"])
-
-        # Override size_label from config (vision's original may be wrong
-        # or the user may have changed it via the LLM)
-        size_map = {e["part"]: e.get("size", "standard")
-                    for e in preds.get("size", [])}
-        for p in pixel_map:
-            name = p.get("name", "")
-            if name in size_map:
-                p["size_label"] = size_map[name]
 
         annotate_parts(img, pixel_map, fragile_set=fragile_set)
         cv2.imwrite(str(out_path), img)
@@ -370,24 +355,21 @@ Output ONLY the attributes that are actually changing — not the full scene.
 
 Allowed keys and values:
   RECEPTACLE name (Kit_*, Container_*)   → "role": "input" | "output" | null
-  PART name (Part_*)                     → "size": null | "large"
-                                         → "color": "Blue" | "Red"
+  PART name (Part_*)                     → "color": "Blue" | "Red"
                                          → "fragility": "normal" | "fragile"
   "workspace"                            → {"operation_mode": "sorting"|"kitting", "batch_size": N}
   "priority"                             → [{"color": "blue", "order": 1}, ...]
   "kit_recipe"                           → [{"kit": "Kit_0", "color": "blue", "quantity": 2}, ...]
-                                           size is optional: {"kit": "Kit_0", "color": "blue", "size": "large", "quantity": 1}
-                                           omit size (or set null) to accept any size of that color
   "part_compatibility"                   → [{"part_color": "blue", "allowed_in": ["Container_1"]}, ...]
 
 CRITICAL FORMAT RULES:
 - Use the RECEPTACLE name (e.g. "Container_3", "Kit_0") for role changes,
   NOT individual slot names.
-- Use the PART name (e.g. "Part_1") for size/color changes.
+- Use the PART name (e.g. "Part_1") for color changes.
 - Never invent names. Use verbatim names from the INPUT JSON.
 - null means reset to default.
 
-Example (kitting without size constraint):
+Example (kitting):
 ```changes
 {
   "Container_3": {"role": "input"},
@@ -398,20 +380,6 @@ Example (kitting without size constraint):
     {"kit": "Kit_0", "color": "red",  "quantity": 1}
   ],
   "priority": [{"color": "blue", "order": 1}, {"color": "red", "order": 2}]
-}
-```
-
-Example (kitting with size constraint — 1 large blue + 1 standard blue + 1 red):
-```changes
-{
-  "Container_3": {"role": "input"},
-  "Kit_0": {"role": "output"},
-  "workspace": {"operation_mode": "kitting"},
-  "kit_recipe": [
-    {"kit": "Kit_0", "color": "blue", "size": "large",    "quantity": 1},
-    {"kit": "Kit_0", "color": "blue", "size": "standard", "quantity": 1},
-    {"kit": "Kit_0", "color": "red",                      "quantity": 1}
-  ]
 }
 ```
 """
@@ -476,11 +444,11 @@ ROLE RESTRICTIONS:
   If conflict: explain briefly + "Switch to reconfiguration mode?" → if yes: SWITCH_TO_RECONFIG
 
 GRIPPER WIDTH:
-  - standard → 0.05 (omit)   - "large" → 0.06 (include as 3rd element)
+  - All parts use standard gripper width 0.05 (omit from sequence entries).
 
 OUTPUT:
 ```sequence
-[["<pick>", "<place>"], ["<pick>", "<place>", 0.06]]
+[["<pick>", "<place>"], ["<pick>", "<place>"]]
 ```
 pick = part name, place = slot name. Never use slots as pick targets.
 
@@ -761,18 +729,11 @@ def run_session(client: OpenAI, mode: str) -> None:
 
         from Execution_Module.Robot_Main import main as robot_main  # type: ignore
         robot_main()
-        # Robot_Main is fully synchronous (all MoveIt go(wait=True)) so when
-        # it returns here the robot has completely stopped moving.
         print("\n── Execution complete. ──\n")
 
-        # Hand the completed sequence to the Configuration Module.
-        # apply_and_save updates predicates, slot_empty, and metric positions
-        # in configuration.json, then archives a timestamped copy to Memory/.
         from Configuration_Module.Apply_Sequence_Changes import apply_and_save  # type: ignore
         updated = apply_and_save(CONFIGURATION_PATH, sequence, save_memory=True)
 
-        # Take a fresh picture and merge with the post-execution config.
-        # The config is truth for part identity — no user interaction needed.
         if updated:
             from Configuration_Module.Update_Scene import run_post_execution_rescan  # type: ignore
             run_post_execution_rescan(updated)
@@ -802,7 +763,6 @@ def run_session(client: OpenAI, mode: str) -> None:
 
         elif sub == "reconfig_update":
             _run_update_dialogue(client)
-            # _run_update_dialogue saves the merged state to configuration.json
             if not CONFIGURATION_PATH.exists():
                 print(f"ERROR: configuration.json not found at {CONFIGURATION_PATH.resolve()}")
                 return
@@ -857,7 +817,7 @@ def run_session(client: OpenAI, mode: str) -> None:
                     "role": "user",
                     "content": (
                         f"Your sequence block failed to parse: {e}\n"
-                        "Each entry must be [\"pick\", \"place\"] or [\"pick\", \"place\", 0.06].\n"
+                        "Each entry must be [\"pick\", \"place\"] or [\"pick\", \"place\", 0.05].\n"
                         "Please rewrite the sequence block."
                     ),
                 })
@@ -873,7 +833,7 @@ def run_session(client: OpenAI, mode: str) -> None:
                     "content": (
                         f"Your changes block failed to parse: {e}\n"
                         "Use receptacle names (e.g. 'Container_3') for role changes.\n"
-                        "Use part names (e.g. 'Part_1') for size/color changes.\n"
+                        "Use part names (e.g. 'Part_1') for color changes.\n"
                         "Please rewrite the changes block."
                     ),
                 })
@@ -900,7 +860,7 @@ def run_session(client: OpenAI, mode: str) -> None:
 
         if has_pending and is_yes(user_input):
             if pending_sequence is not None:
-                saved = save_sequence(pending_sequence)
+                save_sequence(pending_sequence)
                 print(f"✅  Sequence confirmed.\n")
                 messages.append({"role": "user",      "content": "Confirmed the sequence."})
                 messages.append({"role": "assistant",  "content": "Sequence saved."})

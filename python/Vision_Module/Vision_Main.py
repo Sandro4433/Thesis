@@ -26,7 +26,6 @@ from Vision_Module.config import (
     AXIS_LEN_M,
     TAG_AXIS_DRAW_LEN_M,
     Z_ROBOT_M,
-    PART_SIZE_CLASSES,
     REALSENSE_WIDTH,
     REALSENSE_HEIGHT,
     REALSENSE_FPS,
@@ -215,7 +214,6 @@ def main() -> None:
         kit_ids=KIT_TAG_IDS,
         container_ids=CONTAINER_TAG_IDS,
         tag_axis_draw_len=TAG_AXIS_DRAW_LEN_M,
-        part_size_classes=PART_SIZE_CLASSES,
         draw_parts=False,           # parts are drawn below after saving base image
     )
 
@@ -230,20 +228,12 @@ def main() -> None:
     # Build part annotation list from tag_targets and draw onto img_vis
     _part_annotations = []
     for p in tag_targets.get(-1000, []):
-        diameter_mm = float(p.get("diameter_mm", 0.0))
-        size_label = "unknown"
-        if PART_SIZE_CLASSES:
-            for label, lo, hi in PART_SIZE_CLASSES:
-                if lo <= diameter_mm < hi:
-                    size_label = label
-                    break
         _part_annotations.append({
             "name": p["name_suffix"],
             "cx_px": p["cx_px"],
             "cy_px": p["cy_px"],
             "color": p.get("color", "Unknown"),
-            "size_label": size_label,
-            "diameter_mm": diameter_mm,
+            "diameter_mm": float(p.get("diameter_mm", 0.0)),
         })
 
     annotate_parts(img_vis, _part_annotations)
@@ -265,7 +255,6 @@ def main() -> None:
         camera_quat=CAMERA_HOME["quat"],
         kit_ids=KIT_TAG_IDS,
         container_ids=CONTAINER_TAG_IDS,
-        part_size_classes=PART_SIZE_CLASSES,
     )
 
     final_entries = assign_parts_to_slots(

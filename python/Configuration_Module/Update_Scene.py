@@ -6,7 +6,7 @@
 # Design principle
 # ────────────────
 # Vision is the sole source of truth for the PHYSICAL state (positions,
-# colours, sizes).  Part IDENTITY is preserved by matching fresh detections
+# colours).  Part IDENTITY is preserved by matching fresh detections
 # to old parts — first automatically (by position + colour), then via a
 # user-facing LLM conversation for any ambiguous cases.
 #
@@ -17,7 +17,7 @@
 #
 # Physical state (always taken from fresh vision scan):
 #   objects, slot_belongs_to,
-#   predicates: at, slot_empty, color, size,
+#   predicates: at, slot_empty, color,
 #   metric
 #
 # High-level config (always preserved from old config):
@@ -59,7 +59,7 @@ def _empty_state() -> Dict[str, Any]:
         "slot_belongs_to": {},
         "predicates": {
             "at": [], "slot_empty": [], "role": [],
-            "color": [], "size": [],
+            "color": [],
             "priority": [], "kit_recipe": [], "part_compatibility": [],
             "fragility": [],
         },
@@ -118,9 +118,6 @@ def _match_parts_by_position(
     A match requires BOTH:
       - XY distance ≤ threshold_m
       - colours agree (or at least one is unknown/missing)
-
-    This prevents wrong auto-matches when parts are swapped: a red part
-    at a blue part's old position will NOT be auto-matched.
 
     Returns
     -------
@@ -183,7 +180,7 @@ def _rename_parts_in_state(
     """
     Rename parts throughout the state dict.
     Uses a two-pass (current→tmp, tmp→final) to avoid collisions when
-    names are swapped (e.g. fresh Part_1→old Part_2, fresh Part_2→old Part_1).
+    names are swapped.
     """
     effective = {k: v for k, v in rename_map.items() if k != v}
     if not effective:
@@ -211,7 +208,7 @@ def _apply_rename_pass(state: Dict[str, Any], rmap: Dict[str, str]) -> None:
             parts[i] = rmap[p]
 
     preds = state.get("predicates", {})
-    for pred_key in ("at", "color", "size", "fragility"):
+    for pred_key in ("at", "color", "fragility"):
         for entry in preds.get(pred_key, []):
             if entry.get("part") in rmap:
                 entry["part"] = rmap[entry["part"]]
@@ -312,13 +309,6 @@ def build_update_context(
     """
     Compute the structural diff between old and fresh states and return a
     human-readable analysis for the LLM prompt.
-
-    Includes:
-      - Receptacle changes (AprilTag-based, automatic)
-      - Auto-matched parts (position + colour)
-      - Unmatched new detections
-      - Missing old parts
-      - High-level attributes that should be preserved
     """
     matched, new_parts, missing_parts = _match_parts_by_position(
         old_state, fresh_state,
@@ -329,8 +319,6 @@ def build_update_context(
 
     old_colors   = {e["part"]: e.get("color", "?") for e in old_preds.get("color", [])}
     fresh_colors = {e["part"]: e.get("color", "?") for e in fresh_preds.get("color", [])}
-    old_sizes    = {e["part"]: e.get("size", "standard") for e in old_preds.get("size", [])}
-    fresh_sizes  = {e["part"]: e.get("size", "standard") for e in fresh_preds.get("size", [])}
     old_frag     = {e["part"]: e.get("fragility") for e in old_preds.get("fragility", [])}
 
     old_at   = {e["part"]: e["slot"] for e in old_preds.get("at", [])}
@@ -359,12 +347,11 @@ def build_update_context(
         lines.append("\nAUTO-MATCHED PARTS (position + colour confirmed):")
         for mem_name, fresh_name in matched:
             fc   = fresh_colors.get(fresh_name, "?")
-            fs   = fresh_sizes.get(fresh_name, "standard")
             slot = fresh_at.get(fresh_name, "standalone")
             frag = f", fragile" if mem_name in old_frag else ""
             lines.append(
                 f"  New scan '{fresh_name}' → Old '{mem_name}' "
-                f"({fc}, {fs}{frag}) in {slot}"
+                f"({fc}{frag}) in {slot}"
             )
 
     # Unmatched new detections
@@ -372,19 +359,17 @@ def build_update_context(
         lines.append("\nNEW DETECTIONS (no matching old part at same position+colour):")
         for np_name in new_parts:
             fc   = fresh_colors.get(np_name, "?")
-            fs   = fresh_sizes.get(np_name, "standard")
             slot = fresh_at.get(np_name, "standalone")
-            lines.append(f"  '{np_name}' ({fc}, {fs}) in {slot}")
+            lines.append(f"  '{np_name}' ({fc}) in {slot}")
 
     # Missing old parts
     if missing_parts:
         lines.append("\nMISSING FROM NEW SCAN:")
         for mp in missing_parts:
             oc   = old_colors.get(mp, "?")
-            os   = old_sizes.get(mp, "standard")
             slot = old_at.get(mp, "standalone")
             frag = f", fragile" if mp in old_frag else ""
-            lines.append(f"  '{mp}' ({oc}, {os}{frag}) was in {slot}")
+            lines.append(f"  '{mp}' ({oc}{frag}) was in {slot}")
 
     # High-level attributes summary
     if old_frag:
@@ -411,12 +396,6 @@ def apply_update_mapping(
     old_state   : previous configuration (source of high-level attributes)
     fresh_state : fresh vision scan (source of physical state)
     mapping     : {fresh_part_name: old_part_name | "new"}
-
-    Steps:
-      1. Build a rename map from the mapping
-      2. Rename parts in a deep copy of the fresh state
-      3. Overlay high-level config from old state (roles, fragility, etc.)
-      4. Save to disk and archive to Memory/
     """
     result = copy.deepcopy(fresh_state)
 
@@ -508,15 +487,8 @@ def _redraw_annotated_image(
 ) -> None:
     """
     Redraw latest_image.png using the base image (tags+slots only) and the
-    pixel map saved by Vision_Main, applying the new part names from
-    rename_map and adding FRAGILE labels from the merged state.
-
-    Files read:
-      File_Exchange/latest_image_base.png   — clean image (no part labels)
-      File_Exchange/latest_pixel_map.json   — pixel coords per detected part
-
-    File written:
-      File_Exchange/latest_image.png        — final annotated image
+    pixel map saved by Vision_Main, applying the new part names from rename_map
+    and adding FRAGILE labels from the merged state.
     """
     base_path  = FILE_EXCHANGE / "latest_image_base.png"
     pmap_path  = FILE_EXCHANGE / "latest_pixel_map.json"
@@ -537,7 +509,7 @@ def _redraw_annotated_image(
 
         pixel_map = json.loads(pmap_path.read_text(encoding="utf-8"))
 
-        # Build lookups from merged state
+        # Build fragility lookup from merged state
         preds = merged_state.get("predicates", {})
 
         fragile_set: set = set()
@@ -545,18 +517,12 @@ def _redraw_annotated_image(
             if entry.get("fragility") == "fragile":
                 fragile_set.add(entry["part"])
 
-        # Override size_label from config state
-        size_map = {e["part"]: e.get("size", "standard")
-                    for e in preds.get("size", [])}
-
-        # Apply rename_map and size overrides to pixel annotations
+        # Apply rename_map to pixel annotations
         updated_annotations = []
         for p in pixel_map:
             old_name = p["name"]
             new_name = rename_map.get(old_name, old_name)
             entry = {**p, "name": new_name}
-            if new_name in size_map:
-                entry["size_label"] = size_map[new_name]
             updated_annotations.append(entry)
 
         annotate_parts(img, updated_annotations, fragile_set=fragile_set)
@@ -570,8 +536,6 @@ def _redraw_annotated_image(
 
 # ── post-execution automated rescan ──────────────────────────────────────────
 
-# More generous threshold for post-execution matching: the planner moved parts
-# to known slots, so the predicted and actual positions should be very close.
 _POST_EXEC_THRESHOLD_M = 0.035
 
 
@@ -580,16 +544,6 @@ def run_post_execution_rescan(config_state: Dict[str, Any]) -> Dict[str, Any]:
     Take a fresh camera image after execution and merge it with the
     post-execution config file.  The config is the source of truth for
     part identity — no user interaction is needed.
-
-    Flow:
-      1. Save current config to disk (restore point).
-      2. Run vision → fresh state.
-      3. Match fresh detections to config parts by position+colour.
-      4. Auto-build mapping: matched → config ID, unmatched fresh → ignored,
-         missing config parts → kept with predicted metrics.
-      5. Rename, overlay high-level attributes, save, redraw image.
-
-    Returns the final merged state.
     """
     print("\n── Post-execution vision rescan ──\n")
 
@@ -622,10 +576,6 @@ def run_post_execution_rescan(config_state: Dict[str, Any]) -> Dict[str, Any]:
           f"Config-only (kept): {n_kept}")
 
     # ── build automatic rename map ────────────────────────────────────────
-    # matched: (config_name, fresh_name) → rename fresh_name → config_name
-    # new_fresh: ignored (vision noise / irrelevant detection)
-    # missing_config: kept — their metrics stay from the config prediction
-
     rename_map: Dict[str, str] = {}
     for config_name, fresh_name in matched:
         rename_map[fresh_name] = config_name
@@ -636,20 +586,15 @@ def run_post_execution_rescan(config_state: Dict[str, Any]) -> Dict[str, Any]:
     parts_to_remove = [p for p in fresh_parts if p not in matched_fresh_names]
 
     if parts_to_remove:
-        # Remove from objects.parts
         fresh_state["objects"]["parts"] = [
             p for p in fresh_parts if p in matched_fresh_names
         ]
-        # Remove from predicates
         fresh_preds = fresh_state.get("predicates", {})
-        for pred_key in ("at", "color", "size", "fragility"):
+        for pred_key in ("at", "color", "fragility"):
             fresh_preds[pred_key] = [
                 e for e in fresh_preds.get(pred_key, [])
                 if e.get("part") not in parts_to_remove
             ]
-        # Remove from slot_empty (parts leaving frees slots)
-        # Actually — just keep slot_empty as vision detected it
-        # Remove from metric
         fresh_metric = fresh_state.get("metric", {})
         for p in parts_to_remove:
             fresh_metric.pop(p, None)
@@ -658,42 +603,31 @@ def run_post_execution_rescan(config_state: Dict[str, Any]) -> Dict[str, Any]:
     _rename_parts_in_state(fresh_state, rename_map)
 
     # ── inject missing config parts back (vision didn't see them) ─────────
-    # These keep their config-predicted metric data.
     config_metric = config_state.get("metric", {})
     config_preds  = config_state.get("predicates", {})
     config_at     = {e["part"]: e["slot"] for e in config_preds.get("at", [])}
     config_colors = {e["part"]: e.get("color") for e in config_preds.get("color", [])}
-    config_sizes  = {e["part"]: e.get("size")  for e in config_preds.get("size", [])}
 
     fresh_preds  = fresh_state.get("predicates", {})
     fresh_metric = fresh_state.get("metric", {})
 
     for mp in missing_config:
-        # Add to objects.parts
         if mp not in fresh_state["objects"]["parts"]:
             fresh_state["objects"]["parts"].append(mp)
 
-        # Add to predicates.at (if it was in a slot)
         if mp in config_at:
             fresh_preds.setdefault("at", []).append(
                 {"part": mp, "slot": config_at[mp]}
             )
-            # Remove slot from slot_empty
             slot = config_at[mp]
             if slot in fresh_preds.get("slot_empty", []):
                 fresh_preds["slot_empty"].remove(slot)
 
-        # Add to predicates.color / size
         if mp in config_colors:
             fresh_preds.setdefault("color", []).append(
                 {"part": mp, "color": config_colors[mp]}
             )
-        if mp in config_sizes:
-            fresh_preds.setdefault("size", []).append(
-                {"part": mp, "size": config_sizes[mp]}
-            )
 
-        # Add config-predicted metric
         if mp in config_metric:
             fresh_metric[mp] = config_metric[mp]
 

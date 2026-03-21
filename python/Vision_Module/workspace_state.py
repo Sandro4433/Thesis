@@ -5,7 +5,7 @@
 #   workspace       – operation-level high-level attributes (mode, batch_size)
 #   objects         – typed object lists for PDDL object declarations
 #   slot_belongs_to – parent receptacle for every slot
-#   predicates      – all semantic facts (at, slot_empty, role, color, size,
+#   predicates      – all semantic facts (at, slot_empty, role, color,
 #                     priority, kit_recipe, part_compatibility)
 #   metric          – robot-execution data (pos/quat/orientation) keyed by name
 #
@@ -49,7 +49,7 @@ def entries_to_state(final_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
     Convert the flat list produced by assign_parts_to_slots into the
     PDDL-friendly workspace state dict.
 
-    Low-level attributes (from vision):   pos, quat, orientation, Color, Size
+    Low-level attributes (from vision):   pos, quat, orientation, Color
     High-level attributes (user-supplied): role, priority, kit_recipe,
                                            part_compatibility, operation_mode
 
@@ -110,7 +110,6 @@ def entries_to_state(final_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
     at_list:         List[Dict] = []
     slot_empty_list: List[str]  = []
     color_list:      List[Dict] = []
-    size_list:       List[Dict] = []
 
     for slot_name, slot in sorted(slot_entries.items()):
         child = slot.get("child_part")
@@ -121,9 +120,6 @@ def entries_to_state(final_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
             color = child.get("Color")
             if color:
                 color_list.append({"part": pname, "color": color.lower()})
-
-            size  = child.get("Size")
-            size_list.append({"part": pname, "size": (size or "standard").lower()})
         else:
             slot_empty_list.append(slot_name)
 
@@ -134,8 +130,6 @@ def entries_to_state(final_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
         color = part.get("Color")
         if color:
             color_list.append({"part": pname, "color": color.lower()})
-        size = part.get("Size")
-        size_list.append({"part": pname, "size": (size or "standard").lower()})
 
     # role — one entry per receptacle, default null
     role_list: List[Dict] = [
@@ -187,7 +181,6 @@ def entries_to_state(final_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
             "slot_empty":        slot_empty_list,
             "role":              role_list,
             "color":             color_list,
-            "size":              size_list,
             "priority":          [],
             "kit_recipe":        [],
             "part_compatibility":[],
@@ -235,7 +228,7 @@ def load_json_snapshot(path: str) -> Dict[str, Any]:
         "slot_belongs_to": {},
         "predicates": {
             "at": [], "slot_empty": [], "role": [],
-            "color": [], "size": [],
+            "color": [],
             "priority": [], "kit_recipe": [], "part_compatibility": [], "fragility": [],
         },
         "metric": {},
