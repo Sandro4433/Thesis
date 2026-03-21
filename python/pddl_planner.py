@@ -60,6 +60,7 @@ DOMAIN_PDDL_BASIC = """\
     (compatible ?p - part ?r - receptacle)
     (color-red ?p - part)
     (color-blue ?p - part)
+    (color-green ?p - part)
     (hand-empty)
     (holding ?p - part)
   )
@@ -128,6 +129,7 @@ def build_domain_pddl_costs(num_priorities: int) -> str:
         "    (compatible ?p - part ?r - receptacle)",
         "    (color-red ?p - part)",
         "    (color-blue ?p - part)",
+        "    (color-green ?p - part)",
         "    (hand-empty)",
         "    (holding ?p - part)",
     ]
@@ -317,6 +319,8 @@ def _build_common_init(state, standalone, virtual_slots, VIRTUAL):
             init.append(f"    (color-red {part})")
         elif color == "blue":
             init.append(f"    (color-blue {part})")
+        elif color == "green":
+            init.append(f"    (color-green {part})")
     return init
 
 

@@ -32,7 +32,7 @@ MAPPING_BLOCK_RE  = re.compile(r"```mapping\s*(.*?)\s*```",  re.DOTALL | re.IGNO
 
 # Valid attribute values
 VALID_ROLE      = {"input", "output", None}
-VALID_COLOR     = {"Blue", "Red", "blue", "red"}
+VALID_COLOR     = {"Blue", "Red", "Green", "blue", "red", "green"}
 VALID_FRAGILITY = {"normal", "fragile", None}
 
 
@@ -87,7 +87,7 @@ def extract_changes_block(text: str) -> Dict[str, Any]:
             if attr_lower == "role" and val not in VALID_ROLE:
                 raise ValueError(f"'{obj_name}'.role must be 'input', 'output', or null.")
             if attr_lower == "color" and val not in VALID_COLOR:
-                raise ValueError(f"'{obj_name}'.color must be 'Blue' or 'Red'.")
+                raise ValueError(f"'{obj_name}'.color must be 'Blue', 'Red', or 'Green'.")
             if attr_lower == "fragility" and val not in VALID_FRAGILITY:
                 raise ValueError(f"'{obj_name}'.fragility must be 'normal' or 'fragile'.")
             if attr_lower not in ("role", "color", "fragility",
@@ -355,7 +355,7 @@ Output ONLY the attributes that are actually changing — not the full scene.
 
 Allowed keys and values:
   RECEPTACLE name (Kit_*, Container_*)   → "role": "input" | "output" | null
-  PART name (Part_*)                     → "color": "Blue" | "Red"
+  PART name (Part_*)                     → "color": "Blue" | "Red" | "Green"
                                          → "fragility": "normal" | "fragile"
   "workspace"                            → {"operation_mode": "sorting"|"kitting", "batch_size": N}
   "priority"                             → [{"color": "blue", "order": 1}, ...]

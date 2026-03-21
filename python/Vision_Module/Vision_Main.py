@@ -9,6 +9,7 @@ if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
 import cv2
+import numpy as np
 
 from Vision_Module.config import (
     CONTAINER_TAG_IDS,
@@ -33,7 +34,6 @@ from Vision_Module.config import (
 )
 
 from Vision_Module.vision_charuco import detect_board_homography, choose_origin_and_axes, draw_origin_and_axes
-from Vision_Module.vision_apriltag import create_detector, detect_tags
 from Vision_Module.pipeline import compute_tag_targets_and_annotate, targets_to_robot_entries, annotate_parts
 from Vision_Module.assign_parts import assign_parts_to_slots
 from Vision_Module.workspace_state import entries_to_state, save_json_snapshot, save_llm_snapshot
@@ -152,7 +152,10 @@ def main() -> None:
         img_raw = load_test_image(TEST_IMAGE_NAME)
 
     img_vis = img_raw.copy()
-    gray = cv2.cvtColor(img_raw, cv2.COLOR_BGR2GRAY)
+    # Force a contiguous C-layout array before passing to any native library.
+    # cv2.cvtColor does not guarantee contiguous output, and pupil_apriltags
+    # will intermittently segfault if the array is not contiguous in memory.
+    gray = np.ascontiguousarray(cv2.cvtColor(img_raw, cv2.COLOR_BGR2GRAY))
 
     # ------------------------------------------------------------------
     # Board homography
@@ -185,23 +188,62 @@ def main() -> None:
     )
     draw_origin_and_axes(img_vis, origin_axes)
 
-    # ------------------------------------------------------------------
-    # AprilTag detection
-    # ------------------------------------------------------------------
-    # Second checkpoint: catch any late import of pyrealsense2 (e.g. from a
-    # lazy-imported helper called during image capture) before libapriltag loads.
+    # ── AprilTag detection ────────────────────────────────────────────────────
+    # Second checkpoint: catch any late import of pyrealsense2.
     assert "pyrealsense2" not in sys.modules, (
         "pyrealsense2 was imported after startup — check any code that ran "
         "between program launch and this point (capture helper, config, etc.)."
     )
-    detector = create_detector(
-        families="tag25h9",
-        nthreads=1,
-        quad_decimate=1.0,
-        quad_sigma=0.0,
-        refine_edges=1,
-    )
-    detections = detect_tags(detector, gray)
+
+    # pupil_apriltags intermittently segfaults on the first call when the
+    # process memory is in a certain state.  Running detection in a subprocess
+    # isolates the crash so Vision_Main itself survives.  We retry once with a
+    # fresh subprocess if the first attempt fails.
+    import subprocess as _sub
+    import tempfile as _tmp
+    import pickle as _pickle
+
+    _detect_script = Path(__file__).resolve().parent / "_apriltag_worker.py"
+
+    def _run_apriltag_subprocess(gray_arr: "np.ndarray") -> list:
+        """
+        Serialise gray array → temp file, run apriltag in a clean subprocess,
+        return detections list.  Raises RuntimeError on failure.
+        """
+        with _tmp.NamedTemporaryFile(suffix=".pkl", delete=False) as f_in:
+            _pickle.dump(gray_arr, f_in)
+            in_path = f_in.name
+        with _tmp.NamedTemporaryFile(suffix=".pkl", delete=False) as f_out:
+            out_path = f_out.name
+
+        try:
+            result = _sub.run(
+                [sys.executable, str(_detect_script), in_path, out_path],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"AprilTag worker failed (exit {result.returncode}):\n"
+                    f"  stdout: {result.stdout.strip()}\n"
+                    f"  stderr: {result.stderr.strip()}"
+                )
+            with open(out_path, "rb") as f:
+                detections = _pickle.load(f)
+            return detections
+        finally:
+            Path(in_path).unlink(missing_ok=True)
+            Path(out_path).unlink(missing_ok=True)
+
+    for _attempt in range(2):
+        try:
+            detections = _run_apriltag_subprocess(gray)
+            break
+        except Exception as _e:
+            if _attempt == 0:
+                print(f"  ⚠  AprilTag attempt 1 failed ({_e}) — retrying …")
+            else:
+                print(f"❌  AprilTag detection failed after 2 attempts: {_e}")
+                return
 
     tag_targets = compute_tag_targets_and_annotate(
         img_vis=img_vis,
@@ -243,7 +285,7 @@ def main() -> None:
     with open(str(_pixel_map_path), "w", encoding="utf-8") as f:
         json.dump(_part_annotations, f, indent=2, ensure_ascii=False)
 
-    del detector  # safe to release after compute_tag_targets_and_annotate is done
+    del detections  # free before part detection
 
     # ------------------------------------------------------------------
     # Robot entries + part assignment

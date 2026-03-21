@@ -53,12 +53,18 @@
     "at": [
       {
         "part": "Part_5",
+        "slot": "Container_1_Pos_1"
+      },
+      {
+        "part": "Part_4",
+        "slot": "Container_1_Pos_2"
+      },
+      {
+        "part": "Part_6",
         "slot": "Kit_0_Pos_2"
       }
     ],
     "slot_empty": [
-      "Container_1_Pos_1",
-      "Container_1_Pos_2",
       "Container_1_Pos_3",
       "Container_1_Pos_4",
       "Container_1_Pos_5",
@@ -86,6 +92,14 @@
     "color": [
       {
         "part": "Part_5",
+        "color": "green"
+      },
+      {
+        "part": "Part_4",
+        "color": "green"
+      },
+      {
+        "part": "Part_6",
         "color": "red"
       },
       {
@@ -99,14 +113,6 @@
       {
         "part": "Part_3",
         "color": "blue"
-      },
-      {
-        "part": "Part_4",
-        "color": "blue"
-      },
-      {
-        "part": "Part_6",
-        "color": "red"
       },
       {
         "part": "Part_7",

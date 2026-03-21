@@ -209,8 +209,9 @@ def compute_tag_targets_and_annotate(
     # Color-cluster part detection (RAW only), circularity-validated, then draw on VIS
     # ----------------------------
     ref_rgb = {
-        "Blue": (40, 80, 130),
-        "Red":  (130, 40, 40),
+        "Blue":  (40,  80,  130),
+        "Red":   (130, 40,  40),
+        "Green": (40,  120, 50),
     }
 
     part_dets = detect_color_cluster_parts_on_board(
@@ -219,15 +220,25 @@ def compute_tag_targets_and_annotate(
         ref_rgb=ref_rgb,
         tol_rgb=(45, 45, 45),
         tol_rgb_by_color={
-            "Blue": (45, 45, 45),
-            "Red":  (45, 45, 45),
+            "Blue":  (45, 45, 45),
+            "Red":   (45, 45, 45),
+            "Green": (35, 40, 35),
         },
+        min_spread_by_color={
+            "Green": 25,
+        },
+        # Boost saturation before mask building so desaturated/grey-tinted
+        # parts pass the tolerance box more reliably.
+        # 1.0 = no change, 1.5 = moderate boost, 2.0 = strong boost.
+        # Classification always uses the original image so labels stay accurate.
+        saturation_boost=1.5,
         morph_by_color={
-            "Blue": {"morph_kernel": 5, "open_iter": 0, "close_iter": 2},
-            "Red":  {"morph_kernel": 7, "open_iter": 1, "close_iter": 2},
+            "Blue":  {"morph_kernel": 5, "open_iter": 0, "close_iter": 2},
+            "Red":   {"morph_kernel": 7, "open_iter": 1, "close_iter": 2},
+            "Green": {"morph_kernel": 5, "open_iter": 1, "close_iter": 2},
         },
         min_area_px=1000,
-        circularity_min=0.35,
+        circularity_min=0.30,
         fill_ratio_min=0.45,
         debug_mask_color="Blue",
         debug_show_mask=False,
@@ -238,7 +249,7 @@ def compute_tag_targets_and_annotate(
 
     for d in part_dets:
         color = str(d["color"])
-        if color not in {"Blue", "Red"}:
+        if color not in {"Blue", "Red", "Green"}:
             continue
 
         part_counter += 1
