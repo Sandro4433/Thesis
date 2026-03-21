@@ -27,7 +27,6 @@ import tempfile
 from typing import Any, Dict, List, Optional, Tuple
 
 GRIPPER_CLOSE_STANDARD = 0.05
-GRIPPER_CLOSE_LARGE    = 0.06
 
 # ── pyperplan availability check ──────────────────────────────────────────────
 try:
@@ -61,7 +60,6 @@ DOMAIN_PDDL_BASIC = """\
     (compatible ?p - part ?r - receptacle)
     (color-red ?p - part)
     (color-blue ?p - part)
-    (large ?p - part)
     (hand-empty)
     (holding ?p - part)
   )
@@ -130,7 +128,6 @@ def build_domain_pddl_costs(num_priorities: int) -> str:
         "    (compatible ?p - part ?r - receptacle)",
         "    (color-red ?p - part)",
         "    (color-blue ?p - part)",
-        "    (large ?p - part)",
         "    (hand-empty)",
         "    (holding ?p - part)",
     ]
@@ -320,9 +317,6 @@ def _build_common_init(state, standalone, virtual_slots, VIRTUAL):
             init.append(f"    (color-red {part})")
         elif color == "blue":
             init.append(f"    (color-blue {part})")
-    for entry in preds.get("size", []):
-        if (entry.get("size") or "standard").lower() == "large":
-            init.append(f"    (large {_to_pddl_name(entry['part'])})")
     return init
 
 
@@ -527,23 +521,16 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
     color_map    = _color_map(preds)
     pkey         = _priority_key(preds)
 
-    size_map: Dict[str, str] = {
-        e["part"]: (e.get("size") or "standard").lower()
-        for e in preds.get("size", [])
-    }
-
-    available: Dict[Tuple[str, str], List[str]] = {}
+    available: Dict[str, List[str]] = {}
     parts_in_slot = {e["part"] for e in preds.get("at", [])}
     for e in preds.get("at", []):
         if slot_belongs.get(e["slot"], "") in inputs:
             c = color_map.get(e["part"], "unknown")
-            s = size_map.get(e["part"], "standard")
-            available.setdefault((c, s), []).append(e["part"])
+            available.setdefault(c, []).append(e["part"])
     for p in objs.get("parts", []):
         if p not in parts_in_slot:
             c = color_map.get(p, "unknown")
-            s = size_map.get(p, "standard")
-            available.setdefault((c, s), []).append(p)
+            available.setdefault(c, []).append(p)
 
     kit_set     = set(objs.get("kits", []))
     empty_slots: Dict[str, List[str]] = {}
@@ -556,21 +543,12 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
     goals: List[str] = []
 
     for recipe in preds.get("kit_recipe", []):
-        kit      = recipe.get("kit", "")
-        color    = (recipe.get("color") or "").lower()
-        size_req = (recipe.get("size") or "").lower() or None
-        qty      = int(recipe.get("quantity", 0))
+        kit   = recipe.get("kit", "")
+        color = (recipe.get("color") or "").lower()
+        qty   = int(recipe.get("quantity", 0))
         free_slots = empty_slots.get(kit, [])
 
-        if size_req:
-            candidates = [p for p in available.get((color, size_req), []) if p not in used_parts]
-        else:
-            candidates = [
-                p for (c, s), ps in available.items()
-                if c == color
-                for p in ps
-                if p not in used_parts
-            ]
+        candidates = [p for p in available.get(color, []) if p not in used_parts]
         candidates.sort(key=lambda p: pkey(color))
 
         for part, slot in zip(candidates[:qty], free_slots[:qty]):
@@ -594,8 +572,6 @@ def run_fast_downward(
     fd_path: str,
 ) -> Optional[str]:
     """Run Fast Downward with A* + LM-Cut (cost-optimal)."""
-    # Use sys.executable so FD is invoked with the same Python that's running
-    # the project — avoids python/python3 ambiguity across environments.
     cmd = [
         sys.executable, fd_path,
         "--plan-file", plan_path,
@@ -613,7 +589,6 @@ def run_fast_downward(
         print("❌ Fast Downward timed out (120 s).")
         return None
 
-    # FD exit codes: 0 = found & proven optimal, 10 = no solution, 11 = incomplete
     if result.returncode not in (0, 10, 11):
         print(f"❌ Fast Downward failed (exit {result.returncode}):")
         print(f"  stdout: {result.stdout or '(empty)'}")
@@ -684,6 +659,8 @@ def parse_plan_to_sequence(plan_text: str, state: Dict[str, Any]) -> List[List]:
     Convert planner output to sequence.json format:
       [[pick_name, place_name, gripper_close_width], ...]
 
+    All parts use the standard gripper width (GRIPPER_CLOSE_STANDARD).
+
     Handles Fast Downward format  (with optional [COST] suffix):
       (pick-priority-1 part_3 ws_slot_part_3 workspace_floor) [1]
       (place part_3 container_1_pos_2 container_1) [0]
@@ -706,10 +683,6 @@ def parse_plan_to_sequence(plan_text: str, state: Dict[str, Any]) -> List[List]:
 
     virtual_to_part: Dict[str, str] = {
         f"ws_slot_{p}".lower(): p for p in part_names
-    }
-    size_map = {
-        e["part"]: (e.get("size") or "standard").lower()
-        for e in preds.get("size", [])
     }
 
     pending: Dict[str, str] = {}
@@ -740,10 +713,7 @@ def parse_plan_to_sequence(plan_text: str, state: Dict[str, Any]) -> List[List]:
             if is_place and part_lower in pending:
                 pick_name = pending.pop(part_lower)
                 slot_orig = ci_map.get(slot_lower, tokens[2])
-                part_orig = ci_map.get(part_lower, tokens[1])
-                size      = size_map.get(part_orig, "standard")
-                gripper   = GRIPPER_CLOSE_LARGE if size == "large" else GRIPPER_CLOSE_STANDARD
-                sequence.append([pick_name, slot_orig, gripper])
+                sequence.append([pick_name, slot_orig, GRIPPER_CLOSE_STANDARD])
                 continue
 
         # ── pyperplan concatenated format ─────────────────────────────────────
@@ -791,9 +761,7 @@ def parse_plan_to_sequence(plan_text: str, state: Dict[str, Any]) -> List[List]:
             pick_name = pending.pop(part_lower)
             if slot_token.lower() in virtual_to_part:
                 continue
-            size    = size_map.get(part_orig, "standard")
-            gripper = GRIPPER_CLOSE_LARGE if size == "large" else GRIPPER_CLOSE_STANDARD
-            sequence.append([pick_name, slot_token, gripper])
+            sequence.append([pick_name, slot_token, GRIPPER_CLOSE_STANDARD])
 
     return sequence
 
@@ -878,53 +846,20 @@ def plan_sequence(
                 print(problem)
                 print("────────────────────────────\n")
 
-            print("  backend        : pyperplan  (no action costs — priority post-sorted)")
+            print("  backend        : pyperplan  (fallback — no action costs)")
             plan_text = run_pyperplan(domain_path, problem_path, plan_path)
 
         if plan_text is None:
             return None
-
-        if keep_pddl:
-            print("\n── Plan found ──")
-            print(plan_text)
-            print("────────────────\n")
 
         sequence = parse_plan_to_sequence(plan_text, state)
 
         if not use_fd:
             sequence = _sort_sequence_by_priority(sequence, state)
 
-        print(f"✅ PDDL planner: {len(sequence)} step(s) planned.")
-
         if output_path:
             os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-            with open(output_path, "w", encoding="utf-8") as f:
-                json.dump(sequence, f, indent=2, ensure_ascii=False)
-            print(f"   Sequence saved → {output_path}")
+            with open(output_path, "w") as f:
+                json.dump(sequence, f, indent=2)
 
         return sequence
-
-
-# ── standalone helper (debug / manual testing) ───────────────────────────────
-
-if __name__ == "__main__":
-    import sys
-    from pathlib import Path
-
-    PROJECT_DIR = Path(__file__).resolve().parent
-    if str(PROJECT_DIR) not in sys.path:
-        sys.path.insert(0, str(PROJECT_DIR))
-
-    from paths import CONFIGURATION_JSON, LLM_RESPONSE_JSON
-
-    positions_path = str(CONFIGURATION_JSON.resolve())
-    sequence_path  = str(Path(LLM_RESPONSE_JSON.resolve()).parent / "sequence.json")
-
-    print(f"Loading state from: {positions_path}")
-    with open(positions_path, "r", encoding="utf-8") as f:
-        state = json.load(f)
-
-    result = plan_sequence(state, output_path=sequence_path, keep_pddl=True)
-    if result is None:
-        sys.exit(1)
-    print(json.dumps(result, indent=2))

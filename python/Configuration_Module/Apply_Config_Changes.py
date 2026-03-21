@@ -4,8 +4,8 @@
 # Changes format (output by the LLM):
 # {
 #   "<receptacle_name>": {"role": "input"},        e.g. "Container_3"
-#   "<part_name>":       {"size": "large"},        e.g. "Part_Blue_Nr_1"
 #   "<part_name>":       {"color": "red"},
+#   "<part_name>":       {"fragility": "fragile"},
 #   "workspace":         {"operation_mode": "kitting", "batch_size": 2},
 #   "priority":          [{"color": "blue", "order": 1}, ...],
 #   "kit_recipe":        [{"kit": "Kit_0", "color": "blue", "quantity": 2}, ...],
@@ -69,12 +69,11 @@ def apply_changes(
     Object keys:
       receptacle name (Kit_* / Container_*) → role update in predicates.role
       slot name (*_Pos_*)                   → role update (translated to parent)
-      part name (Part_*)                    → size / color update in predicates
+      part name (Part_*)                    → color / fragility update in predicates
     """
     result = copy.deepcopy(state)
     preds  = result.setdefault("predicates", {})
     preds.setdefault("role",              [])
-    preds.setdefault("size",              [])
     preds.setdefault("color",             [])
     preds.setdefault("priority",          [])
     preds.setdefault("kit_recipe",        [])
@@ -138,10 +137,7 @@ def apply_changes(
         if key in all_parts:
             for attr, val in value.items():
                 attr_lower = attr.lower()
-                if attr_lower == "size":
-                    _upsert_list(preds["size"], "part", key, {"size": (val or "standard").lower()})
-                    print(f"  size: {key} → {val}")
-                elif attr_lower == "color":
+                if attr_lower == "color":
                     _upsert_list(preds["color"], "part", key, {"color": (val or "").lower()})
                     print(f"  color: {key} → {val}")
                 elif attr_lower == "fragility":

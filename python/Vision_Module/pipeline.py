@@ -76,7 +76,6 @@ def compute_tag_targets_and_annotate(
     kit_ids: Set[int],
     container_ids: Set[int],
     tag_axis_draw_len: float,
-    part_size_classes: List[tuple] = None,
     draw_parts: bool = True,
 ) -> Dict[int, List[Dict[str, float]]]:
     """
@@ -251,15 +250,6 @@ def compute_tag_targets_and_annotate(
         x_mm = float(delta_b.dot(ux_unit_b)) * 1000.0
         y_mm = float(delta_b.dot(uy_unit_b)) * 1000.0
 
-        # Visualization (VIS only)
-        diameter_mm = float(d.get("diameter_mm", 0.0))
-        size_label = "unknown"
-        if part_size_classes:
-            for label, lo, hi in part_size_classes:
-                if lo <= diameter_mm < hi:
-                    size_label = label
-                    break
-
         center = (int(round(d["cx_px"])), int(round(d["cy_px"])))
         if draw_parts:
             display = _part_display_name(name_suffix)
@@ -267,10 +257,6 @@ def compute_tag_targets_and_annotate(
             cv2.putText(img_vis, display,
                         (center[0] + 10, center[1] - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, _CLR_PART, 2)
-            if size_label == "large":
-                cv2.putText(img_vis, "large",
-                            (center[0] + 10, center[1] + 18),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, _CLR_PART, 2)
 
         tag_targets.setdefault(-1000, []).append(
             {"name_suffix": name_suffix, "x_mm": x_mm, "y_mm": y_mm,
@@ -289,23 +275,12 @@ def targets_to_robot_entries(
     camera_quat: List[float],
     kit_ids: Set[int],
     container_ids: Set[int],
-    part_size_classes: List[tuple] = None,
 ) -> List[Dict[str, Any]]:
     """
     Outputs objects WITHOUT groupname:
       - Slot: name="Kit_<tagid>_Pos_1" or "Container_<tagid>_Pos_6"
       - Part: name="Part_<k>"  (color stored separately in the Color field)
-
-    part_size_classes: ordered list of (label, min_mm, max_mm) tuples.
     """
-    def _classify_size(diameter_mm: float) -> Optional[str]:
-        if not part_size_classes or diameter_mm <= 0.0:
-            return None
-        for label, lo, hi in part_size_classes:
-            if lo <= diameter_mm < hi:
-                return label
-        return None
-
     new_entries: List[Dict[str, Any]] = []
 
     for tag_id, targets in tag_targets.items():
@@ -331,7 +306,6 @@ def targets_to_robot_entries(
                     "quat": camera_quat,
                     "orientation": None,
                     "Color": color,
-                    "Size": _classify_size(diameter_mm),
                     "diameter_mm": round(diameter_mm, 1),
                     "Role": None,
                 }
@@ -375,7 +349,6 @@ def annotate_parts(
     for p in part_annotations:
         name   = p["name"]
         cx, cy = int(p["cx_px"]), int(p["cy_px"])
-        size_label = p.get("size_label", "")
         display = _part_display_name(name)
 
         cv2.circle(img, (cx, cy), 10, _CLR_PART, 2)
@@ -383,14 +356,7 @@ def annotate_parts(
                     (cx + 10, cy - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, _CLR_PART, 2)
 
-        next_y = cy + 18
-        if size_label == "large":
-            cv2.putText(img, "large",
-                        (cx + 10, next_y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, _CLR_PART, 2)
-            next_y += 26
-
         if name in fragile_set:
             cv2.putText(img, "FRAGILE",
-                        (cx + 10, next_y),
+                        (cx + 10, cy + 18),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, _CLR_FRAG, 2)
