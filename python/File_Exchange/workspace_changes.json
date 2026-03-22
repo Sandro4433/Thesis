@@ -1,16 +1,5 @@
 {
-  "Container_1": {
-    "role": "output"
-  },
-  "workspace": {
-    "operation_mode": "sorting"
-  },
-  "part_compatibility": [
-    {
-      "part_color": "green",
-      "allowed_in": [
-        "Container_1"
-      ]
-    }
-  ]
+  "Part_3": {
+    "fragility": "fragile"
+  }
 }

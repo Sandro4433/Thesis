@@ -9,8 +9,9 @@
 #                     priority, kit_recipe, part_compatibility)
 #   metric          – robot-execution data (pos/quat/orientation) keyed by name
 #
-# The metric section is the ONLY section that contains coordinates.
-# Everything else is symbolic and safe to send to an LLM.
+# The metric section contains full coordinates (pos/quat/orientation) for
+# robot execution.  The LLM view replaces it with a lightweight positions_xy
+# dict (name → [x, y]) so the LLM can resolve spatial references.
 
 from __future__ import annotations
 
@@ -192,18 +193,35 @@ def entries_to_state(final_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 # ── LLM slim view ─────────────────────────────────────────────────────────────
 
+def _extract_positions_xy(metric: Dict[str, Any]) -> Dict[str, List[float]]:
+    """
+    Build a lightweight {name: [x, y]} dict from the full metric section.
+    Only entries with a valid pos list are included.
+    """
+    positions: Dict[str, List[float]] = {}
+    for name, entry in sorted(metric.items()):
+        pos = entry.get("pos") if isinstance(entry, dict) else None
+        if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+            positions[name] = [round(pos[0], 4), round(pos[1], 4)]
+    return positions
+
+
 def _strip_for_llm(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Return the workspace state without the metric section.
-    This is everything the LLM needs — all symbolic facts — with no coordinates.
+    Return the workspace state with the full metric section replaced by a
+    lightweight positions_xy dict ({name: [x, y]}).
+
+    This gives the LLM all symbolic facts PLUS enough spatial information to
+    resolve user references like "the container on the left".
     """
     out = copy.deepcopy(state)
-    out.pop("metric", None)
+    metric = out.pop("metric", {})
+    out["positions_xy"] = _extract_positions_xy(metric)
     return out
 
 
 def state_to_api_payload(state: Dict[str, Any]) -> str:
-    """Minified JSON payload for LLM planning (no metric)."""
+    """Minified JSON payload for LLM planning (symbolic facts + positions_xy)."""
     return json.dumps(_strip_for_llm(state), separators=(",", ":"), ensure_ascii=False)
 
 
@@ -243,7 +261,7 @@ def load_json_snapshot(path: str) -> Dict[str, Any]:
 
 
 def save_llm_snapshot(path: str, state: Dict[str, Any], pretty: bool = True) -> None:
-    """Save the LLM input file (state without metric)."""
+    """Save the LLM input file (state with positions_xy instead of full metric)."""
     data = _strip_for_llm(state)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     tmp = path + ".tmp"
