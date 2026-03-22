@@ -188,6 +188,19 @@ def is_no(text: str) -> bool:
     ]) or t == "n"
 
 
+# ── Position helpers ──────────────────────────────────────────────────────────
+
+def _extract_xy(metric: Dict[str, Any], name: str) -> Optional[List[float]]:
+    """Return [x, y] from metric[name]["pos"], or None if unavailable."""
+    entry = metric.get(name)
+    if not entry:
+        return None
+    pos = entry.get("pos")
+    if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+        return [round(pos[0], 4), round(pos[1], 4)]
+    return None
+
+
 # ── Scene helpers (new PDDL-friendly structure) ───────────────────────────────
 
 def slim_scene(state: dict) -> dict:
@@ -197,22 +210,31 @@ def slim_scene(state: dict) -> dict:
     Returns:
     {
         "workspace": {"operation_mode": ..., "batch_size": ...},
+        "receptacle_xy": {
+            "Container_3": [x, y],   ← centroid of all slots in this receptacle
+            "Kit_0": [x, y]
+        },
         "slots": {
             "Kit_0_Pos_1": {
+                "xy": [x, y],
                 "role": "output",          ← propagated from parent receptacle
                 "child_part": null
             },
             "Container_3_Pos_1": {
+                "xy": [x, y],
                 "role": "input",
                 "child_part": {"name": "Part_1", "color": "blue"}
             }
         },
-        "parts": {}                        ← standalone parts (not in a slot)
+        "parts": {                         ← standalone parts (not in a slot)
+            "Part_5": {"xy": [x, y], "color": "red", "fragility": "normal"}
+        }
     }
     """
     preds        = state.get("predicates", {})
     slot_belongs = state.get("slot_belongs_to", {})
     objs         = state.get("objects", {})
+    metric       = state.get("metric", {})
 
     # role per receptacle
     role_map: Dict[str, Optional[str]] = {
@@ -234,12 +256,16 @@ def slim_scene(state: dict) -> dict:
         for e in preds.get("fragility", [])
     }
 
-    # build slot view
+    # build slot view — now with xy
     slots_view: Dict[str, Any] = {}
     for slot_name in objs.get("slots", []):
         parent = slot_belongs.get(slot_name)
         role   = role_map.get(parent) if parent else None
-        slots_view[slot_name] = {"role": role, "child_part": None}
+        entry: Dict[str, Any] = {"role": role, "child_part": None}
+        xy = _extract_xy(metric, slot_name)
+        if xy is not None:
+            entry["xy"] = xy
+        slots_view[slot_name] = entry
 
     # embed parts into their slots
     for part_name, slot_name in part_in_slot.items():
@@ -251,21 +277,41 @@ def slim_scene(state: dict) -> dict:
             "fragility": frag_map.get(part_name, "normal"),
         }
 
-    # standalone parts (in objects.parts but not in any slot)
+    # standalone parts (in objects.parts but not in any slot) — now with xy
     in_slot_set = set(part_in_slot.keys())
-    parts_view: Dict[str, Any] = {
-        p: {
+    parts_view: Dict[str, Any] = {}
+    for p in objs.get("parts", []):
+        if p in in_slot_set:
+            continue
+        entry: Dict[str, Any] = {
             "color":     color_map.get(p),
             "fragility": frag_map.get(p, "normal"),
         }
-        for p in objs.get("parts", [])
-        if p not in in_slot_set
-    }
+        xy = _extract_xy(metric, p)
+        if xy is not None:
+            entry["xy"] = xy
+        parts_view[p] = entry
+
+    # receptacle-level positions (centroid of child slots)
+    receptacle_xy: Dict[str, List[float]] = {}
+    recept_accum: Dict[str, List[List[float]]] = {}   # name → list of [x,y]
+    for slot_name in objs.get("slots", []):
+        parent = slot_belongs.get(slot_name)
+        if parent is None:
+            continue
+        xy = _extract_xy(metric, slot_name)
+        if xy is not None:
+            recept_accum.setdefault(parent, []).append(xy)
+    for name, xys in sorted(recept_accum.items()):
+        cx = round(sum(p[0] for p in xys) / len(xys), 4)
+        cy = round(sum(p[1] for p in xys) / len(xys), 4)
+        receptacle_xy[name] = [cx, cy]
 
     return {
-        "workspace": state.get("workspace", {"operation_mode": None, "batch_size": None}),
-        "slots":     slots_view,
-        "parts":     parts_view,
+        "workspace":     state.get("workspace", {"operation_mode": None, "batch_size": None}),
+        "receptacle_xy": receptacle_xy,
+        "slots":         slots_view,
+        "parts":         parts_view,
     }
 
 
@@ -339,6 +385,20 @@ AMBIGUITY RULES
   and ask which to include.
 - If a part has no valid name in the JSON, skip it and warn the user.
 - Do NOT re-print the full scene JSON when asking clarification questions.
+
+SPATIAL REFERENCE — WARNING: NON-STANDARD AXIS DIRECTIONS:
+- Every slot, part, and receptacle has an "xy" position ([x, y] in metres).
+- ⚠ THE AXES ARE INVERTED compared to the usual convention:
+    LARGER X  = LEFT       SMALLER X = RIGHT
+    LARGER Y  = LOWER      SMALLER Y = UPPER
+- Example: Container_A at x=0.5 is to the LEFT of Container_B at x=0.3.
+  If the user says "the right container", pick Container_B (x=0.3, the SMALLER x).
+- Example: Container_C at y=0.4 is BELOW Container_D at y=0.2.
+  If the user says "the upper container", pick Container_D (y=0.2, the SMALLER y).
+- When the user says "left"/"right"/"top"/"bottom"/"upper"/"lower"/"above"/"below",
+  you MUST compare the xy values using the rules above.
+- Use "receptacle_xy" for receptacle-level references (e.g. "the container
+  on the left") and slot-level "xy" for slot-level references.
 """
 
 _CHANGES_BLOCK_RULES = """\
@@ -368,6 +428,7 @@ CRITICAL FORMAT RULES:
 - Use the PART name (e.g. "Part_1") for color changes.
 - Never invent names. Use verbatim names from the INPUT JSON.
 - null means reset to default.
+- Do NOT include xy coordinates in the output blocks.
 
 Example (kitting):
 ```changes
@@ -402,8 +463,10 @@ COMMUNICATION RULES — FOLLOW STRICTLY:
 
 You will receive an INPUT JSON with:
   - "workspace": operation_mode, batch_size
-  - "slots": Kit_*/Container_* positions with role and child_part
-  - "parts": standalone parts
+  - "receptacle_xy": {name: [x, y]} — position of each Kit/Container (metres)
+  - "slots": Kit_*/Container_* positions with role, child_part, and xy
+  - "parts": standalone parts with xy
+  Use xy values to resolve spatial references (left/right/front/back).
 
 SORTING INFERENCE (apply automatically when user says "sort"):
 A — Infer destination containers from existing same-color contents.
@@ -436,8 +499,10 @@ COMMUNICATION RULES — FOLLOW STRICTLY:
 
 You will receive an INPUT JSON with:
   - "workspace": operation_mode, batch_size
-  - "slots": Kit_*/Container_* positions with role and child_part
-  - "parts": standalone parts
+  - "receptacle_xy": {name: [x, y]} — position of each Kit/Container (metres)
+  - "slots": Kit_*/Container_* positions with role, child_part, and xy
+  - "parts": standalone parts with xy
+  Use xy values to resolve spatial references (left/right/front/back).
 
 ROLE RESTRICTIONS:
   - role="input" → pick FROM only.  role="output" → place INTO only.  null → either.
@@ -451,6 +516,7 @@ OUTPUT:
 [["<pick>", "<place>"], ["<pick>", "<place>"]]
 ```
 pick = part name, place = slot name. Never use slots as pick targets.
+Do NOT include xy coordinates in the output blocks.
 
 CONFIRMATION:
 - Output block + "Confirm?"
