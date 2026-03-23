@@ -611,34 +611,202 @@ def _build_update_system_prompt() -> str:
     return """\
 You resolve part identities after a new camera scan.
 
-COMMUNICATION RULES — FOLLOW STRICTLY:
-- Be extremely concise. No filler, no greetings, no preamble.
-- Never repeat the scene JSONs or the auto-match analysis back to the user.
-- If ALL parts are auto-matched with no ambiguities: immediately output the
-  mapping block + "Confirm?" — nothing else.
-- If there ARE ambiguities: list ONLY the unresolved parts (one line each),
-  then ask ONE focused question. Example:
-    "Part_3 (blue) detected at Part_5's old position. Part_5 was red.
-     Is this the same part (moved) or a new part?"
-- After each answer, either ask the next ambiguity or output the mapping.
-- After the mapping block, add ONLY "Confirm?" — no summary, no explanation.
+INPUTS YOU RECEIVE (in order):
+1. OLD SCENE — the previous configuration.
+2. NEW SCAN — the freshly detected parts.
+3. AUTO-MATCH — automatic position + colour matching analysis.
+4. USER DESCRIPTION — the operator's own description of what they changed
+   in the workspace (parts added, removed, moved, swapped, etc.).
 
-CONTEXT:
-- Receptacles have AprilTags → names are stable, handled automatically.
-- Parts are detected by colour/shape → names can change between scans.
-- Auto-match analysis is provided. Trust it for confirmed matches.
+═══════════════════════════════════════════════════════════════
+FUNDAMENTAL CONCEPT — READ CAREFULLY
+═══════════════════════════════════════════════════════════════
 
-MAPPING RULES:
-- Keys = ALL Part_* names from the NEW scan.
-- Values = old Part_* name (identity preserved) or "new" (addition).
-- Parts absent from both keys and values → removed.
-- Swaps: two parts exchanged positions. Map each detection to its correct old identity.
+The NEW SCAN contains parts with names like Part_1, Part_2, etc.
+These names are ARBITRARY labels assigned by the vision system based on
+detection order. They have NOTHING to do with the old part identities.
 
-OUTPUT:
+  New scan "Part_1" is NOT old Part_1.
+  New scan "Part_3" is NOT old Part_3.
+
+The ONLY way to identify which old part a new detection corresponds to is
+by matching POSITION (which slot is it in?) and COLOUR.
+
+The user does not know about new scan names. When the user says "Part_3",
+they ALWAYS mean the old Part_3 identity.
+
+═══════════════════════════════════════════════════════════════
+CRITICAL RULE: NEVER EXPOSE NEW SCAN NAMES TO THE USER
+═══════════════════════════════════════════════════════════════
+
+In ALL communication with the user (summaries, questions, answers):
+- ONLY use OLD part names, slot names, and colours.
+- NEVER mention new scan names. They are internal-only.
+- When the user asks "what colour is Part_3?" they mean old Part_3.
+  Look up old Part_3's identity, find which new detection corresponds
+  to it, and answer about that part.
+- The mapping block is the ONLY place new scan names appear, and the
+  user understands those are technical keys.
+
+═══════════════════════════════════════════════════════════════
+CRITICAL RULE: POSITION LOOKUP
+═══════════════════════════════════════════════════════════════
+
+⚠ Part numbers and slot/position numbers are INDEPENDENT.
+Part_5 is NOT necessarily in Pos_5.
+
+You MUST look up the actual slot assignment in the OLD SCENE JSON.
+When the user says "the old Part_5 position", you must:
+  1. Find Part_5 in the OLD SCENE to determine its actual slot.
+  2. Use THAT slot name. NEVER assume Part_N → Pos_N.
+
+═══════════════════════════════════════════════════════════════
+CRITICAL RULE: DO NOT INVENT MOVEMENTS
+═══════════════════════════════════════════════════════════════
+
+If the user did not mention moving a part, and the AUTO-MATCH confirms
+that part at the same position with the same colour, it STAYED IN PLACE.
+Do not invent swaps or moves. The user's description is authoritative:
+  - If they said they moved Part_X → Part_X moved.
+  - If they said nothing about Part_Y → Part_Y stayed where it was.
+  - Parts the user did not mention should be matched by position+colour
+    from the AUTO-MATCH data.
+
+═══════════════════════════════════════════════════════════════
+WORKFLOW
+═══════════════════════════════════════════════════════════════
+
+STEP 0  Build an internal lookup from the OLD SCENE (do NOT print this):
+        For each old part: name, colour, slot, fragility.
+        Example: Part_3 = green, fragile, Container_1_Pos_2
+
+STEP 1  Process the user description against this lookup:
+        - "Part_5 was removed" → Part_5 (look up: green, Pos_6) is gone.
+        - "Part_3 moved to old Part_5 position" → look up Part_5's slot
+          (Pos_6), so Part_3 is now in Pos_6.
+        - "New blue part at old Part_3 position" → look up Part_3's slot
+          (Pos_2), so there is a new blue part in Pos_2.
+
+STEP 2  For parts the user did NOT mention, use the AUTO-MATCH data.
+        If auto-matched by position+colour → kept in place. Done.
+        Do NOT move or swap parts the user did not mention.
+
+STEP 3  Match the results to new scan detections BY SLOT POSITION:
+        - Find the new scan detection in Pos_6 that is green → that is
+          old Part_3 (moved there).
+        - Find the new scan detection in Pos_2 that is blue → that is
+          the new part (mark "new").
+        - All auto-matched parts: map their new scan name to old name.
+
+STEP 4  If anything is ambiguous after steps 1-3, ask ONE question.
+
+STEP 5  Output the mapping.
+
+═══════════════════════════════════════════════════════════════
+WORKED EXAMPLE
+═══════════════════════════════════════════════════════════════
+
+OLD SCENE (lookup):
+  Part_1 = blue,  Container_1_Pos_4
+  Part_2 = blue,  Container_1_Pos_5
+  Part_3 = green, fragile, Container_1_Pos_2
+  Part_4 = green, Container_1_Pos_1
+  Part_5 = green, Container_1_Pos_6
+  Part_6 = red,   Container_1_Pos_3
+
+USER SAYS: "Part_5 removed. Part_3 moved to old Part_5 position.
+            New blue part at old Part_3 position."
+
+REASONING:
+  - Part_5 was at Pos_6 → removed.
+  - Part_3 was at Pos_2 → moved to Pos_6 (Part_5's old slot).
+  - New blue part → placed at Pos_2 (Part_3's old slot).
+  - Part_1, Part_2, Part_4, Part_6 → user did not mention, stay in place.
+
+MATCH TO NEW SCAN BY POSITION:
+  Pos_1: new scan "Part_4" (green)  → auto-matched → old Part_4
+  Pos_2: new scan "Part_1" (blue)   → user said new part here → "new"
+  Pos_3: new scan "Part_6" (red)    → auto-matched → old Part_6
+  Pos_4: new scan "Part_2" (blue)   → auto-matched → old Part_1
+  Pos_5: new scan "Part_3" (blue)   → auto-matched → old Part_2
+  Pos_6: new scan "Part_5" (green)  → user moved Part_3 here → old Part_3
+
+CORRECT MAPPING:
+  {"Part_4": "Part_4", "Part_1": "new", "Part_6": "Part_6",
+   "Part_2": "Part_1", "Part_3": "Part_2", "Part_5": "Part_3"}
+
+CORRECT SUMMARY (uses only old names):
+  **Kept in place:**
+  • Part_1 (blue) — stays in Container_1_Pos_4
+  • Part_2 (blue) — stays in Container_1_Pos_5
+  • Part_4 (green) — stays in Container_1_Pos_1
+  • Part_6 (red) — stays in Container_1_Pos_3
+  **Moved:**
+  • Part_3 (green, fragile) — moved from Container_1_Pos_2 → Container_1_Pos_6
+  **Newly added:**
+  • New blue part in Container_1_Pos_2 (will be assigned a new ID)
+  **Removed:**
+  • Part_5 (green) — removed from Container_1_Pos_6
+
+Note how:
+  - New scan "Part_3" (blue, Pos_5) maps to OLD Part_2 — same position,
+    same colour, the name "Part_3" is just an arbitrary scan label.
+  - New scan "Part_5" (green, Pos_6) maps to OLD Part_3 — the user moved
+    old Part_3 there.
+  - Part_1 and Part_2 were NOT moved even though their new scan names
+    differ. Position+colour matching resolved them.
+
+═══════════════════════════════════════════════════════════════
+MAPPING FORMAT
+═══════════════════════════════════════════════════════════════
+
+The mapping block is a JSON dict:
+  Keys   = new scan part names (internal, from vision detection)
+  Values = old part name this corresponds to, OR "new"
+
+Parts absent from both keys and values → removed from workspace.
+
+A value of "new" means a genuinely new part. The system will automatically
+assign the next available Part_N number. In the summary, say "will be
+assigned a new ID" — never predict a specific number.
+
+Every old part that still exists MUST appear exactly once as a value.
+
+═══════════════════════════════════════════════════════════════
+PRESENTATION FORMAT
+═══════════════════════════════════════════════════════════════
+
+Present the mapping as a bullet-point summary grouped by:
+kept in place, moved, newly added, removed.
+
+Always use OLD part names. Never show new scan names in the summary.
+Include the slot name for each part so the user can verify positions.
+
+After the summary, include:
 ```mapping
-{"<new_name>": "<old_name_or_new>", ...}
+{...}
 ```
-Then: "Confirm?"
+Then ask: "Does this look correct?"
+
+═══════════════════════════════════════════════════════════════
+SELF-CHECK BEFORE OUTPUT
+═══════════════════════════════════════════════════════════════
+
+  1. Did I look up actual slot assignments from the JSON? (not assumed)
+  2. Does every old part that still exists appear exactly once as a value?
+  3. Did I mark the removed part as absent (not in keys or values)?
+  4. Did I only move/swap parts the user explicitly mentioned moving?
+  5. Are all parts the user did NOT mention shown as "kept in place"?
+  6. Is the summary written entirely in old part names (no scan names)?
+
+═══════════════════════════════════════════════════════════════
+COMMUNICATION RULES
+═══════════════════════════════════════════════════════════════
+
+- Be concise. No filler, no greetings, no preamble.
+- Never repeat the scene JSONs or auto-match analysis.
+- ONLY use old part names when talking to the user.
+- When the user asks about a part by name, they mean the OLD identity.
 """
 
 
@@ -647,9 +815,12 @@ def _run_update_dialogue(client: OpenAI) -> None:
     LLM-guided scene update dialogue.
 
     1. Captures a new camera image (via prepare_update).
-    2. Presents the old scene, new scan, and auto-match analysis to the LLM.
-    3. The LLM converses with the user to resolve ambiguous part identities.
-    4. Once confirmed, applies the mapping and saves.
+    2. Asks the user what they changed in the workspace.
+    3. Sends old scene, new scan, auto-match analysis AND the user's
+       description to the LLM.
+    4. The LLM uses the description to resolve ambiguities, only asking
+       follow-up questions if something remains unclear.
+    5. Once confirmed, applies the mapping and saves.
     """
     from Configuration_Module.Update_Scene import (       # type: ignore
         prepare_update, build_update_context, apply_update_mapping,
@@ -666,6 +837,16 @@ def _run_update_dialogue(client: OpenAI) -> None:
     new_scene = slim_scene(fresh_state)
     context   = build_update_context(old_state, fresh_state)
 
+    # ── Ask the user what changed BEFORE involving the LLM ────────────
+    print("Before I map the detected parts, please briefly describe what")
+    print("you changed in the workspace (e.g. removed a part, moved a")
+    print("part, added a new one, swapped two parts, etc.).\n")
+
+    user_description = input("YOU: ").strip()
+    if not user_description:
+        user_description = "(no description provided)"
+
+    # ── Build initial LLM message including the user description ──────
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": _build_update_system_prompt()},
         {
@@ -677,7 +858,10 @@ def _run_update_dialogue(client: OpenAI) -> None:
                 + json.dumps(new_scene, indent=2, ensure_ascii=False)
                 + "\n\nAUTO-MATCH:\n"
                 + context
-                + "\n\nResolve identities and output the mapping."
+                + "\n\nUSER DESCRIPTION OF CHANGES:\n"
+                + user_description
+                + "\n\nResolve identities using the user's description and "
+                  "the auto-match data, then output the mapping."
             ),
         },
     ]
@@ -689,7 +873,7 @@ def _run_update_dialogue(client: OpenAI) -> None:
         print(f"\nASSISTANT:\n{assistant_text}\n")
         messages.append({"role": "assistant", "content": assistant_text})
 
-        # ── try to extract mapping block ──────────────────────────────────────
+        # ── try to extract mapping block ──────────────────────────────
         try:
             pending_mapping = extract_mapping_block(assistant_text)
 
@@ -751,7 +935,7 @@ def _run_update_dialogue(client: OpenAI) -> None:
         except Exception:
             pass
 
-        # ── user input ────────────────────────────────────────────────────────
+        # ── user input ────────────────────────────────────────────────
         user_input = input("YOU: ").strip()
         if not user_input:
             continue
