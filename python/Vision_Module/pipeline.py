@@ -238,7 +238,7 @@ def compute_tag_targets_and_annotate(
         circularity_min=0.30,
         fill_ratio_min=0.30,
         debug_mask_color="Green",
-        debug_show_mask=True,
+        debug_show_mask=False,
         debug_show_overlay=False,
     )
 

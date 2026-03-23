@@ -40,7 +40,7 @@
         "slot": "Container_1_Pos_1"
       },
       {
-        "part": "Part_3",
+        "part": "Part_1",
         "slot": "Container_1_Pos_2"
       },
       {
@@ -48,11 +48,11 @@
         "slot": "Container_1_Pos_3"
       },
       {
-        "part": "Part_1",
+        "part": "Part_2",
         "slot": "Container_1_Pos_4"
       },
       {
-        "part": "Part_2",
+        "part": "Part_3",
         "slot": "Container_1_Pos_5"
       },
       {
@@ -73,19 +73,19 @@
         "color": "green"
       },
       {
-        "part": "Part_3",
-        "color": "green"
+        "part": "Part_1",
+        "color": "blue"
       },
       {
         "part": "Part_6",
         "color": "red"
       },
       {
-        "part": "Part_1",
+        "part": "Part_2",
         "color": "blue"
       },
       {
-        "part": "Part_2",
+        "part": "Part_3",
         "color": "blue"
       },
       {
@@ -100,52 +100,52 @@
   },
   "positions_xy": {
     "Container_1_Pos_1": [
-      0.5141,
-      0.3215
+      0.0236,
+      0.3176
     ],
     "Container_1_Pos_2": [
-      0.5673,
-      0.3546
+      0.0782,
+      0.3482
     ],
     "Container_1_Pos_3": [
-      0.5633,
-      0.4245
-    ],
-    "Container_1_Pos_4": [
-      0.5066,
-      0.4513
-    ],
-    "Container_1_Pos_5": [
-      0.4535,
+      0.0775,
       0.4182
     ],
+    "Container_1_Pos_4": [
+      0.0222,
+      0.4476
+    ],
+    "Container_1_Pos_5": [
+      -0.0325,
+      0.417
+    ],
     "Container_1_Pos_6": [
-      0.4575,
-      0.3483
+      -0.0318,
+      0.347
     ],
     "Part_1": [
-      0.5158,
-      0.4551
+      0.073,
+      0.349
     ],
     "Part_2": [
-      0.4564,
-      0.4178
+      0.0126,
+      0.4517
     ],
     "Part_3": [
-      0.5828,
-      0.3545
+      -0.046,
+      0.4158
     ],
     "Part_4": [
-      0.5245,
-      0.3161
+      0.0118,
+      0.3129
     ],
     "Part_5": [
-      0.4596,
-      0.3548
+      -0.0488,
+      0.3463
     ],
     "Part_6": [
-      0.5767,
-      0.423
+      0.074,
+      0.4168
     ]
   }
 }
