@@ -222,10 +222,7 @@ def compute_tag_targets_and_annotate(
         tol_rgb_by_color={
             "Blue":  (45, 45, 45),
             "Red":   (45, 45, 45),
-            "Green": (35, 40, 35),
-        },
-        min_spread_by_color={
-            "Green": 25,
+            "Green": (45, 45, 45),
         },
         # Boost saturation before mask building so desaturated/grey-tinted
         # parts pass the tolerance box more reliably.

@@ -115,7 +115,7 @@ def detect_color_cluster_parts_on_board(
     tol_rgb_by_color: Optional[Dict[str, Tuple[int, int, int]]] = None,
     # Per-color minimum channel spread override (rejects white/grey pixels).
     # max(R,G,B) - min(R,G,B) must be >= this value for a pixel to pass.
-    min_spread_by_color: Optional[Dict[str, int]] = None,
+
     # Saturation boost applied to the image before building tolerance masks.
     # 1.0 = no change, 2.0 = double saturation.  Helps desaturated/grey-tinted
     # parts pass the tolerance box.  The mean BGR classification at the end
@@ -151,7 +151,7 @@ def detect_color_cluster_parts_on_board(
     Tuning per color:
       ref_rgb             -- central RGB reference for each color name
       tol_rgb_by_color    -- per-color tolerance box; falls back to tol_rgb
-      min_spread_by_color -- per-color min channel spread (rejects white/grey)
+   
       saturation_boost    -- pre-boost saturation before mask building (e.g. 1.5)
       morph_by_color      -- per-color morph params; falls back to defaults
     """
@@ -177,9 +177,7 @@ def detect_color_cluster_parts_on_board(
         tol_bgr = _rgb_to_bgr(use_tol_rgb)
         ref_bgr = _rgb_to_bgr(rgb)
 
-        min_spread = 0
-        if min_spread_by_color and color_name in min_spread_by_color:
-            min_spread = int(min_spread_by_color[color_name])
+      
 
         # Build mask on the boosted image so desaturated parts pass more easily
         mask = _make_color_mask_bgr(
@@ -189,7 +187,7 @@ def detect_color_cluster_parts_on_board(
             morph_kernel=mk,
             open_iter=oi,
             close_iter=ci,
-            min_channel_spread=min_spread,
+            
         )
 
         if debug_show_mask and (debug_mask_color is None or str(color_name) == str(debug_mask_color)):
