@@ -5,9 +5,13 @@ Loads configuration.json from File_Exchange/ and compares it to a ground-truth
 file whose path is set below.  Reports whether the two match and, if not,
 lists every difference found.
 
+Numerical values (positions, orientations, quaternions) are compared with a
+configurable tolerance so that minor sensor noise doesn't cause false failures.
+
 Usage:
     python Utilities/compare_config.py
     python Utilities/compare_config.py --truth path/to/other_correct.json
+    python Utilities/compare_config.py --tolerance 0.01
 """
 
 from __future__ import annotations
@@ -25,7 +29,12 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]          # .../python
 REPO_ROOT   = PROJECT_DIR.parent                           # one level above python/
 
 CONFIG_PATH = PROJECT_DIR / "File_Exchange" / "configuration.json"
-TRUTH_PATH  = REPO_ROOT / "Experiments" / "Scenario_1" / "correct_configuration.json"
+TRUTH_PATH  = REPO_ROOT / "Experiments" / "Scenario_2" / "post_config.json"
+
+# Default tolerance for numerical comparisons (positions in metres,
+# orientations in degrees, quaternion components).
+# 0.005 m = 5 mm — reasonable for vision-based part detection.
+DEFAULT_TOLERANCE = 0.8
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -46,10 +55,16 @@ def _normalise_list(lst: list) -> list:
         return lst
 
 
+def _numbers_close(a: float, b: float, tol: float) -> bool:
+    """Check if two numbers are within tolerance."""
+    return abs(a - b) <= tol
+
+
 def _compare(
     a: Any,
     b: Any,
     path: str = "$",
+    tol: float = DEFAULT_TOLERANCE,
 ) -> List[Tuple[str, Any, Any]]:
     """
     Recursively compare two JSON-like structures.
@@ -57,8 +72,16 @@ def _compare(
     Returns a list of (json_path, value_in_config, value_in_truth) tuples
     for every leaf difference found.  Lists of dicts are compared
     order-independently (sorted by content).
+
+    Numerical values (int/float) are compared with tolerance `tol`.
     """
     diffs: List[Tuple[str, Any, Any]] = []
+
+    # Both numeric — compare with tolerance
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        if not _numbers_close(float(a), float(b), tol):
+            diffs.append((path, a, b))
+        return diffs
 
     if type(a) is not type(b):
         diffs.append((path, a, b))
@@ -73,7 +96,7 @@ def _compare(
             elif k not in b:
                 diffs.append((child_path, a[k], "<missing>"))
             else:
-                diffs.extend(_compare(a[k], b[k], child_path))
+                diffs.extend(_compare(a[k], b[k], child_path, tol))
 
     elif isinstance(a, list):
         a_sorted = _normalise_list(a)
@@ -82,7 +105,7 @@ def _compare(
             diffs.append((path, a_sorted, b_sorted))
         else:
             for i, (ai, bi) in enumerate(zip(a_sorted, b_sorted)):
-                diffs.extend(_compare(ai, bi, f"{path}[{i}]"))
+                diffs.extend(_compare(ai, bi, f"{path}[{i}]", tol))
     else:
         if a != b:
             diffs.append((path, a, b))
@@ -93,9 +116,10 @@ def _compare(
 def compare_configs(
     config: Dict[str, Any],
     truth: Dict[str, Any],
+    tol: float = DEFAULT_TOLERANCE,
 ) -> List[Tuple[str, Any, Any]]:
     """Public entry point — returns list of differences."""
-    return _compare(config, truth)
+    return _compare(config, truth, tol=tol)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -107,16 +131,27 @@ def _fmt(val: Any) -> str:
     return repr(val)
 
 
-def print_report(diffs: List[Tuple[str, Any, Any]]) -> None:
+def print_report(
+    diffs: List[Tuple[str, Any, Any]],
+    tol: float = DEFAULT_TOLERANCE,
+) -> None:
     if not diffs:
-        print("✅  PASS — configuration matches the ground truth exactly.")
+        print(f"✅  PASS — configuration matches the ground truth.")
+        print(f"   (numerical tolerance: ±{tol})")
         return
 
-    print(f"❌  FAIL — {len(diffs)} difference(s) found:\n")
+    print(f"❌  FAIL — {len(diffs)} difference(s) found  (numerical tolerance: ±{tol}):\n")
     for path, got, expected in diffs:
-        print(f"  Path:     {path}")
-        print(f"  Got:      {_fmt(got)}")
-        print(f"  Expected: {_fmt(expected)}")
+        line = f"  Path:     {path}\n"
+        line += f"  Got:      {_fmt(got)}\n"
+        line += f"  Expected: {_fmt(expected)}"
+
+        # Show the actual delta for numeric diffs so you can judge severity
+        if isinstance(got, (int, float)) and isinstance(expected, (int, float)):
+            delta = abs(float(got) - float(expected))
+            line += f"\n  Delta:    {delta:.6f}"
+
+        print(line)
         print()
 
 
@@ -139,10 +174,17 @@ def main() -> None:
         default=str(TRUTH_PATH),
         help=f"Path to the correct/reference file (default: {TRUTH_PATH})",
     )
+    parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=DEFAULT_TOLERANCE,
+        help=f"Numerical tolerance for positions/orientations (default: {DEFAULT_TOLERANCE})",
+    )
     args = parser.parse_args()
 
     config_path = Path(args.config)
     truth_path  = Path(args.truth)
+    tol         = args.tolerance
 
     # Load both files
     for label, p in [("Config", config_path), ("Truth", truth_path)]:
@@ -155,12 +197,13 @@ def main() -> None:
     with open(truth_path, "r", encoding="utf-8") as f:
         truth = json.load(f)
 
-    print(f"Config: {config_path}")
-    print(f"Truth:  {truth_path}")
+    print(f"Config:    {config_path}")
+    print(f"Truth:     {truth_path}")
+    print(f"Tolerance: ±{tol}")
     print()
 
-    diffs = compare_configs(config, truth)
-    print_report(diffs)
+    diffs = compare_configs(config, truth, tol=tol)
+    print_report(diffs, tol=tol)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,65 @@
+How do you want to load the scene?
+  [1] New Configuration — Capture new image and configure from scratch
+  [2] Update Configuration — Update configuration with new vision data
+  [3] Edit Configuration — Edit current configuration (no new image)
+
+── Scene update ──
+
+
+Starting vision module …
+Vision complete.
+
+Before I map the detected parts, please briefly describe what
+you changed in the workspace (e.g. removed a part, moved a
+part, added a new one, swapped two parts, etc.).
+
+YOU: part 5 was removed and then part 3 was moved to where part 5 used to be. then a new blue part was added at the old position of part 3
+
+ASSISTANT:
+**Kept in place:**
+• Part_1 (blue) — stays in Container_1_Pos_4  
+• Part_2 (blue) — stays in Container_1_Pos_5  
+• Part_4 (green) — stays in Container_1_Pos_1  
+• Part_6 (red) — stays in Container_1_Pos_3  
+
+**Moved:**
+• Part_3 (green, fragile) — moved from Container_1_Pos_2 → Container_1_Pos_6  
+
+**Newly added:**
+• New blue part in Container_1_Pos_2 (will be assigned a new ID)  
+
+**Removed:**
+• Part_5 (green) — removed from Container_1_Pos_6  
+
+```mapping
+{
+  "Part_4": "Part_4",
+  "Part_6": "Part_6",
+  "Part_5": "Part_3",
+  "Part_3": "Part_2",
+  "Part_2": "Part_1",
+  "Part_1": "new"
+}
+```
+Does this look correct?
+
+YOU: yes
+── Final Scene Summary ──
+  + Part_7  [new part]
+  - Part_5  [removed]
+
+✅  Configuration updated.
+✅  State archived.
+✅  Image updated.
+Loaded fresh scene from vision.
+
+── Mode: Reconfiguration ──
+
+
+ASSISTANT:
+What would you like to change?
+
+YOU: done
+
+── Session complete. ──
+
