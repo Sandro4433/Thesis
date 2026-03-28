@@ -214,7 +214,7 @@ def compute_tag_targets_and_annotate(
     ref_rgb = {
         "Blue":  (40,  80,  130),
         "Red":   (130, 40,  40),
-        "Green": (40,  120, 50),
+        "Green": (35,  100, 45),
     }
 
     part_dets = detect_color_cluster_parts_on_board(
@@ -237,7 +237,7 @@ def compute_tag_targets_and_annotate(
             "Red":   {"morph_kernel": 7, "open_iter": 1, "close_iter": 2},
             "Green": {"morph_kernel": 5, "open_iter": 1, "close_iter": 2},
         },
-        min_area_px=1000,
+        min_area_px=900,
         circularity_min=0.30,
         fill_ratio_min=0.30,
         debug_mask_color="Green",
