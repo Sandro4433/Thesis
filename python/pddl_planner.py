@@ -337,13 +337,12 @@ def _build_compat_init(state, kits, containers):
       Receptacle selectors (mutually exclusive):
         - allowed_in: ["Container_1", "Kit_2"] — specific receptacles
         - allowed_in_role: "output" | "input" — all receptacles with that role
-        - not_allowed_in: ["Kit_1"] — exclusion (used with allowed_in_role or alone)
+        - not_allowed_in: ["Kit_1"] — exclusion (applied AFTER all inclusions)
     
-    Examples:
-      {"part_color": "blue", "allowed_in": ["Container_1"]}
-      {"part_fragility": "fragile", "allowed_in_role": "output"}
-      {"part_name": "Part_1", "not_allowed_in": ["Kit_1"]}
-      {"part_color": "red", "part_fragility": "normal", "allowed_in_role": "input"}
+    IMPORTANT: Exclusion rules (not_allowed_in without allowed_in/allowed_in_role)
+    are processed LAST so they override any inclusions from other rules.
+    This ensures "fragile parts not allowed in Kit_1" overrides "green parts allowed in Kit_1"
+    even if a part is both green AND fragile.
     """
     preds     = state.get("predicates", {})
     workspace = state.get("workspace",  {})
@@ -381,10 +380,26 @@ def _build_compat_init(state, kits, containers):
     init: List[str] = []
     
     if use_compat:
+        # Separate inclusion rules from pure exclusion rules
+        inclusion_rules = []
+        exclusion_rules = []
+        
+        for rule in compat_entries:
+            has_inclusion = "allowed_in" in rule or "allowed_in_role" in rule
+            has_exclusion = "not_allowed_in" in rule
+            
+            if has_exclusion and not has_inclusion:
+                # Pure exclusion rule — process last
+                exclusion_rules.append(rule)
+            else:
+                # Inclusion rule (may also have not_allowed_in as a filter)
+                inclusion_rules.append(rule)
+        
         # Track all (part, receptacle) pairs that are compatible
         compatible_pairs: set = set()
         
-        for rule in compat_entries:
+        # FIRST PASS: Process inclusion rules
+        for rule in inclusion_rules:
             # ── Find matching parts (AND logic) ──
             matching_parts = all_parts_pddl.copy()
             
@@ -414,10 +429,10 @@ def _build_compat_init(state, kits, containers):
                 role = (rule["allowed_in_role"] or "").lower()
                 matching_receptacles = role_to_receptacles.get(role, set()).copy()
             else:
-                # No positive selector — start with all receptacles (for not_allowed_in only rules)
+                # No positive selector — start with all receptacles
                 matching_receptacles = set(all_receptacles)
             
-            # Apply exclusions
+            # Apply exclusions (as a filter for this rule)
             if "not_allowed_in" in rule:
                 excluded = {_to_pddl_name(r) for r in rule["not_allowed_in"]}
                 matching_receptacles -= excluded
@@ -426,6 +441,34 @@ def _build_compat_init(state, kits, containers):
             for part in matching_parts:
                 for rec in matching_receptacles:
                     compatible_pairs.add((part, rec))
+        
+        # SECOND PASS: Process pure exclusion rules (override inclusions)
+        for rule in exclusion_rules:
+            # ── Find matching parts (AND logic) ──
+            matching_parts = all_parts_pddl.copy()
+            
+            if "part_color" in rule:
+                color = (rule["part_color"] or "").lower()
+                matching_parts &= color_to_parts.get(color, set())
+            
+            if "part_fragility" in rule:
+                frag = (rule["part_fragility"] or "").lower()
+                matching_parts &= fragility_to_parts.get(frag, set())
+            
+            if "part_name" in rule:
+                part_name = _to_pddl_name(rule["part_name"])
+                matching_parts &= {part_name}
+            
+            if not matching_parts:
+                continue
+            
+            # Get excluded receptacles
+            excluded = {_to_pddl_name(r) for r in rule.get("not_allowed_in", [])}
+            
+            # REMOVE these pairs from compatible_pairs
+            for part in matching_parts:
+                for rec in excluded:
+                    compatible_pairs.discard((part, rec))
         
         # Generate PDDL predicates
         for part, rec in sorted(compatible_pairs):
@@ -555,6 +598,18 @@ def _generate_goal(state: Dict[str, Any], mode: str) -> List[str]:
 
 
 def _goal_sorting(state: Dict[str, Any]) -> List[str]:
+    """
+    Generate sorting goals from part_compatibility rules.
+    
+    Supports both color-based and part-specific rules:
+      - {"part_color": "blue", "allowed_in": ["Container_1"]}
+      - {"part_name": "Part_3", "allowed_in": ["Container_2"]}
+      - {"part_name": "Part_3", "allowed_in": ["Container_2"], "target_slot": "Container_2_Pos_1"}
+    
+    Uses TWO-PASS approach:
+      Pass 1: Process inclusion rules to build allowed receptacles
+      Pass 2: Apply exclusion-only rules to remove receptacles
+    """
     preds        = state.get("predicates",    {})
     slot_belongs = state.get("slot_belongs_to", {})
     objs         = state.get("objects",       {})
@@ -571,12 +626,97 @@ def _goal_sorting(state: Dict[str, Any]) -> List[str]:
     parts_to_move = parts_in_input + standalone
     parts_to_move.sort(key=lambda p: pkey(color_map.get(p, "")))
 
-    compat_rules     = preds.get("part_compatibility", [])
-    color_to_allowed: Dict[str, set] = {}
+    compat_rules = preds.get("part_compatibility", [])
+    
+    # Build fragility lookup
+    frag_map = {e["part"]: e.get("fragility", "normal") for e in preds.get("fragility", [])}
+    
+    # Separate inclusion rules from pure exclusion rules
+    inclusion_rules = []
+    exclusion_rules = []
+    
     for rule in compat_rules:
-        c = (rule.get("part_color") or "").lower()
-        for r in rule.get("allowed_in", []):
-            color_to_allowed.setdefault(c, set()).add(r)
+        has_inclusion = "allowed_in" in rule or "allowed_in_role" in rule
+        has_exclusion = "not_allowed_in" in rule
+        
+        if has_exclusion and not has_inclusion:
+            exclusion_rules.append(rule)
+        elif has_inclusion:
+            inclusion_rules.append(rule)
+    
+    # Build info map: part → {allowed_recs, target_slot}
+    part_info: Dict[str, Dict[str, Any]] = {}
+    color_to_allowed: Dict[str, set] = {}
+    
+    # PASS 1: Process inclusion rules
+    for rule in inclusion_rules:
+        allowed_recs = set(rule.get("allowed_in", []))
+        
+        # Handle allowed_in_role
+        if "allowed_in_role" in rule:
+            role = (rule["allowed_in_role"] or "").lower()
+            if role == "output":
+                allowed_recs.update(outputs)
+            elif role == "input":
+                allowed_recs.update(inputs)
+        
+        # Apply inline exclusions
+        if "not_allowed_in" in rule:
+            allowed_recs -= set(rule["not_allowed_in"])
+        
+        # Filter to only output receptacles
+        allowed_recs &= outputs
+        
+        if not allowed_recs:
+            continue
+        
+        target_slot = rule.get("target_slot")
+        
+        # Part-specific rule
+        if "part_name" in rule:
+            part_name = rule["part_name"]
+            if part_name not in part_info:
+                part_info[part_name] = {"allowed_recs": set(), "target_slot": None}
+            part_info[part_name]["allowed_recs"].update(allowed_recs)
+            if target_slot:
+                part_info[part_name]["target_slot"] = target_slot
+        
+        # Color-based rule
+        if "part_color" in rule:
+            c = (rule["part_color"] or "").lower()
+            color_to_allowed.setdefault(c, set()).update(allowed_recs)
+    
+    # PASS 2: Process pure exclusion rules
+    for rule in exclusion_rules:
+        excluded_recs = set(rule.get("not_allowed_in", []))
+        
+        # Determine which parts this exclusion applies to
+        if "part_name" in rule:
+            # Specific part
+            part_name = rule["part_name"]
+            if part_name in part_info:
+                part_info[part_name]["allowed_recs"] -= excluded_recs
+        
+        if "part_color" in rule:
+            # Color-based exclusion
+            c = (rule["part_color"] or "").lower()
+            if c in color_to_allowed:
+                color_to_allowed[c] -= excluded_recs
+        
+        if "part_fragility" in rule:
+            # Fragility-based exclusion — apply to all matching parts
+            frag = (rule["part_fragility"] or "").lower()
+            matching_parts = [p for p in parts_to_move if frag_map.get(p, "normal").lower() == frag]
+            for part in matching_parts:
+                if part in part_info:
+                    part_info[part]["allowed_recs"] -= excluded_recs
+                # Also check color-based and remove from those
+                part_color = color_map.get(part, "")
+                if part_color in color_to_allowed:
+                    # Need to track per-part exclusions, build part_info entry
+                    if part not in part_info:
+                        part_info[part] = {"allowed_recs": color_to_allowed[part_color].copy(), "target_slot": None}
+                    part_info[part]["allowed_recs"] -= excluded_recs
 
     empty_by_receptacle: Dict[str, List[str]] = {}
     for s in preds.get("slot_empty", []):
@@ -587,16 +727,41 @@ def _goal_sorting(state: Dict[str, Any]) -> List[str]:
     goals: List[str] = []
     for part in parts_to_move:
         color = color_map.get(part, "")
-        if color_to_allowed and color in color_to_allowed:
-            valid = [r for r in color_to_allowed[color] if r in outputs and empty_by_receptacle.get(r)]
-        elif not color_to_allowed:
+        
+        # Check part-specific rules first
+        if part in part_info:
+            info = part_info[part]
+            target_slot = info.get("target_slot")
+            allowed_recs = info.get("allowed_recs", set())
+            
+            # If target_slot is specified, use it directly
+            if target_slot:
+                slot_parent = slot_belongs.get(target_slot, "")
+                if slot_parent in allowed_recs:
+                    free_slots = empty_by_receptacle.get(slot_parent, [])
+                    if target_slot in free_slots:
+                        goals.append(f"(at {_to_pddl_name(part)} {_to_pddl_name(target_slot)})")
+                        free_slots.remove(target_slot)
+                    else:
+                        print(f"  ⚠  target slot '{target_slot}' is not empty — skipping {part}")
+                continue
+            
+            # No target_slot — auto-assign
+            valid = [r for r in allowed_recs if empty_by_receptacle.get(r)]
+        # Then check color-based rules
+        elif color_to_allowed and color in color_to_allowed:
+            valid = [r for r in color_to_allowed[color] if empty_by_receptacle.get(r)]
+        # No rules defined — allow any output
+        elif not compat_rules:
             valid = [r for r in outputs if empty_by_receptacle.get(r)]
         else:
             print(f"  ⚠  no part_compatibility rule for '{part}' (color={color}) — skipped.")
             continue
+        
         if not valid:
             print(f"  ⚠  no available output slot for '{part}' (color={color}) — skipped.")
             continue
+        
         receptacle = valid[0]
         slot = empty_by_receptacle[receptacle].pop(0)
         goals.append(f"(at {_to_pddl_name(part)} {_to_pddl_name(slot)})")
@@ -605,7 +770,10 @@ def _goal_sorting(state: Dict[str, Any]) -> List[str]:
 
 def _goal_kitting(state: Dict[str, Any]) -> List[str]:
     """
-    Generate kitting goals from kit_recipe.
+    Generate kitting goals from kit_recipe OR part_compatibility.
+    
+    If kit_recipe is defined, uses that (color-based selection).
+    If only part_compatibility is defined, uses that (supports part_name for specific parts).
     
     Recipe format supports two modes:
       - Kit-specific: {"kit": "Kit_1", "color": "blue", "quantity": 2}
@@ -622,16 +790,15 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
     color_map    = _color_map(preds)
     pkey         = _priority_key(preds)
 
-    available: Dict[str, List[str]] = {}
+    # Build available parts (in input receptacles or standalone)
+    available_parts: List[str] = []
     parts_in_slot = {e["part"] for e in preds.get("at", [])}
     for e in preds.get("at", []):
         if slot_belongs.get(e["slot"], "") in inputs:
-            c = color_map.get(e["part"], "unknown")
-            available.setdefault(c, []).append(e["part"])
+            available_parts.append(e["part"])
     for p in objs.get("parts", []):
         if p not in parts_in_slot:
-            c = color_map.get(p, "unknown")
-            available.setdefault(c, []).append(p)
+            available_parts.append(p)
 
     kit_set     = set(objs.get("kits", []))
     # Only consider kits that are marked as output
@@ -646,38 +813,197 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
     used_parts: set = set()
     goals: List[str] = []
 
-    # Expand universal recipes (no "kit" field) to all output kits
     raw_recipes = preds.get("kit_recipe", [])
-    expanded_recipes: List[Dict[str, Any]] = []
+    compat_rules = preds.get("part_compatibility", [])
+
+    # ── Build exclusion map from pure exclusion rules ──
+    # Maps part → set of receptacles it's excluded from
+    part_exclusions: Dict[str, set] = {}
     
-    for recipe in raw_recipes:
-        kit_field = (recipe.get("kit") or "").strip()
-        if kit_field:
-            # Kit-specific recipe — use as-is
-            expanded_recipes.append(recipe)
-        else:
-            # Universal recipe — expand to all output kits
-            for kit in sorted(output_kits):
-                expanded_recipes.append({
-                    "kit": kit,
-                    "color": recipe.get("color"),
-                    "quantity": recipe.get("quantity"),
-                    "size": recipe.get("size"),  # preserve optional size field
-                })
+    # Build fragility lookup for matching
+    frag_map = {e["part"]: e.get("fragility", "normal") for e in preds.get("fragility", [])}
+    
+    for rule in compat_rules:
+        has_inclusion = "allowed_in" in rule or "allowed_in_role" in rule
+        has_exclusion = "not_allowed_in" in rule
+        
+        if has_exclusion:
+            # Find matching parts for this rule
+            matching_parts: set = set(available_parts)
+            
+            if "part_name" in rule:
+                matching_parts &= {rule["part_name"]}
+            if "part_color" in rule:
+                color = (rule["part_color"] or "").lower()
+                matching_parts = {p for p in matching_parts if color_map.get(p, "").lower() == color}
+            if "part_fragility" in rule:
+                frag = (rule["part_fragility"] or "").lower()
+                matching_parts = {p for p in matching_parts if frag_map.get(p, "normal").lower() == frag}
+            
+            excluded_recs = set(rule["not_allowed_in"])
+            
+            for part in matching_parts:
+                part_exclusions.setdefault(part, set()).update(excluded_recs)
 
-    for recipe in expanded_recipes:
-        kit   = recipe.get("kit", "")
-        color = (recipe.get("color") or "").lower()
-        qty   = int(recipe.get("quantity", 0))
-        free_slots = empty_slots.get(kit, [])
+    # ── If we have kit_recipe, use color-based selection ──
+    if raw_recipes:
+        # Group available parts by color
+        available_by_color: Dict[str, List[str]] = {}
+        for p in available_parts:
+            c = color_map.get(p, "unknown")
+            available_by_color.setdefault(c, []).append(p)
 
-        candidates = [p for p in available.get(color, []) if p not in used_parts]
-        candidates.sort(key=lambda p: pkey(color))
+        # Expand universal recipes (no "kit" field) to all output kits
+        expanded_recipes: List[Dict[str, Any]] = []
+        
+        for recipe in raw_recipes:
+            kit_field = (recipe.get("kit") or "").strip()
+            if kit_field:
+                # Kit-specific recipe — use as-is
+                expanded_recipes.append(recipe)
+            else:
+                # Universal recipe — expand to all output kits
+                for kit in sorted(output_kits):
+                    expanded_recipes.append({
+                        "kit": kit,
+                        "color": recipe.get("color"),
+                        "quantity": recipe.get("quantity"),
+                        "size": recipe.get("size"),
+                    })
 
-        for part, slot in zip(candidates[:qty], free_slots[:qty]):
-            goals.append(f"(at {_to_pddl_name(part)} {_to_pddl_name(slot)})")
-            used_parts.add(part)
-            free_slots.remove(slot)
+        for recipe in expanded_recipes:
+            kit   = recipe.get("kit", "")
+            color = (recipe.get("color") or "").lower()
+            qty   = int(recipe.get("quantity", 0))
+            free_slots = empty_slots.get(kit, [])
+
+            # Filter candidates: not used, not excluded from this kit
+            candidates = [
+                p for p in available_by_color.get(color, [])
+                if p not in used_parts and kit not in part_exclusions.get(p, set())
+            ]
+            candidates.sort(key=lambda p: pkey(color))
+
+            for part, slot in zip(candidates[:qty], free_slots[:qty]):
+                goals.append(f"(at {_to_pddl_name(part)} {_to_pddl_name(slot)})")
+                used_parts.add(part)
+                free_slots.remove(slot)
+
+    # ── If we have part_compatibility (and no kit_recipe), use compatibility-based selection ──
+    elif compat_rules:
+        # TWO-PASS APPROACH:
+        # Pass 1: Build allowed_kits from inclusion rules
+        # Pass 2: Apply exclusions from exclusion-only rules
+        
+        # Build fragility lookup
+        frag_map_local = {e["part"]: e.get("fragility", "normal") for e in preds.get("fragility", [])}
+        
+        # Separate inclusion rules from pure exclusion rules
+        inclusion_rules = []
+        exclusion_rules = []
+        
+        for rule in compat_rules:
+            has_inclusion = "allowed_in" in rule or "allowed_in_role" in rule
+            has_exclusion = "not_allowed_in" in rule
+            
+            if has_exclusion and not has_inclusion:
+                exclusion_rules.append(rule)
+            elif has_inclusion:
+                inclusion_rules.append(rule)
+        
+        # Build compatibility map: part → (allowed_kits, target_slot or None)
+        part_info: Dict[str, Dict[str, Any]] = {}
+        
+        # PASS 1: Process inclusion rules
+        for rule in inclusion_rules:
+            # Determine which parts this rule applies to
+            matching_parts: set = set(available_parts)
+            
+            if "part_name" in rule:
+                matching_parts &= {rule["part_name"]}
+            if "part_color" in rule:
+                color = (rule["part_color"] or "").lower()
+                matching_parts = {p for p in matching_parts if color_map.get(p, "").lower() == color}
+            if "part_fragility" in rule:
+                frag = (rule["part_fragility"] or "").lower()
+                matching_parts = {p for p in matching_parts if frag_map_local.get(p, "normal").lower() == frag}
+            
+            # Determine which kits this rule allows
+            allowed_kits: set = set()
+            if "allowed_in" in rule:
+                allowed_kits = set(rule["allowed_in"]) & set(output_kits)
+            elif "allowed_in_role" in rule:
+                role = (rule["allowed_in_role"] or "").lower()
+                if role == "output":
+                    allowed_kits = set(output_kits)
+            
+            # Apply inline exclusions (not_allowed_in combined with allowed_in)
+            if "not_allowed_in" in rule:
+                allowed_kits -= set(rule["not_allowed_in"])
+            
+            # Check for target_slot
+            target_slot = rule.get("target_slot")
+            
+            # Record info for each matching part
+            for part in matching_parts:
+                if part not in part_info:
+                    part_info[part] = {"allowed_kits": set(), "target_slot": None}
+                part_info[part]["allowed_kits"].update(allowed_kits)
+                if target_slot:
+                    part_info[part]["target_slot"] = target_slot
+        
+        # PASS 2: Process pure exclusion rules (remove from allowed_kits)
+        for rule in exclusion_rules:
+            # Determine which parts this exclusion applies to
+            matching_parts: set = set(available_parts)
+            
+            if "part_name" in rule:
+                matching_parts &= {rule["part_name"]}
+            if "part_color" in rule:
+                color = (rule["part_color"] or "").lower()
+                matching_parts = {p for p in matching_parts if color_map.get(p, "").lower() == color}
+            if "part_fragility" in rule:
+                frag = (rule["part_fragility"] or "").lower()
+                matching_parts = {p for p in matching_parts if frag_map_local.get(p, "normal").lower() == frag}
+            
+            # Get excluded kits
+            excluded_kits = set(rule.get("not_allowed_in", []))
+            
+            # REMOVE these kits from each matching part's allowed_kits
+            for part in matching_parts:
+                if part in part_info:
+                    part_info[part]["allowed_kits"] -= excluded_kits
+        
+        # Generate goals for each part
+        for part, info in part_info.items():
+            if part in used_parts:
+                continue
+            
+            target_slot = info.get("target_slot")
+            allowed_kits = info.get("allowed_kits", set())
+            
+            # If target_slot is specified, use it directly
+            if target_slot:
+                # Verify the slot is empty
+                slot_parent = slot_belongs.get(target_slot, "")
+                if slot_parent in allowed_kits:
+                    free_slots_for_kit = empty_slots.get(slot_parent, [])
+                    if target_slot in free_slots_for_kit:
+                        goals.append(f"(at {_to_pddl_name(part)} {_to_pddl_name(target_slot)})")
+                        used_parts.add(part)
+                        free_slots_for_kit.remove(target_slot)
+                    else:
+                        print(f"  ⚠  target slot '{target_slot}' is not empty — skipping {part}")
+                continue
+            
+            # No target_slot — auto-assign to first available slot
+            for kit in sorted(allowed_kits):
+                free_slots_for_kit = empty_slots.get(kit, [])
+                if free_slots_for_kit:
+                    slot = free_slots_for_kit.pop(0)
+                    goals.append(f"(at {_to_pddl_name(part)} {_to_pddl_name(slot)})")
+                    used_parts.add(part)
+                    break
 
     if not goals:
         return _goal_sorting(state)

@@ -126,11 +126,25 @@ def merge_changes(
     accumulated: Dict[str, Any],
     new_block: Dict[str, Any],
 ) -> Dict[str, Any]:
+    """
+    Merge new changes into accumulated changes.
+    
+    For list-type keys (priority, kit_recipe, part_compatibility):
+      - EXTEND the existing list, don't replace
+      - This allows building up rules across multiple confirmations
+    
+    For workspace: merge dict keys
+    For other dicts: merge/update
+    """
     merged = {k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v)
                for k, v in accumulated.items()}
     for key, value in new_block.items():
         if key in ("priority", "kit_recipe", "part_compatibility") and isinstance(value, list):
-            merged[key] = value          # list keys replace entirely
+            # EXTEND list keys — accumulate rules across multiple confirmations
+            existing = merged.get(key, [])
+            if not isinstance(existing, list):
+                existing = []
+            merged[key] = existing + value
         elif key == "workspace" and isinstance(value, dict):
             merged.setdefault("workspace", {})
             merged["workspace"].update(value)
@@ -514,38 +528,64 @@ configuration so the PDDL planner can accomplish this task:
    - Find which receptacle currently holds the part (from the INPUT JSON)
    - The destination is where the user wants the part to go
 
-2. Set roles:
+2. SLOT CLARIFICATION — ALWAYS ASK:
+   - When user specifies a receptacle (e.g., "Kit_1") but NOT a specific slot, 
+     you MUST ask which slot they want.
+   - Check the INPUT JSON to see which slots are empty vs occupied.
+   - List ONLY the empty slots as options.
+   - Example response: "Kit_1 has these empty slots: Pos_1, Pos_3. Pos_2 is occupied by Part_5. Which slot?"
+   - If user says "doesn't matter", "any", "first available", etc. → pick the first empty slot
+   - If user specifies a slot (e.g., "position 2", "Pos_1") → use that slot
+
+3. Set roles:
    - Source receptacle → role="input"
    - Destination receptacle → role="output"
 
-3. Set operation_mode:
+4. Set operation_mode:
    - If destination is a Kit → operation_mode="kitting"
    - If destination is a Container → operation_mode="sorting"
 
-4. Set compatibility (so the planner knows this move is allowed):
-   - For kitting: kit_recipe with the part's color and quantity=1
-   - For sorting: part_compatibility allowing the part in the destination
-   - You can use part_name for specific parts: {"part_name": "Part_11", "allowed_in": ["Kit_1"]}
+5. Set compatibility — CRITICAL for specific parts:
+   - ALWAYS use part_compatibility with part_name when user specifies a specific part
+   - Include target_slot to specify the exact slot
+   - Format: {"part_name": "Part_12", "allowed_in": ["Kit_2"], "target_slot": "Kit_2_Pos_1"}
 
-Example — user says "place Part_11 in Kit_1" (Part_11 is green, currently in Container_1):
+Example — user says "place Part_12 in Kit_2" (Kit_2 has Pos_1 empty, Pos_2 occupied, Pos_3 empty):
+ASSISTANT: "Kit_2 has Pos_1 and Pos_3 empty. Pos_2 is occupied by Part_8. Which slot?"
+USER: "pos 1"
+```changes
+{
+  "Container_1": {"role": "input"},
+  "Kit_2": {"role": "output"},
+  "workspace": {"operation_mode": "kitting"},
+  "part_compatibility": [{"part_name": "Part_12", "allowed_in": ["Kit_2"], "target_slot": "Kit_2_Pos_1"}]
+}
+```
+Confirm?
+
+Example — user says "doesn't matter" or "any slot":
+```changes
+{
+  "Container_1": {"role": "input"},
+  "Kit_2": {"role": "output"},
+  "workspace": {"operation_mode": "kitting"},
+  "part_compatibility": [{"part_name": "Part_12", "allowed_in": ["Kit_2"]}]
+}
+```
+Confirm?
+
+Example — user says "move all green parts to Kit_1" (bulk move, no slot question needed):
 ```changes
 {
   "Container_1": {"role": "input"},
   "Kit_1": {"role": "output"},
   "workspace": {"operation_mode": "kitting"},
-  "kit_recipe": [{"color": "green", "quantity": 1}]
+  "part_compatibility": [{"part_color": "green", "allowed_in": ["Kit_1"]}]
 }
 ```
 
-Example — user says "move Part_3 to Container_2" (Part_3 is blue, currently in Kit_1):
-```changes
-{
-  "Kit_1": {"role": "input"},
-  "Container_2": {"role": "output"},
-  "workspace": {"operation_mode": "sorting"},
-  "part_compatibility": [{"part_name": "Part_3", "allowed_in": ["Container_2"]}]
-}
-```
+RULE: If user mentions a SPECIFIC part name (Part_1, Part_12, etc.) → ask which slot
+      If user mentions a COLOR (green parts, blue parts) → no slot question, planner auto-assigns
 
 You will receive an INPUT JSON with:
   - "workspace": operation_mode, batch_size
