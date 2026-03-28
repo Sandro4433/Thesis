@@ -518,10 +518,21 @@ def _goal_sorting(state: Dict[str, Any]) -> List[str]:
 
 
 def _goal_kitting(state: Dict[str, Any]) -> List[str]:
+    """
+    Generate kitting goals from kit_recipe.
+    
+    Recipe format supports two modes:
+      - Kit-specific: {"kit": "Kit_1", "color": "blue", "quantity": 2}
+        → applies only to Kit_1
+      - Universal: {"color": "blue", "quantity": 2}
+        → applies to ALL output kits
+    
+    Universal recipes are expanded to all kits with role=output.
+    """
     preds        = state.get("predicates",    {})
     slot_belongs = state.get("slot_belongs_to", {})
     objs         = state.get("objects",       {})
-    inputs, _    = _role_map(preds)
+    inputs, outputs = _role_map(preds)
     color_map    = _color_map(preds)
     pkey         = _priority_key(preds)
 
@@ -537,6 +548,9 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
             available.setdefault(c, []).append(p)
 
     kit_set     = set(objs.get("kits", []))
+    # Only consider kits that are marked as output
+    output_kits = [k for k in kit_set if k in outputs]
+    
     empty_slots: Dict[str, List[str]] = {}
     for s in preds.get("slot_empty", []):
         parent = slot_belongs.get(s, "")
@@ -546,7 +560,26 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
     used_parts: set = set()
     goals: List[str] = []
 
-    for recipe in preds.get("kit_recipe", []):
+    # Expand universal recipes (no "kit" field) to all output kits
+    raw_recipes = preds.get("kit_recipe", [])
+    expanded_recipes: List[Dict[str, Any]] = []
+    
+    for recipe in raw_recipes:
+        kit_field = (recipe.get("kit") or "").strip()
+        if kit_field:
+            # Kit-specific recipe — use as-is
+            expanded_recipes.append(recipe)
+        else:
+            # Universal recipe — expand to all output kits
+            for kit in sorted(output_kits):
+                expanded_recipes.append({
+                    "kit": kit,
+                    "color": recipe.get("color"),
+                    "quantity": recipe.get("quantity"),
+                    "size": recipe.get("size"),  # preserve optional size field
+                })
+
+    for recipe in expanded_recipes:
         kit   = recipe.get("kit", "")
         color = (recipe.get("color") or "").lower()
         qty   = int(recipe.get("quantity", 0))

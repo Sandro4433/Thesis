@@ -419,7 +419,8 @@ Allowed keys and values:
                                          → "fragility": "normal" | "fragile"
   "workspace"                            → {"operation_mode": "sorting"|"kitting", "batch_size": N}
   "priority"                             → [{"color": "blue", "order": 1}, ...]
-  "kit_recipe"                           → [{"kit": "Kit_0", "color": "blue", "quantity": 2}, ...]
+  "kit_recipe"                           → [{"color": "blue", "quantity": 2}, ...]
+                                           (applies to ALL output kits)
   "part_compatibility"                   → [{"part_color": "blue", "allowed_in": ["Container_1"]}, ...]
 
 CRITICAL FORMAT RULES:
@@ -437,8 +438,8 @@ Example (kitting):
   "Kit_0": {"role": "output"},
   "workspace": {"operation_mode": "kitting"},
   "kit_recipe": [
-    {"kit": "Kit_0", "color": "blue", "quantity": 2},
-    {"kit": "Kit_0", "color": "red",  "quantity": 1}
+    {"color": "blue", "quantity": 2},
+    {"color": "red",  "quantity": 1}
   ],
   "priority": [{"color": "blue", "order": 1}, {"color": "red", "order": 2}]
 }
@@ -461,6 +462,22 @@ COMMUNICATION RULES — FOLLOW STRICTLY:
 - After confirmation, respond ONLY with: "Anything else?"
 - After rejection, respond ONLY with: "What should I change?"
 
+NO-CHANGE HANDLING:
+- If the user indicates no changes (e.g. "nothing", "no changes", "none", "skip", 
+  "no", "nope", or similar), respond ONLY with:
+  "No changes needed. Would you like to make any other changes? If not, type 'done' or press cancel."
+- Do NOT simply say "Understood." — always offer the continuation prompt.
+
+ATTRIBUTE INDEPENDENCE — CRITICAL:
+- Only change what the user explicitly asks for. Do NOT bundle unrelated changes.
+- If the user asks to change kit_recipe, change ONLY kit_recipe — not operation_mode.
+- If the user asks to change roles, change ONLY roles — not operation_mode or recipes.
+- If the user asks to change priority, change ONLY priority — nothing else.
+- Each attribute (operation_mode, batch_size, roles, kit_recipe, priority, 
+  part_compatibility, fragility) is independent. Never assume one implies another.
+- Exception: Only bundle changes if the user explicitly requests multiple things
+  in the same message (e.g. "set up kitting with 2 blue parts" → both mode + recipe).
+
 You will receive an INPUT JSON with:
   - "workspace": operation_mode, batch_size
   - "receptacle_xy": {name: [x, y]} — position of each Kit/Container (metres)
@@ -468,11 +485,13 @@ You will receive an INPUT JSON with:
   - "parts": standalone parts with xy
   Use xy values to resolve spatial references (left/right/front/back).
 
-SORTING INFERENCE (apply automatically when user says "sort"):
+SORTING INFERENCE (ONLY when user explicitly says "sort" or "set up sorting"):
 A — Infer destination containers from existing same-color contents.
 B — Source = receptacles with mixed colors → role="input".
 C — Always emit: source roles, destination roles, workspace, part_compatibility.
 D — If a container has mixed colors, ask which color it should receive.
+NOTE: This inference ONLY applies when user explicitly requests sorting setup.
+      Do NOT apply this for other requests like "change roles" or "set priority".
 
 """ + _CHANGES_BLOCK_RULES + """
 
@@ -496,6 +515,12 @@ COMMUNICATION RULES — FOLLOW STRICTLY:
 - When outputting a sequence block, add ONLY "Confirm?" after it.
 - After confirmation: "Anything else?"
 - After rejection: "What should I change?"
+
+NO-TASK HANDLING:
+- If the user indicates no task (e.g. "nothing", "no task", "none", "skip", 
+  "no", "nope", or similar), respond ONLY with:
+  "No task needed. Would you like to plan any other tasks? If not, type 'done' or press cancel."
+- Do NOT simply say "Understood." — always offer the continuation prompt.
 
 You will receive an INPUT JSON with:
   - "workspace": operation_mode, batch_size
@@ -599,402 +624,141 @@ def select_scene() -> dict:
         if not CONFIGURATION_PATH.exists():
             print(f"ERROR: configuration.json not found at {CONFIGURATION_PATH.resolve()}")
             sys.exit(1)
-        print(f"Loaded scene from: {CONFIGURATION_PATH}")
+        print(f"Using stored configuration: {CONFIGURATION_PATH}")
 
     state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
     return slim_scene(state)
 
 
-# ── Scene update dialogue (LLM-guided) ──────────────────────────────────────
+# ── Update Scene dialogue ─────────────────────────────────────────────────────
 
-def _build_update_system_prompt() -> str:
-    return """\
-You resolve part identities after a new camera scan.
+def _build_update_prompt(old_state: Dict, fresh_state: Dict) -> str:
+    """
+    Compose a short prompt describing parts that need mapping.
+    Both states have the PDDL-friendly structure from configuration.json.
+    """
+    from Configuration_Module.Update_Scene import build_update_context  # type: ignore
 
-INPUTS YOU RECEIVE (in order):
-1. OLD SCENE — the previous configuration.
-2. NEW SCAN — the freshly detected parts.
-3. AUTO-MATCH — automatic position + colour matching analysis.
-4. USER DESCRIPTION — the operator's own description of what they changed
-   in the workspace (parts added, removed, moved, swapped, etc.).
+    diff = build_update_context(old_state, fresh_state)
 
-═══════════════════════════════════════════════════════════════
-FUNDAMENTAL CONCEPT — READ CAREFULLY
-═══════════════════════════════════════════════════════════════
+    lines = [
+        "A fresh vision scan detected new positions. Help me match parts.",
+        "",
+        "OLD PARTS (from previous config):",
+    ]
+    for p in diff.get("old_parts", []):
+        lines.append(f"  {p['name']}  color={p['color']}  xy={p['xy']}")
 
-The NEW SCAN contains parts with names like Part_1, Part_2, etc.
-These names are ARBITRARY labels assigned by the vision system based on
-detection order. They have NOTHING to do with the old part identities.
+    lines.append("")
+    lines.append("FRESH PARTS (from new scan):")
+    for p in diff.get("fresh_parts", []):
+        lines.append(f"  {p['name']}  color={p['color']}  xy={p['xy']}")
 
-  New scan "Part_1" is NOT old Part_1.
-  New scan "Part_3" is NOT old Part_3.
+    lines.append("")
+    lines.append("AUTO-MATCHED (same color, position within 25 mm):")
+    for m in diff.get("auto_matched", []):
+        lines.append(f"  {m['fresh']} ← {m['old']}")
 
-The ONLY way to identify which old part a new detection corresponds to is
-by matching POSITION (which slot is it in?) and COLOUR.
+    lines.append("")
+    lines.append("UNMATCHED FRESH (need your decision):")
+    for p in diff.get("unmatched_fresh", []):
+        lines.append(f"  {p['name']}  color={p['color']}  xy={p['xy']}")
 
-The user does not know about new scan names. When the user says "Part_3",
-they ALWAYS mean the old Part_3 identity.
+    lines.append("")
+    lines.append("UNMATCHED OLD (may have been removed):")
+    for p in diff.get("unmatched_old", []):
+        lines.append(f"  {p['name']}  color={p['color']}  xy={p['xy']}")
 
-═══════════════════════════════════════════════════════════════
-CRITICAL RULE: NEVER EXPOSE NEW SCAN NAMES TO THE USER
-═══════════════════════════════════════════════════════════════
-
-In ALL communication with the user (summaries, questions, answers):
-- ONLY use OLD part names, slot names, and colours.
-- NEVER mention new scan names. They are internal-only.
-- When the user asks "what colour is Part_3?" they mean old Part_3.
-  Look up old Part_3's identity, find which new detection corresponds
-  to it, and answer about that part.
-- The mapping block is the ONLY place new scan names appear, and the
-  user understands those are technical keys.
-
-═══════════════════════════════════════════════════════════════
-CRITICAL RULE: POSITION LOOKUP
-═══════════════════════════════════════════════════════════════
-
-⚠ Part numbers and slot/position numbers are INDEPENDENT.
-Part_5 is NOT necessarily in Pos_5.
-
-You MUST look up the actual slot assignment in the OLD SCENE JSON.
-When the user says "the old Part_5 position", you must:
-  1. Find Part_5 in the OLD SCENE to determine its actual slot.
-  2. Use THAT slot name. NEVER assume Part_N → Pos_N.
-
-═══════════════════════════════════════════════════════════════
-CRITICAL RULE: DO NOT INVENT MOVEMENTS
-═══════════════════════════════════════════════════════════════
-
-If the user did not mention moving a part, and the AUTO-MATCH confirms
-that part at the same position with the same colour, it STAYED IN PLACE.
-Do not invent swaps or moves. The user's description is authoritative:
-  - If they said they moved Part_X → Part_X moved.
-  - If they said nothing about Part_Y → Part_Y stayed where it was.
-  - Parts the user did not mention should be matched by position+colour
-    from the AUTO-MATCH data.
-
-═══════════════════════════════════════════════════════════════
-WORKFLOW
-═══════════════════════════════════════════════════════════════
-
-STEP 0  Build an internal lookup from the OLD SCENE (do NOT print this):
-        For each old part: name, colour, slot, fragility.
-        Example: Part_3 = green, fragile, Container_1_Pos_2
-
-STEP 1  Process the user description against this lookup:
-        - "Part_5 was removed" → Part_5 (look up: green, Pos_6) is gone.
-        - "Part_3 moved to old Part_5 position" → look up Part_5's slot
-          (Pos_6), so Part_3 is now in Pos_6.
-        - "New blue part at old Part_3 position" → look up Part_3's slot
-          (Pos_2), so there is a new blue part in Pos_2.
-
-STEP 2  For parts the user did NOT mention, use the AUTO-MATCH data.
-        If auto-matched by position+colour → kept in place. Done.
-        Do NOT move or swap parts the user did not mention.
-
-STEP 3  Match the results to new scan detections BY SLOT POSITION:
-        - Find the new scan detection in Pos_6 that is green → that is
-          old Part_3 (moved there).
-        - Find the new scan detection in Pos_2 that is blue → that is
-          the new part (mark "new").
-        - All auto-matched parts: map their new scan name to old name.
-
-STEP 4  If anything is ambiguous after steps 1-3, ask ONE question.
-
-STEP 5  Output the mapping.
-
-═══════════════════════════════════════════════════════════════
-WORKED EXAMPLE
-═══════════════════════════════════════════════════════════════
-
-OLD SCENE (lookup):
-  Part_1 = blue,  Container_1_Pos_4
-  Part_2 = blue,  Container_1_Pos_5
-  Part_3 = green, fragile, Container_1_Pos_2
-  Part_4 = green, Container_1_Pos_1
-  Part_5 = green, Container_1_Pos_6
-  Part_6 = red,   Container_1_Pos_3
-
-USER SAYS: "Part_5 removed. Part_3 moved to old Part_5 position.
-            New blue part at old Part_3 position."
-
-REASONING:
-  - Part_5 was at Pos_6 → removed.
-  - Part_3 was at Pos_2 → moved to Pos_6 (Part_5's old slot).
-  - New blue part → placed at Pos_2 (Part_3's old slot).
-  - Part_1, Part_2, Part_4, Part_6 → user did not mention, stay in place.
-
-MATCH TO NEW SCAN BY POSITION:
-  Pos_1: new scan "Part_4" (green)  → auto-matched → old Part_4
-  Pos_2: new scan "Part_1" (blue)   → user said new part here → "new"
-  Pos_3: new scan "Part_6" (red)    → auto-matched → old Part_6
-  Pos_4: new scan "Part_2" (blue)   → auto-matched → old Part_1
-  Pos_5: new scan "Part_3" (blue)   → auto-matched → old Part_2
-  Pos_6: new scan "Part_5" (green)  → user moved Part_3 here → old Part_3
-
-CORRECT MAPPING:
-  {"Part_4": "Part_4", "Part_1": "new", "Part_6": "Part_6",
-   "Part_2": "Part_1", "Part_3": "Part_2", "Part_5": "Part_3"}
-
-CORRECT SUMMARY (uses only old names):
-  **Kept in place:**
-  • Part_1 (blue) — stays in Container_1_Pos_4
-  • Part_2 (blue) — stays in Container_1_Pos_5
-  • Part_4 (green) — stays in Container_1_Pos_1
-  • Part_6 (red) — stays in Container_1_Pos_3
-  **Moved:**
-  • Part_3 (green, fragile) — moved from Container_1_Pos_2 → Container_1_Pos_6
-  **Newly added:**
-  • New blue part in Container_1_Pos_2 (will be assigned a new ID)
-  **Removed:**
-  • Part_5 (green) — removed from Container_1_Pos_6
-
-Note how:
-  - New scan "Part_3" (blue, Pos_5) maps to OLD Part_2 — same position,
-    same colour, the name "Part_3" is just an arbitrary scan label.
-  - New scan "Part_5" (green, Pos_6) maps to OLD Part_3 — the user moved
-    old Part_3 there.
-  - Part_1 and Part_2 were NOT moved even though their new scan names
-    differ. Position+colour matching resolved them.
-
-═══════════════════════════════════════════════════════════════
-MAPPING FORMAT
-═══════════════════════════════════════════════════════════════
-
-The mapping block is a JSON dict:
-  Keys   = new scan part names (internal, from vision detection)
-  Values = old part name this corresponds to, OR "new"
-
-Parts absent from both keys and values → removed from workspace.
-
-A value of "new" means a genuinely new part. The system will automatically
-assign the next available Part_N number. In the summary, say "will be
-assigned a new ID" — never predict a specific number.
-
-Every old part that still exists MUST appear exactly once as a value.
-
-═══════════════════════════════════════════════════════════════
-PRESENTATION FORMAT
-═══════════════════════════════════════════════════════════════
-
-Present the mapping as a bullet-point summary grouped by:
-kept in place, moved, newly added, removed.
-
-Always use OLD part names. Never show new scan names in the summary.
-Include the slot name for each part so the user can verify positions.
-
-After the summary, include:
-```mapping
-{...}
-```
-Then ask: "Does this look correct?"
-
-═══════════════════════════════════════════════════════════════
-SELF-CHECK BEFORE OUTPUT
-═══════════════════════════════════════════════════════════════
-
-  1. Did I look up actual slot assignments from the JSON? (not assumed)
-  2. Does every old part that still exists appear exactly once as a value?
-  3. Did I mark the removed part as absent (not in keys or values)?
-  4. Did I only move/swap parts the user explicitly mentioned moving?
-  5. Are all parts the user did NOT mention shown as "kept in place"?
-  6. Is the summary written entirely in old part names (no scan names)?
-
-═══════════════════════════════════════════════════════════════
-COMMUNICATION RULES
-═══════════════════════════════════════════════════════════════
-
-- Be concise. No filler, no greetings, no preamble.
-- Never repeat the scene JSONs or auto-match analysis.
-- ONLY use old part names when talking to the user.
-- When the user asks about a part by name, they mean the OLD identity.
-"""
+    lines.append("")
+    lines.append(
+        "For each UNMATCHED FRESH part, tell me which OLD part it corresponds to, "
+        "or say 'new' if it's a brand-new part. Output a ```mapping``` block:\n"
+        "```mapping\n"
+        '{"Part_<fresh>": "Part_<old>", "Part_<fresh2>": "new"}\n'
+        "```"
+    )
+    return "\n".join(lines)
 
 
 def _run_update_dialogue(client: OpenAI) -> None:
     """
-    LLM-guided scene update dialogue.
-
-    1. Captures a new camera image (via prepare_update).
-    2. Asks the user what they changed in the workspace.
-    3. Sends old scene, new scan, auto-match analysis AND the user's
-       description to the LLM.
-    4. The LLM uses the description to resolve ambiguities, only asking
-       follow-up questions if something remains unclear.
-    5. Once confirmed, applies the mapping and saves.
+    Fresh scan + user dialogue to resolve part identity.
+    Merges result back into configuration.json.
     """
-    from Configuration_Module.Update_Scene import (       # type: ignore
-        prepare_update, build_update_context, apply_update_mapping,
-    )
-
-    print("\n── Scene update ──\n")
+    from Configuration_Module.Update_Scene import (
+        prepare_update,
+        apply_update_mapping,
+    )  # type: ignore
 
     try:
-        old_state, fresh_state = prepare_update()
-    except Exception:
-        return          # error already printed by prepare_update
+        _run_vision_subprocess()
+    except RuntimeError as e:
+        print(f"\n❌  Vision failed: {e}\n")
+        return
 
-    old_scene = slim_scene(old_state)
-    new_scene = slim_scene(fresh_state)
-    context   = build_update_context(old_state, fresh_state)
+    old_state, fresh_state = prepare_update()
+    if old_state is None or fresh_state is None:
+        print("⚠  Update aborted (missing state files).")
+        return
 
-    # ── Ask the user what changed BEFORE involving the LLM ────────────
-    print("Before I map the detected parts, please briefly describe what")
-    print("you changed in the workspace (e.g. removed a part, moved a")
-    print("part, added a new one, swapped two parts, etc.).\n")
+    prompt_text = _build_update_prompt(old_state, fresh_state)
 
-    user_description = input("YOU: ").strip()
-    if not user_description:
-        user_description = "(no description provided)"
-
-    # ── Build initial LLM message including the user description ──────
     messages: List[Dict[str, str]] = [
-        {"role": "system", "content": _build_update_system_prompt()},
         {
-            "role": "user",
+            "role": "system",
             "content": (
-                "OLD SCENE:\n"
-                + json.dumps(old_scene, indent=2, ensure_ascii=False)
-                + "\n\nNEW SCAN:\n"
-                + json.dumps(new_scene, indent=2, ensure_ascii=False)
-                + "\n\nAUTO-MATCH:\n"
-                + context
-                + "\n\nUSER DESCRIPTION OF CHANGES:\n"
-                + user_description
-                + "\n\nResolve identities using the user's description and "
-                  "the auto-match data, then output the mapping."
+                "You are a helper that maps detected parts to their previous IDs.\n"
+                "Output ONLY a ```mapping``` block, nothing else."
             ),
         },
+        {"role": "user", "content": prompt_text},
     ]
 
-    pending_mapping: Optional[Dict[str, str]] = None
+    print("\n── Update Scene Dialogue ──\n")
 
     while True:
         assistant_text = chat(client, messages)
-        print(f"\nASSISTANT:\n{assistant_text}\n")
+        print(f"ASSISTANT:\n{assistant_text}\n")
         messages.append({"role": "assistant", "content": assistant_text})
 
-        # ── try to extract mapping block ──────────────────────────────
         try:
-            pending_mapping = extract_mapping_block(assistant_text)
-
-            # Validate completeness: every fresh part must be in the mapping
-            fresh_parts = set(fresh_state.get("objects", {}).get("parts", []))
-            mapped_keys = set(pending_mapping.keys())
-            missing_keys = fresh_parts - mapped_keys
-            extra_keys   = mapped_keys - fresh_parts
-
-            if missing_keys:
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        f"Mapping is missing these parts from the new scan: "
-                        f"{sorted(missing_keys)}. Please include ALL parts."
-                    ),
-                })
-                pending_mapping = None
-                continue
-            if extra_keys:
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        f"Mapping includes parts not in the new scan: "
-                        f"{sorted(extra_keys)}. Please fix."
-                    ),
-                })
-                pending_mapping = None
-                continue
-
-            # Validate: old names in values must actually exist in old config
-            old_parts = set(old_state.get("objects", {}).get("parts", []))
-            for fresh_name, target in pending_mapping.items():
-                if target != "new" and target not in old_parts:
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            f"'{target}' is not a part in the old config. "
-                            f"Old parts are: {sorted(old_parts)}. Please fix."
-                        ),
-                    })
-                    pending_mapping = None
-                    break
-            if pending_mapping is None:
-                continue
-
-        except ValueError as e:
-            if "```mapping" in (assistant_text or ""):
-                print(f"  [WARNING: mapping block parse error — {e}]")
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        f"Your mapping block failed to parse: {e}\n"
-                        "Please rewrite it."
-                    ),
-                })
-                pending_mapping = None
-                continue
-        except Exception:
-            pass
-
-        # ── user input ────────────────────────────────────────────────
-        user_input = input("YOU: ").strip()
-        if not user_input:
+            mapping = extract_mapping_block(assistant_text)
+        except Exception as e:
+            print(f"  [Mapping parse error: {e}]")
+            user = input("YOU (clarify or 'skip' to accept auto-matches only): ").strip()
+            if user.lower() == "skip":
+                mapping = {}
+                break
+            messages.append({"role": "user", "content": user})
             continue
 
-        if is_finish(user_input) and pending_mapping is None:
-            print("\n── Scene update cancelled. Old config restored. ──\n")
-            return
-
-        if pending_mapping is not None and (is_yes(user_input) or is_finish(user_input)):
-            apply_update_mapping(old_state, fresh_state, pending_mapping)
-            print("Loaded fresh scene from vision.")   # signal for GUI
-            return
-
-        if pending_mapping is not None and is_no(user_input):
-            pending_mapping = None
-            messages.append({
-                "role": "user",
-                "content": (
-                    "Mapping rejected. Ask what needs to change and "
-                    "produce a corrected mapping."
-                ),
-            })
+        # Got a valid mapping
+        user = input("YOU (confirm / reject / adjust): ").strip()
+        if is_yes(user):
+            break
+        if is_no(user):
+            messages.append({"role": "user", "content": "Rejected. Ask me again."})
             continue
+        messages.append({"role": "user", "content": user})
 
-        messages.append({"role": "user", "content": user_input})
+    apply_update_mapping(old_state, fresh_state, mapping)
+    print("✅  Update complete.\n")
 
 
-# ── Main session loop ─────────────────────────────────────────────────────────
+# ── Session runner ────────────────────────────────────────────────────────────
 
 def run_session(client: OpenAI, mode: str) -> None:
+    from Vision_Module.config import USE_PDDL_PLANNER  # type: ignore
 
-    # ── Option 3: Execute robot motion ────────────────────────────────────────
+    # ── Special-case: execute stored sequence ───────────────────────────────
     if mode == "execute":
-        if not SEQUENCE_PATH.exists():
-            print(f"\n⚠  No sequence.json found at {SEQUENCE_PATH.resolve()}")
-            print("   Plan a motion sequence first (option 2).\n")
-            return
-
-        sequence = json.loads(SEQUENCE_PATH.read_text(encoding="utf-8"))
-        print(f"\n▶  Executing {len(sequence)} step(s) from: {SEQUENCE_PATH.resolve()}")
-
-        from Execution_Module.Robot_Main import main as robot_main  # type: ignore
-        robot_main()
-        print("\n── Execution complete. ──\n")
-
-        from Configuration_Module.Apply_Sequence_Changes import apply_and_save  # type: ignore
-        updated = apply_and_save(CONFIGURATION_PATH, sequence, save_memory=True)
-
-        if updated:
-            from Configuration_Module.Update_Scene import run_post_execution_rescan  # type: ignore
-            run_post_execution_rescan(updated)
+        _run_robot_execution()
         return
 
-    # ── Option 2 (PDDL path): skip LLM dialogue, run planner directly ─────────
-    if mode == "motion":
-        from Vision_Module.config import USE_PDDL_PLANNER  # type: ignore
-        if USE_PDDL_PLANNER:
-            _run_pddl_sequence()
-            return
+    # ── Special-case: PDDL planning for motion mode ─────────────────────────
+    if mode == "motion" and USE_PDDL_PLANNER:
+        _run_pddl_sequence()
+        return
 
     # ── Option 1: Reconfiguration — choose scene source ──────────────────────
     if mode == "reconfig":
@@ -1145,6 +909,27 @@ def run_session(client: OpenAI, mode: str) -> None:
             continue
 
         messages.append({"role": "user", "content": user_input})
+
+
+def _run_robot_execution() -> None:
+    """
+    Execute the current sequence.json via Robot_Main.
+    Uses subprocess so rospy.init_node() gets a clean main thread.
+    """
+    import subprocess as _sp
+
+    run_script = PROJECT_DIR / "run_execute.py"
+    if not run_script.exists():
+        print(f"❌  run_execute.py not found: {run_script.resolve()}")
+        return
+
+    print("\n── Launching robot execution ──\n")
+    result = _sp.run([sys.executable, str(run_script)], cwd=str(PROJECT_DIR))
+
+    if result.returncode != 0:
+        print(f"⚠  Execution subprocess exited with code {result.returncode}")
+    else:
+        print("\n── Execution finished. ──\n")
 
 
 def _run_pddl_sequence() -> None:

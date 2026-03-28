@@ -1,0 +1,127 @@
+── Mode: Reconfiguration ──
+
+
+ASSISTANT:
+What would you like to change?
+
+YOU: Container 1 is a input
+
+ASSISTANT:
+```changes
+{
+  "Container_1": {"role": "input"}
+}
+```
+Confirm?
+
+YOU: yes
+✅  Changes noted.
+
+
+Anything else?
+YOU: 
+YOU: done
+  role: Container_1 → input
+✅  Configuration updated.
+✅  Image updated.
+✅  Changes saved.
+
+── Session complete. ──
+
+----------------------------------Success
+
+── Mode: Reconfiguration ──
+
+
+ASSISTANT:
+What would you like to change?
+
+YOU: Container 1 is a output
+
+ASSISTANT:
+```changes
+{
+  "Container_1": {"role": "output"}
+}
+```
+Confirm?
+
+YOU: yes
+✅  Changes noted.
+
+
+Anything else?
+YOU: 
+YOU: done
+  role: Container_1 → output
+✅  Configuration updated.
+✅  Image updated.
+✅  Changes saved.
+
+── Session complete. ──
+
+------------------------------Success
+
+── Mode: Reconfiguration ──
+
+
+ASSISTANT:
+What would you like to change?
+
+YOU: Kit 1 is a input
+
+ASSISTANT:
+```changes
+{
+  "Kit_1": {"role": "input"}
+}
+```
+Confirm?
+
+YOU: yes
+✅  Changes noted.
+
+
+Anything else?
+YOU: 
+YOU: done
+  role: Kit_1 → input
+✅  Configuration updated.
+✅  Image updated.
+✅  Changes saved.
+
+── Session complete. ──
+
+---------------------------------------Success
+
+── Mode: Reconfiguration ──
+
+
+ASSISTANT:
+What would you like to change?
+
+YOU: Kit1 is a output
+
+ASSISTANT:
+```changes
+{
+  "Kit_1": {"role": "output"}
+}
+```
+Confirm?
+
+YOU: yes
+✅  Changes noted.
+
+
+Anything else?
+YOU: 
+YOU: done
+  role: Kit_1 → output
+✅  Configuration updated.
+✅  Image updated.
+✅  Changes saved.
+
+── Session complete. ──
+
+----------------------------------------Success
