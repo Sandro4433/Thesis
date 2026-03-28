@@ -8,6 +8,7 @@ import numpy as np
 
 from Vision_Module.geometry import project, wrap_deg_180, wrap_deg_90, rot2d, OriginAxes
 from Vision_Module.vision_circles import detect_color_cluster_parts_on_board
+from Vision_Module.config import KIT_TAG_ID_TO_NUMBER, CONTAINER_TAG_ID_TO_NUMBER
 
 
 def _tag_center_to_board_m(r: Any, H_inv: np.ndarray) -> np.ndarray:
@@ -110,11 +111,13 @@ def compute_tag_targets_and_annotate(
 
         label_xy = (int(pts_i_int[0][0]), int(pts_i_int[0][1] - 10))
 
-        # Label by group (VIS only)
+        # Label by group (VIS only) - use mapped sequential numbers (1-3)
         if tag_id in kit_ids:
-            cv2.putText(img_vis, f"Kit {tag_id}", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, _CLR_TAG, 2)
+            kit_num = KIT_TAG_ID_TO_NUMBER.get(tag_id, tag_id)
+            cv2.putText(img_vis, f"Kit {kit_num}", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, _CLR_TAG, 2)
         elif tag_id in container_ids:
-            cv2.putText(img_vis, f"Container {tag_id}", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, _CLR_TAG, 2)
+            container_num = CONTAINER_TAG_ID_TO_NUMBER.get(tag_id, tag_id)
+            cv2.putText(img_vis, f"Container {container_num}", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, _CLR_TAG, 2)
         else:
             cv2.putText(img_vis, f"ID: {tag_id}", label_xy, cv2.FONT_HERSHEY_SIMPLEX, 0.9, _CLR_TAG, 2)
 
@@ -286,7 +289,7 @@ def targets_to_robot_entries(
 ) -> List[Dict[str, Any]]:
     """
     Outputs objects WITHOUT groupname:
-      - Slot: name="Kit_<tagid>_Pos_1" or "Container_<tagid>_Pos_6"
+      - Slot: name="Kit_1_Pos_1" or "Container_2_Pos_6" (using sequential numbering 1-3)
       - Part: name="Part_<k>"  (color stored separately in the Color field)
     """
     new_entries: List[Dict[str, Any]] = []
@@ -320,15 +323,18 @@ def targets_to_robot_entries(
                 new_entries.append(entry)
                 continue
 
-            # Slot
+            # Slot - use mapped sequential numbers (1-3) instead of AprilTag IDs
             if tag_id_int in kit_ids:
                 prefix = "Kit"
+                mapped_num = KIT_TAG_ID_TO_NUMBER.get(tag_id_int, tag_id_int)
             elif tag_id_int in container_ids:
                 prefix = "Container"
+                mapped_num = CONTAINER_TAG_ID_TO_NUMBER.get(tag_id_int, tag_id_int)
             else:
                 prefix = "Unknown"
+                mapped_num = tag_id_int
 
-            slot_name = f"{prefix}_{tag_id_int}_{name_suffix}"
+            slot_name = f"{prefix}_{mapped_num}_{name_suffix}"
 
             entry = {
                 "name": slot_name,
