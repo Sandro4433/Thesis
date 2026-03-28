@@ -33,6 +33,21 @@ CAMERA_HOME: Dict[str, Any] = {
 KIT_TAG_IDS = {0, 2, 4}
 CONTAINER_TAG_IDS = {1, 3, 5}
 
+# Mapping from AprilTag ID to sequential numbering (1-3)
+# Kits: AprilTag 0 → Kit 1, AprilTag 2 → Kit 2, AprilTag 4 → Kit 3
+KIT_TAG_ID_TO_NUMBER: Dict[int, int] = {
+    0: 1,
+    2: 2,
+    4: 3,
+}
+
+# Containers: AprilTag 1 → Container 1, AprilTag 3 → Container 2, AprilTag 5 → Container 3
+CONTAINER_TAG_ID_TO_NUMBER: Dict[int, int] = {
+    1: 1,
+    3: 2,
+    5: 3,
+}
+
 # Kit (AprilTag ID==0) local points (mm) + grip offsets relative to tag orientation (deg)
 KIT_POINTS: List[Dict[str, float]] = [
     {"name": "Pos_1", "dx_mm": 65.0, "dy_mm": 30.0, "grip_off_deg": 30.0},
