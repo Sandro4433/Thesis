@@ -450,12 +450,15 @@ Examples:
   {"part_fragility": "fragile", "allowed_in_role": "output", "not_allowed_in": ["Kit_2"]}
 
 CRITICAL FORMAT RULES:
-- Use the RECEPTACLE name (e.g. "Container_3", "Kit_0") for role changes,
-  NOT individual slot names.
-- Use the PART name (e.g. "Part_1") for color changes.
+- Use the RECEPTACLE name (e.g. "Container_1", "Kit_1") for role changes,
+  NOT individual slot names (Kit_1_Pos_1 is INVALID as a key).
+- Use the PART name (e.g. "Part_1") for color/fragility changes.
 - Never invent names. Use verbatim names from the INPUT JSON.
 - null means reset to default.
 - Do NOT include xy coordinates in the output blocks.
+- Do NOT use "child_part" — this is not a valid attribute.
+- Valid attributes for receptacles: role
+- Valid attributes for parts: color, fragility
 
 Example (kitting):
 ```changes
@@ -501,14 +504,54 @@ ATTRIBUTE INDEPENDENCE — CRITICAL:
 - If the user asks to change priority, change ONLY priority — nothing else.
 - Each attribute (operation_mode, batch_size, roles, kit_recipe, priority, 
   part_compatibility, fragility) is independent. Never assume one implies another.
-- Exception: Only bundle changes if the user explicitly requests multiple things
-  in the same message (e.g. "set up kitting with 2 blue parts" → both mode + recipe).
+- Exception: Task-based requests (see TASK-BASED REQUESTS below) require bundling.
+
+TASK-BASED REQUESTS — "place Part_X in Kit/Container_Y":
+When the user asks to move a specific part to a specific location, set up the
+configuration so the PDDL planner can accomplish this task:
+
+1. Determine source and destination:
+   - Find which receptacle currently holds the part (from the INPUT JSON)
+   - The destination is where the user wants the part to go
+
+2. Set roles:
+   - Source receptacle → role="input"
+   - Destination receptacle → role="output"
+
+3. Set operation_mode:
+   - If destination is a Kit → operation_mode="kitting"
+   - If destination is a Container → operation_mode="sorting"
+
+4. Set compatibility (so the planner knows this move is allowed):
+   - For kitting: kit_recipe with the part's color and quantity=1
+   - For sorting: part_compatibility allowing the part in the destination
+   - You can use part_name for specific parts: {"part_name": "Part_11", "allowed_in": ["Kit_1"]}
+
+Example — user says "place Part_11 in Kit_1" (Part_11 is green, currently in Container_1):
+```changes
+{
+  "Container_1": {"role": "input"},
+  "Kit_1": {"role": "output"},
+  "workspace": {"operation_mode": "kitting"},
+  "kit_recipe": [{"color": "green", "quantity": 1}]
+}
+```
+
+Example — user says "move Part_3 to Container_2" (Part_3 is blue, currently in Kit_1):
+```changes
+{
+  "Kit_1": {"role": "input"},
+  "Container_2": {"role": "output"},
+  "workspace": {"operation_mode": "sorting"},
+  "part_compatibility": [{"part_name": "Part_3", "allowed_in": ["Container_2"]}]
+}
+```
 
 You will receive an INPUT JSON with:
   - "workspace": operation_mode, batch_size
   - "receptacle_xy": {name: [x, y]} — position of each Kit/Container (metres)
-  - "slots": Kit_*/Container_* positions with role, child_part, and xy
-  - "parts": standalone parts with xy
+  - "slots": Kit_*/Container_* slot positions with xy and the part name if occupied
+  - "parts": standalone parts with color and xy
   Use xy values to resolve spatial references (left/right/front/back).
 
 SORTING INFERENCE (ONLY when user explicitly says "sort" or "set up sorting"):
