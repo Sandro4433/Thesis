@@ -15,7 +15,7 @@ Layout
 Button bar
 ----------
   Default  : Reconfigure | Plan Sequence | Execute | Exit
-  Configure: (text-input row enabled) + Cancel button only
+  Configure: (text-input row enabled) + Done button only
 """
 from __future__ import annotations
 
@@ -122,7 +122,7 @@ class RobotGUI:
 
         # scene-routing state
         self._config_from_memory   = False   # show placeholder instead of image
-        self._in_configure_mode    = False   # only Cancel in button bar
+        self._in_configure_mode    = False   # only Done in button bar
         self._first_menu_shown     = False   # greeting shown exactly once
         self._current_mode: str    = ""      # "reconfig" | "motion" | "execute"
         self._reconfig_sub: str    = ""      # pre-selected reconfig sub-option
@@ -512,7 +512,7 @@ class RobotGUI:
                 # Always use text input — no buttons — during configure mode
                 gui._in_req_q.put(("text", prompt))
                 raw = gui._in_resp_q.get().strip().lower()
-                # Allow the Cancel button (which sends "done") to exit cleanly
+                # Allow the Done button (which sends "done") to exit cleanly
                 if raw in ("done", "cancel", "exit", "quit"):
                     raise SystemExit(0)
                 return int(raw) - 1
@@ -764,15 +764,15 @@ class RobotGUI:
             self._btn(self._btn_bar, text, color, cmd).pack(side=tk.LEFT, padx=5)
 
     def _show_cancel_bar(self) -> None:
-        """Show only the Cancel button (used during configure mode)."""
+        """Show only the Done button (used during configure mode)."""
         self._clear_bar()
         self._btn(
-            self._btn_bar, "Cancel", C["bg_red"],
+            self._btn_bar, "Done", C["bg_accent"],
             self._cancel_configure,
         ).pack(side=tk.LEFT, padx=5)
 
     def _show_configure_options(self) -> None:
-        """Replace the main button bar with three configure sub-options + Cancel."""
+        """Replace the main button bar with three configure sub-options + Done."""
         self._clear_bar()
         self._set_input(False)
 
@@ -788,7 +788,7 @@ class RobotGUI:
             ("New Config",    C["bg_accent"], lambda: self._run_reconfig_sub("reconfig_fresh")),
             ("Update Config", C["bg_accent"], lambda: self._run_reconfig_sub("reconfig_update")),
             ("Edit Config",   C["bg_accent"], lambda: self._run_reconfig_sub("reconfig_memory")),
-            ("Cancel",        C["bg_red"],    self._show_main_menu),
+            ("Done",          C["bg_accent"], self._show_main_menu),
         ]
         for text, color, cmd in items:
             self._btn(self._btn_bar, text, color, cmd).pack(side=tk.LEFT, padx=5)
