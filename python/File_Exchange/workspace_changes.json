@@ -1,8 +1,34 @@
 {
+  "Part_7": {
+    "fragility": "fragile"
+  },
+  "Part_9": {
+    "fragility": "fragile"
+  },
+  "Part_11": {
+    "fragility": "fragile"
+  },
+  "part_compatibility": [
+    {
+      "part_fragility": "fragile",
+      "not_allowed_in": [
+        "Kit_1"
+      ]
+    },
+    {
+      "part_color": "green",
+      "allowed_in": [
+        "Kit_1"
+      ]
+    }
+  ],
   "Container_1": {
     "role": "input"
   },
   "Kit_1": {
     "role": "output"
+  },
+  "workspace": {
+    "operation_mode": "kitting"
   }
 }

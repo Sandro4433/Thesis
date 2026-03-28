@@ -4,13 +4,13 @@
 ASSISTANT:
 What would you like to change?
 
-YOU: Change the kit recipe to 1 red part
+YOU: Change the kit recipe to one red part
 
 ASSISTANT:
 ```changes
 {
   "kit_recipe": [
-    {"kit": "Kit_1", "color": "red", "quantity": 1}
+    {"color": "red", "quantity": 1},
   ]
 }
 ```
