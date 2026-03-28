@@ -1,5 +1,17 @@
 {
-  "workspace": {
-    "operation_mode": "sorting"
+  "Part_8": {
+    "fragility": "fragile"
+  },
+  "Part_9": {
+    "fragility": "fragile"
+  },
+  "Part_10": {
+    "fragility": "fragile"
+  },
+  "Part_11": {
+    "fragility": "normal"
+  },
+  "Part_12": {
+    "fragility": "fragile"
   }
 }
