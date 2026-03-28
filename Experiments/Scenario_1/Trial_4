@@ -1,0 +1,104 @@
+── Mode: Reconfiguration ──
+
+
+ASSISTANT:
+What would you like to change?
+
+YOU: change priority order to: red parts first
+
+ASSISTANT:
+```changes
+{
+  "priority": [{"color": "red", "order": 1}]
+}
+```
+Confirm?
+
+YOU: yes
+✅  Changes noted.
+
+
+Anything else?
+YOU: 
+YOU: done
+  priority: [{'color': 'red', 'order': 1}]
+✅  Configuration updated.
+✅  Image updated.
+✅  Changes saved.
+
+── Session complete. ──
+
+------------------------------Success
+
+── Mode: Reconfiguration ──
+
+
+ASSISTANT:
+What would you like to change?
+
+YOU: Change priority order to: red parts first, blue parts second
+
+ASSISTANT:
+```changes
+{
+  "priority": [
+    {"color": "red", "order": 1},
+    {"color": "blue", "order": 2}
+  ]
+}
+```
+Confirm?
+
+YOU: yes
+✅  Changes noted.
+
+
+Anything else?
+YOU: 
+YOU: done
+  priority: [{'color': 'red', 'order': 1}, {'color': 'blue', 'order': 2}]
+✅  Configuration updated.
+✅  Image updated.
+✅  Changes saved.
+
+── Session complete. ──
+
+----------------------------Success
+
+── Mode: Reconfiguration ──
+
+
+ASSISTANT:
+What would you like to change?
+
+YOU: Change priority order to: Red parts first, blue parts second, green parts last
+
+ASSISTANT:
+```changes
+{
+  "priority": [
+    {"color": "red", "order": 1},
+    {"color": "blue", "order": 2},
+    {"color": "green", "order": 3}
+  ]
+}
+```
+Confirm?
+
+YOU: yes
+✅  Changes noted.
+
+
+Anything else?
+YOU: 
+YOU: done
+  priority: [{'color': 'red', 'order': 1}, {'color': 'blue', 'order': 2}, {'color': 'green', 'order': 3}]
+✅  Configuration updated.
+✅  Image updated.
+✅  Changes saved.
+
+── Session complete. ──
+
+--------------------------------Success
+
+

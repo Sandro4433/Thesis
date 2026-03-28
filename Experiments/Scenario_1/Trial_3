@@ -1,0 +1,106 @@
+── Mode: Reconfiguration ──
+
+
+ASSISTANT:
+What would you like to change?
+
+YOU: Change the kit recipe to 1 red part
+
+ASSISTANT:
+```changes
+{
+  "kit_recipe": [
+    {"kit": "Kit_1", "color": "red", "quantity": 1}
+  ]
+}
+```
+Confirm?
+
+YOU: yes
+✅  Changes noted.
+
+
+Anything else?
+YOU: 
+YOU: done
+  kit_recipe: [{'kit': 'Kit_1', 'color': 'red', 'quantity': 1}]
+✅  Configuration updated.
+✅  Image updated.
+✅  Changes saved.
+
+── Session complete. ──
+
+------------------------------------Success
+
+── Mode: Reconfiguration ──
+
+
+ASSISTANT:
+What would you like to change?
+
+YOU: Change the kit recipe to one red part and one blue part
+
+ASSISTANT:
+```changes
+{
+  "kit_recipe": [
+    {"color": "red", "quantity": 1},
+    {"color": "blue", "quantity": 1}
+  ]
+}
+```
+Confirm?
+
+YOU: yes
+✅  Changes noted.
+
+
+Anything else?
+YOU: 
+YOU: done
+  kit_recipe: [{'color': 'red', 'quantity': 1}, {'color': 'blue', 'quantity': 1}]
+✅  Configuration updated.
+✅  Image updated.
+✅  Changes saved.
+
+── Session complete. ──
+
+---------------------------------------------------Success
+
+── Mode: Reconfiguration ──
+
+
+ASSISTANT:
+What would you like to change?
+
+YOU: Change the kit recipe to: 1 red part, 1 blue part and 1 green part
+
+ASSISTANT:
+```changes
+{
+  "kit_recipe": [
+    {"color": "red", "quantity": 1},
+    {"color": "blue", "quantity": 1},
+    {"color": "green", "quantity": 1}
+  ]
+}
+```
+Confirm?
+
+YOU: yes
+✅  Changes noted.
+
+
+Anything else?
+YOU: 
+YOU: done
+  kit_recipe: [{'color': 'red', 'quantity': 1}, {'color': 'blue', 'quantity': 1}, {'color': 'green', 'quantity': 1}]
+✅  Configuration updated.
+✅  Image updated.
+✅  Changes saved.
+
+── Session complete. ──
+
+-------------------------------Success
+
+
