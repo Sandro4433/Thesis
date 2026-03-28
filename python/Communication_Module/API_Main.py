@@ -157,6 +157,284 @@ def merge_changes(
     return merged
 
 
+# ── Conflict detection ────────────────────────────────────────────────────────
+
+def detect_conflicts(
+    accumulated: Dict[str, Any],
+    new_block: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    Detect conflicts between accumulated changes and new changes.
+    
+    Returns a list of conflict dicts:
+      {
+        "type": "workspace" | "receptacle" | "part" | "list_rule",
+        "key": str,              # e.g., "operation_mode", "Kit_1.role", "Part_7.fragility"
+        "old_value": Any,
+        "new_value": Any,
+        "description": str,      # Human-readable description
+      }
+    
+    Conflicts occur when:
+      - Same workspace attribute set to different values
+      - Same receptacle attribute set to different values
+      - Same part attribute set to different values
+      - Contradictory list rules (e.g., part_compatibility allowing AND excluding same part/receptacle)
+    """
+    conflicts: List[Dict[str, Any]] = []
+    
+    # ── Check workspace conflicts ──
+    acc_workspace = accumulated.get("workspace", {})
+    new_workspace = new_block.get("workspace", {})
+    
+    for attr in ("operation_mode", "batch_size"):
+        if attr in acc_workspace and attr in new_workspace:
+            old_val = acc_workspace[attr]
+            new_val = new_workspace[attr]
+            if old_val != new_val and old_val is not None and new_val is not None:
+                conflicts.append({
+                    "type": "workspace",
+                    "key": attr,
+                    "old_value": old_val,
+                    "new_value": new_val,
+                    "description": f"Workspace '{attr}' was set to '{old_val}', now changing to '{new_val}'",
+                })
+    
+    # ── Check receptacle conflicts (Kit_*, Container_*) ──
+    receptacle_keys = [k for k in new_block.keys() 
+                       if k.startswith(("Kit_", "Container_")) and isinstance(new_block[k], dict)]
+    
+    for rec_key in receptacle_keys:
+        if rec_key in accumulated and isinstance(accumulated[rec_key], dict):
+            acc_rec = accumulated[rec_key]
+            new_rec = new_block[rec_key]
+            
+            for attr in ("role",):  # Add other receptacle attributes as needed
+                if attr in acc_rec and attr in new_rec:
+                    old_val = acc_rec[attr]
+                    new_val = new_rec[attr]
+                    if old_val != new_val:
+                        conflicts.append({
+                            "type": "receptacle",
+                            "key": f"{rec_key}.{attr}",
+                            "old_value": old_val,
+                            "new_value": new_val,
+                            "description": f"{rec_key} '{attr}' was set to '{old_val}', now changing to '{new_val}'",
+                        })
+    
+    # ── Check part conflicts (Part_*) ──
+    part_keys = [k for k in new_block.keys() 
+                 if k.startswith("Part_") and isinstance(new_block[k], dict)]
+    
+    for part_key in part_keys:
+        if part_key in accumulated and isinstance(accumulated[part_key], dict):
+            acc_part = accumulated[part_key]
+            new_part = new_block[part_key]
+            
+            for attr in ("fragility", "color"):  # Part attributes
+                if attr in acc_part and attr in new_part:
+                    old_val = acc_part[attr]
+                    new_val = new_part[attr]
+                    if old_val != new_val:
+                        conflicts.append({
+                            "type": "part",
+                            "key": f"{part_key}.{attr}",
+                            "old_value": old_val,
+                            "new_value": new_val,
+                            "description": f"{part_key} '{attr}' was set to '{old_val}', now changing to '{new_val}'",
+                        })
+    
+    # ── Check part_compatibility conflicts ──
+    # Detect if a rule allows a part in a receptacle while another rule excludes it
+    acc_compat = accumulated.get("part_compatibility", [])
+    new_compat = new_block.get("part_compatibility", [])
+    
+    if acc_compat and new_compat:
+        # Build sets of (part_selector, allowed_receptacles) and (part_selector, excluded_receptacles)
+        for new_rule in new_compat:
+            new_allowed = set(new_rule.get("allowed_in", []))
+            new_excluded = set(new_rule.get("not_allowed_in", []))
+            
+            # Check new allowed against old excluded (and vice versa)
+            for old_rule in acc_compat:
+                old_allowed = set(old_rule.get("allowed_in", []))
+                old_excluded = set(old_rule.get("not_allowed_in", []))
+                
+                # Check if rules apply to same parts (simplified check)
+                same_parts = _rules_overlap(new_rule, old_rule)
+                if not same_parts:
+                    continue
+                
+                # Conflict: new allows what old excludes
+                overlap1 = new_allowed & old_excluded
+                if overlap1:
+                    conflicts.append({
+                        "type": "list_rule",
+                        "key": "part_compatibility",
+                        "old_value": old_rule,
+                        "new_value": new_rule,
+                        "description": f"New rule allows {overlap1} but previous rule excludes it for similar parts",
+                    })
+                
+                # Conflict: new excludes what old allows
+                overlap2 = new_excluded & old_allowed
+                if overlap2:
+                    conflicts.append({
+                        "type": "list_rule",
+                        "key": "part_compatibility",
+                        "old_value": old_rule,
+                        "new_value": new_rule,
+                        "description": f"New rule excludes {overlap2} but previous rule allows it for similar parts",
+                    })
+    
+    return conflicts
+
+
+def _rules_overlap(rule1: Dict[str, Any], rule2: Dict[str, Any]) -> bool:
+    """
+    Check if two part_compatibility rules might apply to overlapping parts.
+    Returns True if they could affect the same parts.
+    """
+    # If either has part_name, they only overlap if same part_name
+    if "part_name" in rule1 and "part_name" in rule2:
+        return rule1["part_name"] == rule2["part_name"]
+    
+    # If one has part_name and other has color/fragility, check if they could match
+    if "part_name" in rule1 or "part_name" in rule2:
+        # Could potentially match — be conservative and say yes
+        return True
+    
+    # Check color overlap
+    if "part_color" in rule1 and "part_color" in rule2:
+        if rule1["part_color"].lower() != rule2["part_color"].lower():
+            return False
+    
+    # Check fragility overlap
+    if "part_fragility" in rule1 and "part_fragility" in rule2:
+        if rule1["part_fragility"].lower() != rule2["part_fragility"].lower():
+            return False
+    
+    # Could potentially match same parts
+    return True
+
+
+def format_conflicts_for_user(conflicts: List[Dict[str, Any]]) -> str:
+    """Format conflicts into a user-friendly message."""
+    if not conflicts:
+        return ""
+    
+    lines = ["⚠️  Detected conflicting changes in this session:\n"]
+    
+    for i, conflict in enumerate(conflicts, 1):
+        lines.append(f"  {i}. {conflict['description']}")
+        lines.append(f"     - Previous: {conflict['old_value']}")
+        lines.append(f"     - New: {conflict['new_value']}")
+    
+    lines.append("\nDescribe what you would like to keep:")
+    
+    return "\n".join(lines)
+
+
+def resolve_conflicts(
+    accumulated: Dict[str, Any],
+    new_block: Dict[str, Any],
+    conflicts: List[Dict[str, Any]],
+    keep_new: bool,
+) -> Dict[str, Any]:
+    """
+    Resolve conflicts by choosing old or new values.
+    
+    If keep_new=True: merge normally (new overwrites old)
+    If keep_new=False: remove conflicting keys from new_block before merging
+    """
+    if keep_new:
+        # Normal merge — new values win
+        return merge_changes(accumulated, new_block)
+    
+    # Remove conflicting values from new_block
+    filtered_new = json.loads(json.dumps(new_block))  # Deep copy
+    
+    for conflict in conflicts:
+        if conflict["type"] == "workspace":
+            attr = conflict["key"]
+            if "workspace" in filtered_new and attr in filtered_new["workspace"]:
+                del filtered_new["workspace"][attr]
+        
+        elif conflict["type"] in ("receptacle", "part"):
+            # key is like "Kit_1.role" or "Part_7.fragility"
+            parts = conflict["key"].split(".")
+            if len(parts) == 2:
+                obj_key, attr = parts
+                if obj_key in filtered_new and isinstance(filtered_new[obj_key], dict):
+                    if attr in filtered_new[obj_key]:
+                        del filtered_new[obj_key][attr]
+        
+        elif conflict["type"] == "list_rule":
+            # For list rules, just don't add the conflicting new rule
+            if "part_compatibility" in filtered_new:
+                new_rule = conflict["new_value"]
+                filtered_new["part_compatibility"] = [
+                    r for r in filtered_new["part_compatibility"]
+                    if r != new_rule
+                ]
+    
+    return merge_changes(accumulated, filtered_new)
+
+
+def interpret_conflict_resolution(
+    client: OpenAI,
+    user_input: str,
+    conflicts: List[Dict[str, Any]],
+) -> bool:
+    """
+    Use LLM to interpret user's response to conflict resolution prompt.
+    
+    Returns True if user wants to keep NEW values, False for OLD values.
+    """
+    # Build context about the conflicts
+    conflict_descriptions = []
+    for i, conflict in enumerate(conflicts, 1):
+        conflict_descriptions.append(
+            f"Conflict {i}: {conflict['description']}\n"
+            f"  - Previous value: {conflict['old_value']}\n"
+            f"  - New value: {conflict['new_value']}"
+        )
+    
+    prompt = f"""The user was asked to resolve conflicting configuration changes.
+
+CONFLICTS:
+{chr(10).join(conflict_descriptions)}
+
+USER'S RESPONSE: "{user_input}"
+
+Based on the user's response, which values do they want to keep?
+Reply with ONLY one word: "NEW" or "OLD"
+
+- "NEW" means use the new/recent/second values
+- "OLD" means keep the previous/first/original values
+
+Interpret the user's intent from their response. They might:
+- Say the actual value they want (e.g., "sorting", "kitting", "input", "output", "fragile")
+- Use words like "new", "second", "latter", "recent" → NEW
+- Use words like "old", "previous", "first", "original" → OLD
+- Express preference in natural language
+
+Your answer (NEW or OLD):"""
+
+    try:
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=10,
+        )
+        answer = (response.choices[0].message.content or "").strip().upper()
+        return "NEW" in answer
+    except Exception as e:
+        print(f"  (Could not interpret response: {e}, defaulting to new value)")
+        return True
+
+
 # ── File saving ───────────────────────────────────────────────────────────────
 
 def save_sequence(sequence: List[List]) -> Path:
@@ -502,7 +780,7 @@ COMMUNICATION RULES — FOLLOW STRICTLY:
 - Your FIRST message must be ONLY: "What would you like to change?"
 - Ask at most ONE clarification question per turn. No multi-part questions.
 - When outputting a changes block, add ONLY "Confirm?" after it. No explanation.
-- After confirmation, respond ONLY with: "Anything else?"
+- After confirmation, respond ONLY with: "Anything else? If not, type or press 'done'."
 - After rejection, respond ONLY with: "What should I change?"
 
 NO-CHANGE HANDLING:
@@ -519,6 +797,18 @@ ATTRIBUTE INDEPENDENCE — CRITICAL:
 - Each attribute (operation_mode, batch_size, roles, kit_recipe, priority, 
   part_compatibility, fragility) is independent. Never assume one implies another.
 - Exception: Task-based requests (see TASK-BASED REQUESTS below) require bundling.
+
+CONVERSATION FLOW — CRITICAL:
+- If you ask a clarification question and the user responds with a NEW instruction
+  instead of answering your question, treat their response as the new request.
+- Do NOT keep asking the same clarification — the user has moved on.
+- Example:
+    YOU: "kitting"
+    ASSISTANT: "Which kits should be outputs?"
+    YOU: "switch to kitting mode"
+    → This is NOT an answer to your question. The user is clarifying they ONLY want 
+      to change operation_mode. Output the changes block for operation_mode immediately.
+- Always interpret the user's LATEST message as their current intent.
 
 TASK-BASED REQUESTS — "place Part_X in Kit/Container_Y":
 When the user asks to move a specific part to a specific location, set up the
@@ -606,7 +896,7 @@ NOTE: This inference ONLY applies when user explicitly requests sorting setup.
 
 CONFIRMATION:
 - After proposing changes: output block + "Confirm?"
-- Confirmed → "Anything else?"
+- Confirmed → "Anything else? If not, type or press 'done'."
 - Rejected → "What should I change?"
 
 """ + _COMMON_RULES
@@ -622,7 +912,7 @@ COMMUNICATION RULES — FOLLOW STRICTLY:
 - Your FIRST message must be ONLY: "What task do you want to execute?"
 - Ask at most ONE clarification question per turn.
 - When outputting a sequence block, add ONLY "Confirm?" after it.
-- After confirmation: "Anything else?"
+- After confirmation: "Anything else? If not, type or press 'done'."
 - After rejection: "What should I change?"
 
 NO-TASK HANDLING:
@@ -654,7 +944,7 @@ Do NOT include xy coordinates in the output blocks.
 
 CONFIRMATION:
 - Output block + "Confirm?"
-- Confirmed → "Anything else?"
+- Confirmed → "Anything else? If not, type or press 'done'."
 - Rejected → "What should I change?"
 
 """ + _COMMON_RULES
@@ -955,7 +1245,15 @@ def run_session(client: OpenAI, mode: str) -> None:
                 save_sequence(pending_sequence)
                 print("✅  Sequence saved.")
             if pending_changes is not None:
-                accumulated_changes = merge_changes(accumulated_changes, pending_changes)
+                # Check for conflicts before final merge
+                conflicts = detect_conflicts(accumulated_changes, pending_changes)
+                if conflicts:
+                    print(format_conflicts_for_user(conflicts))
+                    resolve_input = input("YOU: ").strip()
+                    keep_new = interpret_conflict_resolution(client, resolve_input, conflicts)
+                    accumulated_changes = resolve_conflicts(accumulated_changes, pending_changes, conflicts, keep_new)
+                else:
+                    accumulated_changes = merge_changes(accumulated_changes, pending_changes)
             if accumulated_changes:
                 save_changes(accumulated_changes)
                 _apply_and_save_config(accumulated_changes)
@@ -974,13 +1272,25 @@ def run_session(client: OpenAI, mode: str) -> None:
                 pending_sequence = None
 
             if pending_changes is not None:
-                accumulated_changes = merge_changes(accumulated_changes, pending_changes)
-                print(f"✅  Changes noted.\n")
+                # Check for conflicts before merging
+                conflicts = detect_conflicts(accumulated_changes, pending_changes)
+                if conflicts:
+                    print(format_conflicts_for_user(conflicts))
+                    resolve_input = input("YOU: ").strip()
+                    keep_new = interpret_conflict_resolution(client, resolve_input, conflicts)
+                    accumulated_changes = resolve_conflicts(accumulated_changes, pending_changes, conflicts, keep_new)
+                    if keep_new:
+                        print("✅  Using new values.\n")
+                    else:
+                        print("✅  Keeping previous values.\n")
+                else:
+                    accumulated_changes = merge_changes(accumulated_changes, pending_changes)
+                    print(f"✅  Changes noted.\n")
                 messages.append({"role": "user",      "content": "Confirmed the changes."})
                 messages.append({"role": "assistant",  "content": "Changes noted."})
                 pending_changes = None
 
-            user_input = input("Anything else?\nYOU: ").strip()
+            user_input = input("Anything else? If not, type or press 'done'.\nYOU: ").strip()
             if is_finish(user_input):
                 if accumulated_changes:
                     save_changes(accumulated_changes)
