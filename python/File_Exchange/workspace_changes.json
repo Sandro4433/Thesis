@@ -1,12 +1,8 @@
 {
-  "kit_recipe": [
-    {
-      "color": "red",
-      "quantity": 1
-    },
-    {
-      "color": "blue",
-      "quantity": 1
-    }
-  ]
+  "Container_1": {
+    "role": "input"
+  },
+  "Kit_1": {
+    "role": "output"
+  }
 }

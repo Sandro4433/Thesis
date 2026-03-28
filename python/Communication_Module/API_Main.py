@@ -28,6 +28,8 @@ MEMORY_DIR     = PROJECT_DIR / "Memory"
 # Fenced-block regexes
 SEQUENCE_BLOCK_RE = re.compile(r"```sequence\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 CHANGES_BLOCK_RE  = re.compile(r"```changes\s*(.*?)\s*```",  re.DOTALL | re.IGNORECASE)
+# Fallback: matches ```changes followed by content until Confirm/``` (greedy, then we extract JSON)
+CHANGES_BLOCK_FALLBACK_RE = re.compile(r"```changes\s*(.*?)\s*(?=Confirm|```|\Z)", re.DOTALL | re.IGNORECASE)
 MAPPING_BLOCK_RE  = re.compile(r"```mapping\s*(.*?)\s*```",  re.DOTALL | re.IGNORECASE)
 
 # Valid attribute values
@@ -65,6 +67,9 @@ def extract_sequence_block(text: str) -> List[List]:
 
 def extract_changes_block(text: str) -> Dict[str, Any]:
     m = CHANGES_BLOCK_RE.search(text or "")
+    if not m:
+        # Try fallback for LLM forgetting closing ```
+        m = CHANGES_BLOCK_FALLBACK_RE.search(text or "")
     if not m:
         raise ValueError("No ```changes``` block found.")
     data = json.loads(m.group(1).strip())
@@ -407,11 +412,15 @@ OUTPUT BLOCK — WORKSPACE CHANGES
 ──────────────────────────────────────────────────────────────
 Output ONLY the attributes that are actually changing — not the full scene.
 
+FORMAT (note the closing triple backticks on their own line):
 ```changes
 {
   "<receptacle_or_part_name>": {"<attribute>": <value>}
 }
 ```
+Confirm?
+
+IMPORTANT: The closing ``` must be on its own line BEFORE "Confirm?"
 
 Allowed keys and values:
   RECEPTACLE name (Kit_*, Container_*)   → "role": "input" | "output" | null
@@ -421,7 +430,24 @@ Allowed keys and values:
   "priority"                             → [{"color": "blue", "order": 1}, ...]
   "kit_recipe"                           → [{"color": "blue", "quantity": 2}, ...]
                                            (applies to ALL output kits)
-  "part_compatibility"                   → [{"part_color": "blue", "allowed_in": ["Container_1"]}, ...]
+  "part_compatibility"                   → Flexible rule-based format (see below)
+
+PART COMPATIBILITY RULES:
+Rules use AND logic for part selectors. Each rule can have:
+  Part selectors (combine with AND):
+    - "part_color": "blue" | "red" | "green"
+    - "part_fragility": "fragile" | "normal"
+    - "part_name": "Part_1" (specific part)
+  Receptacle selectors (pick ONE):
+    - "allowed_in": ["Container_1", "Kit_2"] — specific receptacles
+    - "allowed_in_role": "output" | "input" — all receptacles with that role
+    - "not_allowed_in": ["Kit_1"] — exclusion (can combine with allowed_in_role)
+
+Examples:
+  {"part_color": "blue", "allowed_in": ["Container_1"]}
+  {"part_fragility": "fragile", "allowed_in_role": "output"}
+  {"part_name": "Part_1", "not_allowed_in": ["Kit_1"]}
+  {"part_fragility": "fragile", "allowed_in_role": "output", "not_allowed_in": ["Kit_2"]}
 
 CRITICAL FORMAT RULES:
 - Use the RECEPTACLE name (e.g. "Container_3", "Kit_0") for role changes,
@@ -639,44 +665,28 @@ def _build_update_prompt(old_state: Dict, fresh_state: Dict) -> str:
     """
     from Configuration_Module.Update_Scene import build_update_context  # type: ignore
 
-    diff = build_update_context(old_state, fresh_state)
+    context = build_update_context(old_state, fresh_state)
+    
+    # Handle case where build_update_context returns unexpected type
+    if not isinstance(context, str):
+        raise ValueError(f"build_update_context returned unexpected type: {type(context)}")
 
     lines = [
-        "A fresh vision scan detected new positions. Help me match parts.",
+        "A fresh vision scan detected changes. Help me match parts.",
         "",
-        "OLD PARTS (from previous config):",
+        context,  # Already formatted string from build_update_context
+        "",
+        "For each unmatched fresh part, tell me which old part it corresponds to, "
+        "or say 'new' if it's a brand-new part. Output a ```mapping``` block:",
+        "```mapping",
+        '{"Part_<fresh>": "Part_<old>", "Part_<fresh2>": "new"}',
+        "```",
+        "",
+        "If all parts are already auto-matched, output an empty mapping:",
+        "```mapping",
+        "{}",
+        "```",
     ]
-    for p in diff.get("old_parts", []):
-        lines.append(f"  {p['name']}  color={p['color']}  xy={p['xy']}")
-
-    lines.append("")
-    lines.append("FRESH PARTS (from new scan):")
-    for p in diff.get("fresh_parts", []):
-        lines.append(f"  {p['name']}  color={p['color']}  xy={p['xy']}")
-
-    lines.append("")
-    lines.append("AUTO-MATCHED (same color, position within 25 mm):")
-    for m in diff.get("auto_matched", []):
-        lines.append(f"  {m['fresh']} ← {m['old']}")
-
-    lines.append("")
-    lines.append("UNMATCHED FRESH (need your decision):")
-    for p in diff.get("unmatched_fresh", []):
-        lines.append(f"  {p['name']}  color={p['color']}  xy={p['xy']}")
-
-    lines.append("")
-    lines.append("UNMATCHED OLD (may have been removed):")
-    for p in diff.get("unmatched_old", []):
-        lines.append(f"  {p['name']}  color={p['color']}  xy={p['xy']}")
-
-    lines.append("")
-    lines.append(
-        "For each UNMATCHED FRESH part, tell me which OLD part it corresponds to, "
-        "or say 'new' if it's a brand-new part. Output a ```mapping``` block:\n"
-        "```mapping\n"
-        '{"Part_<fresh>": "Part_<old>", "Part_<fresh2>": "new"}\n'
-        "```"
-    )
     return "\n".join(lines)
 
 

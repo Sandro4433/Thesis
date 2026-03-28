@@ -325,32 +325,118 @@ def _build_common_init(state, standalone, virtual_slots, VIRTUAL):
 
 
 def _build_compat_init(state, kits, containers):
+    """
+    Build PDDL compatibility predicates from flexible rules.
+    
+    Rule format supports multiple selectors (AND logic for part selectors):
+      Part selectors:
+        - part_color: "blue" | "red" | "green"
+        - part_fragility: "fragile" | "normal"  
+        - part_name: "Part_1" (specific part)
+      
+      Receptacle selectors (mutually exclusive):
+        - allowed_in: ["Container_1", "Kit_2"] — specific receptacles
+        - allowed_in_role: "output" | "input" — all receptacles with that role
+        - not_allowed_in: ["Kit_1"] — exclusion (used with allowed_in_role or alone)
+    
+    Examples:
+      {"part_color": "blue", "allowed_in": ["Container_1"]}
+      {"part_fragility": "fragile", "allowed_in_role": "output"}
+      {"part_name": "Part_1", "not_allowed_in": ["Kit_1"]}
+      {"part_color": "red", "part_fragility": "normal", "allowed_in_role": "input"}
+    """
     preds     = state.get("predicates", {})
     workspace = state.get("workspace",  {})
+    objs      = state.get("objects", {})
     mode      = (workspace.get("operation_mode") or "sorting").lower()
 
-    color_to_parts: Dict[str, List[str]] = {}
+    all_parts_raw = objs.get("parts", [])
+    all_receptacles = kits + containers
+
+    # Build part lookup maps
+    color_to_parts: Dict[str, set] = {}
     for entry in preds.get("color", []):
         c = (entry.get("color") or "").lower()
-        color_to_parts.setdefault(c, []).append(_to_pddl_name(entry["part"]))
+        color_to_parts.setdefault(c, set()).add(_to_pddl_name(entry["part"]))
 
-    all_receptacles = kits + containers
-    compat_entries  = preds.get("part_compatibility", [])
-    use_compat      = bool(compat_entries) and mode == "sorting"
+    fragility_to_parts: Dict[str, set] = {"normal": set(), "fragile": set()}
+    for entry in preds.get("fragility", []):
+        f = (entry.get("fragility") or "normal").lower()
+        fragility_to_parts.setdefault(f, set()).add(_to_pddl_name(entry["part"]))
+    # Parts without explicit fragility are "normal"
+    all_parts_pddl = {_to_pddl_name(p) for p in all_parts_raw}
+    explicitly_set = fragility_to_parts["normal"] | fragility_to_parts["fragile"]
+    fragility_to_parts["normal"] |= (all_parts_pddl - explicitly_set)
+
+    # Build receptacle role map
+    inputs, outputs = _role_map(preds)
+    role_to_receptacles: Dict[str, set] = {
+        "input": {_to_pddl_name(r) for r in inputs},
+        "output": {_to_pddl_name(r) for r in outputs},
+    }
+
+    compat_entries = preds.get("part_compatibility", [])
+    use_compat = bool(compat_entries)
 
     init: List[str] = []
+    
     if use_compat:
+        # Track all (part, receptacle) pairs that are compatible
+        compatible_pairs: set = set()
+        
         for rule in compat_entries:
-            color = (rule.get("part_color") or "").lower()
-            for rec_name in rule.get("allowed_in", []):
-                rec = _to_pddl_name(rec_name)
-                for part in color_to_parts.get(color, []):
-                    init.append(f"    (compatible {part} {rec})")
+            # ── Find matching parts (AND logic) ──
+            matching_parts = all_parts_pddl.copy()
+            
+            if "part_color" in rule:
+                color = (rule["part_color"] or "").lower()
+                matching_parts &= color_to_parts.get(color, set())
+            
+            if "part_fragility" in rule:
+                frag = (rule["part_fragility"] or "").lower()
+                matching_parts &= fragility_to_parts.get(frag, set())
+            
+            if "part_name" in rule:
+                part_name = _to_pddl_name(rule["part_name"])
+                matching_parts &= {part_name}
+            
+            if not matching_parts:
+                continue
+            
+            # ── Find matching receptacles ──
+            matching_receptacles: set = set()
+            
+            if "allowed_in" in rule:
+                # Specific receptacles
+                matching_receptacles = {_to_pddl_name(r) for r in rule["allowed_in"]}
+            elif "allowed_in_role" in rule:
+                # All receptacles with specified role
+                role = (rule["allowed_in_role"] or "").lower()
+                matching_receptacles = role_to_receptacles.get(role, set()).copy()
+            else:
+                # No positive selector — start with all receptacles (for not_allowed_in only rules)
+                matching_receptacles = set(all_receptacles)
+            
+            # Apply exclusions
+            if "not_allowed_in" in rule:
+                excluded = {_to_pddl_name(r) for r in rule["not_allowed_in"]}
+                matching_receptacles -= excluded
+            
+            # Add compatible pairs
+            for part in matching_parts:
+                for rec in matching_receptacles:
+                    compatible_pairs.add((part, rec))
+        
+        # Generate PDDL predicates
+        for part, rec in sorted(compatible_pairs):
+            init.append(f"    (compatible {part} {rec})")
     else:
-        parts = [_to_pddl_name(p) for p in state.get("objects", {}).get("parts", [])]
+        # No rules defined — all parts compatible with all output receptacles
+        parts = [_to_pddl_name(p) for p in all_parts_raw]
         for part in parts:
             for rec in all_receptacles:
                 init.append(f"    (compatible {part} {rec})")
+    
     return init
 
 

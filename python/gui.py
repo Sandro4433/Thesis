@@ -617,11 +617,31 @@ class RobotGUI:
             lines.append("")
             if compat:
                 lines.append("Compatibility:")
-                for e in compat:
-                    lines.append(
-                        f"  {e.get('part_color')} → "
-                        f"{', '.join(e.get('allowed_in', []))}"
-                    )
+                for rule in compat:
+                    # Build part selector description
+                    part_selectors = []
+                    if rule.get("part_name"):
+                        part_selectors.append(rule["part_name"])
+                    if rule.get("part_color"):
+                        part_selectors.append(f"{rule['part_color']} parts")
+                    if rule.get("part_fragility"):
+                        part_selectors.append(f"{rule['part_fragility']} parts")
+                    
+                    part_desc = " + ".join(part_selectors) if part_selectors else "all parts"
+                    
+                    # Build receptacle selector description
+                    if rule.get("allowed_in"):
+                        rec_desc = ", ".join(rule["allowed_in"])
+                    elif rule.get("allowed_in_role"):
+                        rec_desc = f"all {rule['allowed_in_role']}s"
+                    else:
+                        rec_desc = "all"
+                    
+                    # Add exclusions
+                    if rule.get("not_allowed_in"):
+                        rec_desc += f" (except {', '.join(rule['not_allowed_in'])})"
+                    
+                    lines.append(f"  {part_desc} → {rec_desc}")
             else:
                 lines.append("Compatibility: none")
 
