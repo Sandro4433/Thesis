@@ -465,10 +465,31 @@ def _contains_word(text: str, words) -> bool:
 
 def is_finish(text: str) -> bool:
     t = text.strip().lower()
-    return _contains_word(t, [
-        "finish", "finalize", "done", "end", "export",
-        "save", "write", "quit", "exit",
-    ]) or any(x in t for x in ["last step", "that's all", "thats all"])
+    
+    # These are always finish commands
+    if t in ("done", "end", "quit", "exit", "save", "finalize"):
+        return True
+    
+    # "finished" anywhere is a finish signal
+    if _contains_word(t, ["finished"]):
+        return True
+    
+    # Check for explicit finish phrases
+    finish_phrases = ["last step", "that's all", "thats all", "i'm done", "im done", 
+                      "we're done", "were done", "finish up", "wrap up"]
+    if any(x in t for x in finish_phrases):
+        return True
+    
+    # "finish" alone or "finish." but NOT "finish each kit", "finish the kit", etc.
+    if _contains_word(t, ["finish", "finalize"]):
+        # If "finish" is followed by task-related words, it's NOT a finish command
+        task_continuations = ["each", "kit", "container", "first", "before", "the", "all", "this", "that"]
+        for cont in task_continuations:
+            if f"finish {cont}" in t or f"finalize {cont}" in t:
+                return False
+        return True
+    
+    return False
 
 
 def is_yes(text: str) -> bool:
@@ -720,9 +741,33 @@ Allowed keys and values:
                                          → "fragility": "normal" | "fragile"
   "workspace"                            → {"operation_mode": "sorting"|"kitting", "batch_size": N}
   "priority"                             → [{"color": "blue", "order": 1}, ...]
+                                           OR [{"receptacle": "Kit_1", "order": 1}, ...]
+                                           OR both combined in same list
   "kit_recipe"                           → [{"color": "blue", "quantity": 2}, ...]
                                            (applies to ALL output kits)
   "part_compatibility"                   → Flexible rule-based format (see below)
+
+PRIORITY RULES:
+The priority list can contain BOTH color priorities AND receptacle priorities:
+  - Color priority: {"color": "blue", "order": 1} — which color to pick first
+  - Receptacle priority: {"receptacle": "Kit_1", "order": 1} — which kit/container to fill first
+
+When receptacle priorities are set, kits/containers with lower order numbers are filled first.
+This naturally achieves "finish Kit_1 before Kit_2" behavior.
+
+IMPORTANT — KIT/CONTAINER PRIORITY QUESTION:
+When setting up kitting or sorting with MULTIPLE output receptacles (2+ kits or containers),
+and the user has NOT specified which to fill first, you MUST ask:
+  "Should I finish each kit completely before moving to the next, or fill them in parallel?
+   (e.g., 'finish Kit_1 first' or 'fill them evenly')"
+
+If user says "finish each kit first" or similar → add receptacle priorities in order (Kit_1 order 1, Kit_2 order 2, etc.)
+If user says "fill evenly" / "in parallel" / "doesn't matter" → no receptacle priority needed, proceed without.
+
+Examples:
+  - "prioritize blue, then red" → [{"color": "blue", "order": 1}, {"color": "red", "order": 2}]
+  - "fill Kit_1 first" or "finish Kit_1 before the others" → [{"receptacle": "Kit_1", "order": 1}]
+  - "blue first, and fill Kit_1 before Kit_2" → [{"color": "blue", "order": 1}, {"receptacle": "Kit_1", "order": 1}, {"receptacle": "Kit_2", "order": 2}]
 
 PART COMPATIBILITY RULES:
 Rules use AND logic for part selectors. Each rule can have:
@@ -782,6 +827,18 @@ COMMUNICATION RULES — FOLLOW STRICTLY:
 - When outputting a changes block, add ONLY "Confirm?" after it. No explanation.
 - After confirmation, respond ONLY with: "Anything else? If not, type or press 'done'."
 - After rejection, respond ONLY with: "What should I change?"
+
+PROPOSAL ADJUSTMENT — CRITICAL:
+When you propose a changes block and the user asks for an adjustment (instead of confirming),
+your NEXT changes block must include ALL the previous changes PLUS the adjustment.
+Do NOT output only the adjustment — that would lose the other changes.
+
+Example:
+  YOU: [propose block with roles, workspace, priority]
+  USER: "fill Kit_2 first instead"
+  YOU: [output FULL block again with roles, workspace, AND adjusted priority]
+
+The user's adjustment is a modification to your proposal, not a standalone change.
 
 NO-CHANGE HANDLING:
 - If the user indicates no changes (e.g. "nothing", "no changes", "none", "skip", 

@@ -270,8 +270,21 @@ def _color_map(preds: Dict[str, Any]) -> Dict[str, str]:
 
 
 def _priority_key(preds: Dict[str, Any]):
-    order = {e["color"]: e["order"] for e in preds.get("priority", [])}
-    return lambda color: order.get(color, 999)
+    """Return sort key for colors based on priority list."""
+    order = {}
+    for e in preds.get("priority", []):
+        if "color" in e:
+            order[e["color"].lower()] = e.get("order", 999)
+    return lambda color: order.get(color.lower() if color else "", 999)
+
+
+def _receptacle_priority_key(preds: Dict[str, Any]):
+    """Return sort key for receptacles (kits/containers) based on priority list."""
+    order = {}
+    for e in preds.get("priority", []):
+        if "receptacle" in e:
+            order[e["receptacle"]] = e.get("order", 999)
+    return lambda rec: (order.get(rec, 999), rec)  # secondary sort by name for stability
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -551,7 +564,9 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int]:
 
     # ── priority assignments ──────────────────────────────────────────────────
     priority_entries = preds.get("priority", [])
-    color_to_level: Dict[str, int] = {e["color"]: int(e["order"]) for e in priority_entries}
+    # Filter to only color-based priorities (not receptacle priorities)
+    color_priority_entries = [e for e in priority_entries if "color" in e]
+    color_to_level: Dict[str, int] = {e["color"]: int(e["order"]) for e in color_priority_entries}
     num_priorities = max(color_to_level.values(), default=0)
 
     color_map_raw = {e["part"]: (e.get("color") or "").lower() for e in preds.get("color", [])}
@@ -609,6 +624,8 @@ def _goal_sorting(state: Dict[str, Any]) -> List[str]:
     Uses TWO-PASS approach:
       Pass 1: Process inclusion rules to build allowed receptacles
       Pass 2: Apply exclusion-only rules to remove receptacles
+    
+    Receptacle priority from priority list is used to determine which container to fill first.
     """
     preds        = state.get("predicates",    {})
     slot_belongs = state.get("slot_belongs_to", {})
@@ -616,6 +633,7 @@ def _goal_sorting(state: Dict[str, Any]) -> List[str]:
     inputs, outputs = _role_map(preds)
     color_map       = _color_map(preds)
     pkey            = _priority_key(preds)
+    rkey            = _receptacle_priority_key(preds)
 
     parts_in_slot = {e["part"] for e in preds.get("at", [])}
     parts_in_input = [
@@ -746,14 +764,14 @@ def _goal_sorting(state: Dict[str, Any]) -> List[str]:
                         print(f"  ⚠  target slot '{target_slot}' is not empty — skipping {part}")
                 continue
             
-            # No target_slot — auto-assign
-            valid = [r for r in allowed_recs if empty_by_receptacle.get(r)]
+            # No target_slot — auto-assign (sorted by receptacle priority)
+            valid = sorted([r for r in allowed_recs if empty_by_receptacle.get(r)], key=rkey)
         # Then check color-based rules
         elif color_to_allowed and color in color_to_allowed:
-            valid = [r for r in color_to_allowed[color] if empty_by_receptacle.get(r)]
-        # No rules defined — allow any output
+            valid = sorted([r for r in color_to_allowed[color] if empty_by_receptacle.get(r)], key=rkey)
+        # No rules defined — allow any output (sorted by receptacle priority)
         elif not compat_rules:
-            valid = [r for r in outputs if empty_by_receptacle.get(r)]
+            valid = sorted([r for r in outputs if empty_by_receptacle.get(r)], key=rkey)
         else:
             print(f"  ⚠  no part_compatibility rule for '{part}' (color={color}) — skipped.")
             continue
@@ -782,6 +800,11 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
         → applies to ALL output kits
     
     Universal recipes are expanded to all kits with role=output.
+    
+    Receptacle priority (from priority list with "receptacle" key):
+      - [{"receptacle": "Kit_1", "order": 1}, {"receptacle": "Kit_2", "order": 2}]
+      - Lower order = higher priority (filled first)
+      - This naturally achieves "finish Kit_1 before Kit_2" behavior
     """
     preds        = state.get("predicates",    {})
     slot_belongs = state.get("slot_belongs_to", {})
@@ -789,6 +812,7 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
     inputs, outputs = _role_map(preds)
     color_map    = _color_map(preds)
     pkey         = _priority_key(preds)
+    rkey         = _receptacle_priority_key(preds)
 
     # Build available parts (in input receptacles or standalone)
     available_parts: List[str] = []
@@ -801,8 +825,8 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
             available_parts.append(p)
 
     kit_set     = set(objs.get("kits", []))
-    # Only consider kits that are marked as output
-    output_kits = [k for k in kit_set if k in outputs]
+    # Only consider kits that are marked as output, sorted by priority
+    output_kits = sorted([k for k in kit_set if k in outputs], key=rkey)
     
     empty_slots: Dict[str, List[str]] = {}
     for s in preds.get("slot_empty", []):
@@ -862,14 +886,18 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
                 # Kit-specific recipe — use as-is
                 expanded_recipes.append(recipe)
             else:
-                # Universal recipe — expand to all output kits
-                for kit in sorted(output_kits):
+                # Universal recipe — expand to all output kits (in priority order)
+                for kit in output_kits:
                     expanded_recipes.append({
                         "kit": kit,
                         "color": recipe.get("color"),
                         "quantity": recipe.get("quantity"),
                         "size": recipe.get("size"),
                     })
+        
+        # Sort expanded recipes by kit priority first, then by color priority
+        # This fills higher-priority kits first (achieving "finish Kit_1 before Kit_2")
+        expanded_recipes.sort(key=lambda r: (rkey(r.get("kit", "")), pkey((r.get("color") or "").lower())))
 
         for recipe in expanded_recipes:
             kit   = recipe.get("kit", "")
@@ -974,8 +1002,10 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
                 if part in part_info:
                     part_info[part]["allowed_kits"] -= excluded_kits
         
-        # Generate goals for each part
-        for part, info in part_info.items():
+        # Generate goals for each part, sorted by color priority
+        sorted_parts = sorted(part_info.keys(), key=lambda p: pkey(color_map.get(p, "")))
+        for part in sorted_parts:
+            info = part_info[part]
             if part in used_parts:
                 continue
             
@@ -996,8 +1026,8 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
                         print(f"  ⚠  target slot '{target_slot}' is not empty — skipping {part}")
                 continue
             
-            # No target_slot — auto-assign to first available slot
-            for kit in sorted(allowed_kits):
+            # No target_slot — auto-assign to first available slot (sorted by receptacle priority)
+            for kit in sorted(allowed_kits, key=rkey):
                 free_slots_for_kit = empty_slots.get(kit, [])
                 if free_slots_for_kit:
                     slot = free_slots_for_kit.pop(0)
