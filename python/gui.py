@@ -553,11 +553,12 @@ class RobotGUI:
             # Mode
             ws = state.get("workspace", {})
             mode = ws.get("operation_mode") or "not set"
+            lines.append(f"Mode: {mode}")
+
+            # Batch Size
             batch = ws.get("batch_size")
-            mode_str = mode
-            if batch:
-                mode_str += f" (batch: {batch})"
-            lines.append(f"Mode: {mode_str}")
+            batch_str = str(batch) if batch else "not set"
+            lines.append(f"Batch Size: {batch_str}")
 
             # Roles
             roles = preds.get("role", [])
@@ -570,14 +571,14 @@ class RobotGUI:
             else:
                 lines.append("Roles: none")
 
-            # Fragility
+            # Part Fragility
             frag = [e["part"] for e in preds.get("fragility", [])
                     if e.get("fragility") == "fragile"]
             lines.append("")
             if frag:
-                lines.append(f"Fragile: {', '.join(sorted(frag))}")
+                lines.append(f"Part Fragility: {', '.join(sorted(frag))}")
             else:
-                lines.append("Fragile: none")
+                lines.append("Part Fragility: none")
 
             # Priority
             prio = preds.get("priority", [])
@@ -595,16 +596,21 @@ class RobotGUI:
             recipe = preds.get("kit_recipe", [])
             lines.append("")
             if recipe:
-                lines.append("Kit recipe:")
+                lines.append("Kit Recipe:")
+                # Group by color+quantity+size (ignore kit field for display)
+                seen = set()
                 for e in recipe:
+                    color = e.get("color", "")
+                    qty = e.get("quantity", 0)
                     size = e.get("size")
-                    size_str = f" {size}" if size else ""
-                    lines.append(
-                        f"  {e.get('kit')}: {e.get('quantity')}x"
-                        f" {e.get('color')}{size_str}"
-                    )
+                    key = (color, qty, size)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    size_str = f" ({size})" if size else ""
+                    lines.append(f"  {qty}x {color}{size_str}")
             else:
-                lines.append("Kit recipe: none")
+                lines.append("Kit Recipe: none")
 
             # Part compatibility
             compat = preds.get("part_compatibility", [])

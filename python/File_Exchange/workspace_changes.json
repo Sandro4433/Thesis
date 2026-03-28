@@ -1,5 +1,12 @@
 {
-  "Part_2": {
-    "fragility": "fragile"
-  }
+  "kit_recipe": [
+    {
+      "color": "red",
+      "quantity": 1
+    },
+    {
+      "color": "blue",
+      "quantity": 1
+    }
+  ]
 }

@@ -4,20 +4,20 @@
     "cx_px": 448,
     "cy_px": 556,
     "color": "Blue",
-    "diameter_mm": 52.91420221328735
+    "diameter_mm": 54.1384220123291
   },
   {
     "name": "Part_2",
     "cx_px": 670,
     "cy_px": 553,
     "color": "Green",
-    "diameter_mm": 46.18704319000244
+    "diameter_mm": 46.899378299713135
   },
   {
     "name": "Part_3",
     "cx_px": 555,
-    "cy_px": 360,
+    "cy_px": 361,
     "color": "Red",
-    "diameter_mm": 50.14902353286743
+    "diameter_mm": 51.35524272918701
   }
 ]
