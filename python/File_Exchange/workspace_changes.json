@@ -1,7 +1,4 @@
 {
-  "Container_2": {
-    "role": "input"
-  },
   "Container_3": {
     "role": "input"
   },
@@ -17,26 +14,16 @@
   "workspace": {
     "operation_mode": "kitting"
   },
-  "priority": [
+  "kit_recipe": [
     {
       "color": "blue",
-      "order": 1
-    },
-    {
-      "color": "red",
-      "order": 2
-    },
-    {
-      "receptacle": "Kit_1",
-      "order": 1
-    },
+      "quantity": 1
+    }
+  ],
+  "priority": [
     {
       "receptacle": "Kit_2",
-      "order": 2
-    },
-    {
-      "receptacle": "Kit_3",
-      "order": 3
+      "order": 1
     }
   ]
 }

@@ -115,11 +115,12 @@ def build_domain_pddl_costs(num_priorities: int, num_kit_priorities: int = 0) ->
     remains.
 
     Kit/receptacle priority (num_kit_priorities > 0):
-    For each kit priority level K, a derived predicate
-    (kit_priority_K_needs_filling) is true while any goal slot in a kit at
-    that level is still empty.  place-kit-priority-(K+1) requires
-    (not (kit_priority_K_needs_filling)), so the planner must fill
-    higher-priority kits before lower-priority ones.
+    For each receptacle priority level K, a derived predicate
+    (rec_priority_K_needs_filling) is true while any goal slot in a
+    receptacle at that level is still empty.  place-rec-priority-(K+1)
+    requires (not (rec_priority_K_needs_filling)), so the planner must
+    fill higher-priority receptacles before lower-priority ones.
+    Works for both kits AND containers.
 
     Requirements: :typing :negative-preconditions :existential-preconditions
                   :derived-predicates :action-costs
@@ -147,14 +148,14 @@ def build_domain_pddl_costs(num_priorities: int, num_kit_priorities: int = 0) ->
     for k in range(1, num_priorities + 1):
         pred_lines.append(f"    (priority_{k}_available)")
 
-    # ── Kit / receptacle priority predicates ──
+    # ── Receptacle priority predicates ──
     if num_kit_priorities > 0:
         pred_lines.append("    (is-goal-slot ?s - slot)")
         for k in range(1, num_kit_priorities + 1):
-            pred_lines.append(f"    (kit-priority-{k} ?r - kit)")
-        # Derived predicates for kit priority availability
+            pred_lines.append(f"    (rec-priority-{k} ?r - receptacle)")
+        # Derived predicates for receptacle priority availability
         for k in range(1, num_kit_priorities + 1):
-            pred_lines.append(f"    (kit_priority_{k}_needs_filling)")
+            pred_lines.append(f"    (rec_priority_{k}_needs_filling)")
 
     # Derived predicates — no numeric fluents needed
     derived_blocks = []
@@ -167,14 +168,14 @@ def build_domain_pddl_costs(num_priorities: int, num_kit_priorities: int = 0) ->
         )
         derived_blocks.append(block)
 
-    # ── Kit priority derived predicates ──
-    # (kit_priority_K_needs_filling) is true while any goal slot in a
-    # priority-K kit is still empty.
+    # ── Receptacle priority derived predicates ──
+    # (rec_priority_K_needs_filling) is true while any goal slot in a
+    # priority-K receptacle is still empty.
     for k in range(1, num_kit_priorities + 1):
         block = (
-            f"  (:derived (kit_priority_{k}_needs_filling)" + NL +
-            f"    (exists (?s - slot ?r - kit)" + NL +
-            f"      (and (kit-priority-{k} ?r) (slot-of ?s ?r)" + NL +
+            f"  (:derived (rec_priority_{k}_needs_filling)" + NL +
+            f"    (exists (?s - slot ?r - receptacle)" + NL +
+            f"      (and (rec-priority-{k} ?r) (slot-of ?s ?r)" + NL +
             f"           (is-goal-slot ?s) (slot-empty ?s))))" + NL
         )
         derived_blocks.append(block)
@@ -235,22 +236,22 @@ def build_domain_pddl_costs(num_priorities: int, num_kit_priorities: int = 0) ->
     # ── Place actions ──
     place_actions = []
     if num_kit_priorities > 0:
-        # Split place into per-kit-priority actions (hard constraint)
+        # Split place into per-receptacle-priority actions (hard constraint)
         for k in range(1, num_kit_priorities + 1):
-            kit_blocking = "".join(
-                NL + f"      (not (kit_priority_{j}_needs_filling))"
+            rec_blocking = "".join(
+                NL + f"      (not (rec_priority_{j}_needs_filling))"
                 for j in range(1, k)
             )
             place_actions.append(
-                f"  (:action place-kit-priority-{k}" + NL +
-                f"    :parameters (?p - part ?s - slot ?r - kit)" + NL +
+                f"  (:action place-rec-priority-{k}" + NL +
+                f"    :parameters (?p - part ?s - slot ?r - receptacle)" + NL +
                 f"    :precondition (and" + NL +
                 f"      (holding ?p)" + NL +
                 f"      (slot-empty ?s)" + NL +
                 f"      (slot-of ?s ?r)" + NL +
                 f"      (role-output ?r)" + NL +
                 f"      (compatible ?p ?r)" + NL +
-                f"      (kit-priority-{k} ?r){kit_blocking}" + NL +
+                f"      (rec-priority-{k} ?r){rec_blocking}" + NL +
                 f"    )" + NL +
                 f"    :effect (and" + NL +
                 f"      (at ?p ?s)" + NL +
@@ -262,42 +263,21 @@ def build_domain_pddl_costs(num_priorities: int, num_kit_priorities: int = 0) ->
                 f"  )"
             )
 
-        # Place for kits with no priority — fires only when all
-        # prioritised kits are filled
-        all_kit_blocking = "".join(
-            NL + f"      (not (kit_priority_{k}_needs_filling))"
+        # Place for receptacles with no priority — fires only when all
+        # prioritised receptacles are filled
+        all_rec_blocking = "".join(
+            NL + f"      (not (rec_priority_{k}_needs_filling))"
             for k in range(1, num_kit_priorities + 1)
         )
         place_actions.append(
-            "  (:action place-kit-no-priority" + NL +
-            "    :parameters (?p - part ?s - slot ?r - kit)" + NL +
+            "  (:action place-no-rec-priority" + NL +
+            "    :parameters (?p - part ?s - slot ?r - receptacle)" + NL +
             "    :precondition (and" + NL +
             "      (holding ?p)" + NL +
             "      (slot-empty ?s)" + NL +
             "      (slot-of ?s ?r)" + NL +
             "      (role-output ?r)" + NL +
-            "      (compatible ?p ?r)" + all_kit_blocking + NL +
-            "    )" + NL +
-            "    :effect (and" + NL +
-            "      (at ?p ?s)" + NL +
-            "      (not (slot-empty ?s))" + NL +
-            "      (not (holding ?p))" + NL +
-            "      (hand-empty)" + NL +
-            "      (increase (total-cost) 0)" + NL +
-            "    )" + NL +
-            "  )"
-        )
-
-        # Generic place for non-kit receptacles (e.g. containers)
-        place_actions.append(
-            "  (:action place-container" + NL +
-            "    :parameters (?p - part ?s - slot ?r - container)" + NL +
-            "    :precondition (and" + NL +
-            "      (holding ?p)" + NL +
-            "      (slot-empty ?s)" + NL +
-            "      (slot-of ?s ?r)" + NL +
-            "      (role-output ?r)" + NL +
-            "      (compatible ?p ?r)" + NL +
+            "      (compatible ?p ?r)" + all_rec_blocking + NL +
             "    )" + NL +
             "    :effect (and" + NL +
             "      (at ?p ?s)" + NL +
@@ -649,6 +629,7 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
     """
     objs  = state.get("objects",    {})
     preds = state.get("predicates", {})
+    inputs, outputs = _role_map(preds)
 
     kits       = [_to_pddl_name(k) for k in objs.get("kits",       [])]
     containers = [_to_pddl_name(c) for c in objs.get("containers", [])]
@@ -690,7 +671,7 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
         else:
             init.append(f"    (no-priority {p_pddl})")
 
-    # ── receptacle / kit priority assignments ────────────────────────────────
+    # ── receptacle priority assignments ────────────────────────────────────
     rec_priority_entries = [e for e in priority_entries if "receptacle" in e]
     rec_to_level: Dict[str, int] = {
         _to_pddl_name(e["receptacle"]): int(e["order"])
@@ -699,10 +680,11 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
     num_kit_priorities = max(rec_to_level.values(), default=0)
 
     if num_kit_priorities > 0:
-        for kit_name in kits:
-            level = rec_to_level.get(kit_name)
+        all_receptacles = kits + containers
+        for rec_name in all_receptacles:
+            level = rec_to_level.get(rec_name)
             if level is not None:
-                init.append(f"    (kit-priority-{level} {kit_name})")
+                init.append(f"    (rec-priority-{level} {rec_name})")
 
     # ── goal ─────────────────────────────────────────────────────────────────
     mode = (state.get("workspace", {}).get("operation_mode") or "sorting").lower()
@@ -710,17 +692,17 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
     if not goal_lines:
         raise ValueError("Could not generate a PDDL goal. Check roles and operation_mode.")
 
-    # ── mark goal slots (needed for kit priority derived predicates) ──────
+    # ── mark goal slots (needed for receptacle priority derived predicates) ──
     if num_kit_priorities > 0:
         import re
         slot_belongs = state.get("slot_belongs_to", {})
+        all_output_receptacles = set(kits + containers) & {_to_pddl_name(r) for r in outputs}
         for g in goal_lines:
             m = re.search(r'\(at\s+\S+\s+(\S+)\)', g)
             if m:
                 slot_name = m.group(1)
-                # Only mark kit slots (not container slots)
                 parent = slot_belongs.get(slot_name, "")
-                if _to_pddl_name(parent) in kits:
+                if _to_pddl_name(parent) in all_output_receptacles:
                     init.append(f"    (is-goal-slot {_to_pddl_name(slot_name)})")
 
     problem = (
@@ -1343,8 +1325,11 @@ def parse_plan_to_sequence(plan_text: str, state: Dict[str, Any]) -> List[List]:
         elif line_lower.startswith("place"):
             action    = "place"
             remainder = line_lower[5:].lstrip("-_")
-            # strip "kit-priority-K", "kit-no-priority", "container" infix
-            for prefix in (["kit-no-priority", "kit_no_priority", "container"]
+            # strip "rec-priority-K", "no-rec-priority", "kit-priority-K", "kit-no-priority", "container" infix
+            for prefix in (["no-rec-priority", "no_rec_priority",
+                            "kit-no-priority", "kit_no_priority", "container"]
+                           + [f"rec-priority-{k}" for k in range(1, 20)]
+                           + [f"rec_priority_{k}" for k in range(1, 20)]
                            + [f"kit-priority-{k}" for k in range(1, 20)]
                            + [f"kit_priority_{k}" for k in range(1, 20)]):
                 if remainder.startswith(prefix):
@@ -1447,7 +1432,7 @@ def plan_sequence(
 
             print(f"  backend        : Fast Downward  "
                   f"(PDDL 2.1 action costs, {num_priorities} color priority level(s)"
-                  f", {num_kit_priorities} kit priority level(s))")
+                  f", {num_kit_priorities} receptacle priority level(s))")
             plan_text = run_fast_downward(domain_path, problem_path, plan_path, fd_path)
 
         else:
