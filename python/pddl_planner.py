@@ -649,14 +649,55 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
     init  = _build_common_init(state, standalone, virtual_slots, VIRTUAL)
     init += _build_compat_init(state, kits, containers)
 
-    # ── color priority assignments ───────────────────────────────────────────
+    # ── priority assignments ─────────────────────────────────────────────────
     priority_entries = preds.get("priority", [])
-    # Filter to only color-based priorities (not receptacle priorities)
+    slot_belongs = state.get("slot_belongs_to", {})
+
+    # Color-based priorities → enforced as PDDL pick constraints
     color_priority_entries = [e for e in priority_entries if "color" in e]
     color_to_level: Dict[str, int] = {e["color"]: int(e["order"]) for e in color_priority_entries}
-    num_priorities = max(color_to_level.values(), default=0)
 
+    # ── Expand input-receptacle and part-name priorities to per-part pick levels ──
+    # When a receptacle priority refers to an INPUT receptacle, it means
+    # "pick from this source first" → expand to all parts currently in it.
+    # Part-name priorities also become per-part pick levels.
+    #
+    # These are enforced as PDDL pick constraints (like color priority).
+    # They are NOT applied when there are also sequential output constraints
+    # that would deadlock — see below.
+
+    part_pick_level: Dict[str, int] = {}  # part_name → pick priority level
+
+    # Build part→receptacle lookup for expansion
+    part_to_receptacle: Dict[str, str] = {}
+    for entry in preds.get("at", []):
+        parent = slot_belongs.get(entry["slot"], "")
+        part_to_receptacle[entry["part"]] = parent
+
+    has_pick_order = False  # track if any pick-order priorities exist
+
+    for entry in priority_entries:
+        level = int(entry.get("order", 999))
+
+        if "receptacle" in entry:
+            rec_name = entry["receptacle"]
+            if rec_name in inputs:
+                # Input receptacle → expand to all parts in it
+                has_pick_order = True
+                for p in objs.get("parts", []):
+                    if part_to_receptacle.get(p) == rec_name and p not in part_pick_level:
+                        part_pick_level[p] = level
+
+        elif "part_name" in entry:
+            has_pick_order = True
+            part_pick_level[entry["part_name"]] = level
+
+    # Combine color-level and part-level pick priorities
+    # Part-level takes precedence over color-level for the same part
     color_map_raw = {e["part"]: (e.get("color") or "").lower() for e in preds.get("color", [])}
+
+    all_pick_levels: set = set(color_to_level.values()) | set(part_pick_level.values())
+    num_priorities = max(all_pick_levels, default=0)
 
     # Initialise total-cost to zero (required by :action-costs)
     init.append("    (= (total-cost) 0)")
@@ -664,19 +705,41 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
     # Priority predicate tags per part
     for p_orig in objs.get("parts", []):
         p_pddl = _to_pddl_name(p_orig)
-        color  = color_map_raw.get(p_orig, "")
-        level  = color_to_level.get(color)
+        # Check part-specific pick level first
+        level = part_pick_level.get(p_orig)
+        if level is None:
+            # Fall back to color-based priority
+            color = color_map_raw.get(p_orig, "")
+            level = color_to_level.get(color)
         if level is not None:
             init.append(f"    (priority-{level} {p_pddl})")
         else:
             init.append(f"    (no-priority {p_pddl})")
 
-    # ── receptacle priority assignments ────────────────────────────────────
+    # ── receptacle (output) priority assignments ──────────────────────────
+    # Only OUTPUT receptacle priorities control fill order.
     rec_priority_entries = [e for e in priority_entries if "receptacle" in e]
-    rec_to_level: Dict[str, int] = {
-        _to_pddl_name(e["receptacle"]): int(e["order"])
-        for e in rec_priority_entries
-    }
+    rec_to_level: Dict[str, int] = {}
+    for e in rec_priority_entries:
+        rec_name = _to_pddl_name(e["receptacle"])
+        if e["receptacle"] in outputs:
+            rec_to_level[rec_name] = int(e["order"])
+
+    # Default to sequential filling when there are 2+ output receptacles
+    # and no explicit output receptacle priority was specified.
+    # Skip auto-sequential when there are explicit pick-order priorities
+    # (they can deadlock with sequential output filling).
+    workspace_cfg = state.get("workspace", {})
+    fill_order = (workspace_cfg.get("fill_order") or "").lower()
+    output_receptacles = sorted(
+        [_to_pddl_name(r) for r in outputs],
+        key=lambda r: r
+    )
+    if (not rec_to_level and not has_pick_order
+            and len(output_receptacles) >= 2 and fill_order != "parallel"):
+        for idx, rec_name in enumerate(output_receptacles, start=1):
+            rec_to_level[rec_name] = idx
+
     num_kit_priorities = max(rec_to_level.values(), default=0)
 
     if num_kit_priorities > 0:
@@ -757,7 +820,12 @@ def _goal_sorting(state: Dict[str, Any]) -> List[str]:
     ]
     standalone    = [p for p in objs.get("parts", []) if p not in parts_in_slot]
     parts_to_move = parts_in_input + standalone
-    parts_to_move.sort(key=lambda p: pkey(color_map.get(p, "")))
+
+    # Build part-name priority lookup
+    _part_prio = {e["part_name"]: int(e.get("order", 999))
+                  for e in preds.get("priority", []) if "part_name" in e}
+    # Sort by: part-name priority first (lower = earlier), then color priority
+    parts_to_move.sort(key=lambda p: (_part_prio.get(p, 999), pkey(color_map.get(p, ""))))
 
     compat_rules = preds.get("part_compatibility", [])
     
@@ -986,6 +1054,12 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
 
     # ── If we have kit_recipe, use color-based selection ──
     if raw_recipes:
+        # Build part-name priority lookup for candidate sorting
+        _part_priority_map: Dict[str, int] = {}
+        for e in preds.get("priority", []):
+            if "part_name" in e:
+                _part_priority_map[e["part_name"]] = int(e.get("order", 999))
+
         # Group available parts by color
         available_by_color: Dict[str, List[str]] = {}
         for p in available_parts:
@@ -1025,7 +1099,9 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
                 p for p in available_by_color.get(color, [])
                 if p not in used_parts and kit not in part_exclusions.get(p, set())
             ]
-            candidates.sort(key=lambda p: pkey(color))
+            # Sort: parts with explicit part-name priority first (by order),
+            # then remaining parts (stable order)
+            candidates.sort(key=lambda p: _part_priority_map.get(p, 999))
 
             for part, slot in zip(candidates[:qty], free_slots[:qty]):
                 goals.append(f"(at {_to_pddl_name(part)} {_to_pddl_name(slot)})")
@@ -1117,8 +1193,10 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
                 if part in part_info:
                     part_info[part]["allowed_kits"] -= excluded_kits
         
-        # Generate goals for each part, sorted by color priority
-        sorted_parts = sorted(part_info.keys(), key=lambda p: pkey(color_map.get(p, "")))
+        # Generate goals for each part, sorted by part-name priority then color priority
+        _pp = {e["part_name"]: int(e.get("order", 999))
+               for e in preds.get("priority", []) if "part_name" in e}
+        sorted_parts = sorted(part_info.keys(), key=lambda p: (_pp.get(p, 999), pkey(color_map.get(p, ""))))
         for part in sorted_parts:
             info = part_info[part]
             if part in used_parts:
