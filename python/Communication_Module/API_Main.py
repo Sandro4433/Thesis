@@ -810,6 +810,21 @@ Example (kitting):
   "priority": [{"color": "blue", "order": 1}, {"color": "red", "order": 2}]
 }
 ```
+
+Example (kitting with multiple colors — ALL source containers must be input):
+If Container_2 has red parts and Container_3 has blue parts, and the user says
+"kitting with blue first then red", BOTH containers must be input:
+```changes
+{
+  "Container_2": {"role": "input"},
+  "Container_3": {"role": "input"},
+  "Kit_1": {"role": "output"},
+  "Kit_2": {"role": "output"},
+  "workspace": {"operation_mode": "kitting"},
+  "priority": [{"color": "blue", "order": 1}, {"color": "red", "order": 2},
+               {"receptacle": "Kit_1", "order": 1}, {"receptacle": "Kit_2", "order": 2}]
+}
+```
 """
 
 
@@ -954,6 +969,17 @@ B — Source = receptacles with mixed colors → role="input".
 C — Always emit: source roles, destination roles, workspace, part_compatibility.
 D — If a container has mixed colors, ask which color it should receive.
 NOTE: This inference ONLY applies when user explicitly requests sorting setup.
+      Do NOT apply this for other requests like "change roles" or "set priority".
+
+KITTING INFERENCE (ONLY when user explicitly says "kitting" or "set up kitting"):
+When the user's instruction mentions COLORS (e.g. "kitting with blue parts first then red parts"):
+A — Look at the INPUT JSON to identify ALL containers that hold parts of the mentioned colors.
+B — Set ALL those containers as role="input" — not just one of them.
+C — Set the destination kits as role="output".
+D — Always emit: source roles, destination roles, workspace, priority.
+Example: User says "kitting with blue and red parts". Scene has Container_2 (red parts)
+and Container_3 (blue parts). BOTH must be set to role="input", not just one.
+NOTE: This inference ONLY applies when user explicitly requests kitting setup.
       Do NOT apply this for other requests like "change roles" or "set priority".
 
 """ + _CHANGES_BLOCK_RULES + """
