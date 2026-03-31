@@ -676,6 +676,12 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
 
     has_pick_order = False  # track if any pick-order priorities exist
 
+    # Color priority also counts as a pick-order constraint:
+    # it prevents the auto-sequential kit-filling from being injected
+    # when color priority is active, which would otherwise deadlock.
+    if color_to_level:
+        has_pick_order = True
+
     for entry in priority_entries:
         level = int(entry.get("order", 999))
 
@@ -692,12 +698,23 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
             has_pick_order = True
             part_pick_level[entry["part_name"]] = level
 
-    # Combine color-level and part-level pick priorities
-    # Part-level takes precedence over color-level for the same part
+    # Combine color-level and part-level pick priorities.
+    # Part-level takes precedence over color-level for the same part.
     color_map_raw = {e["part"]: (e.get("color") or "").lower() for e in preds.get("color", [])}
 
-    all_pick_levels: set = set(color_to_level.values()) | set(part_pick_level.values())
-    num_priorities = max(all_pick_levels, default=0)
+    # Collect all raw order values used across both priority sources, then
+    # compact them to a contiguous 1..N range.  This prevents phantom levels
+    # (e.g. orders {1, 3} would previously generate an unused priority-2
+    # predicate/action) and keeps the domain as small as possible.
+    raw_levels: set = set(color_to_level.values()) | set(part_pick_level.values())
+    sorted_levels = sorted(raw_levels)
+    level_remap: Dict[int, int] = {old: new for new, old in enumerate(sorted_levels, start=1)}
+
+    # Apply remapping so downstream code always sees contiguous 1..N levels.
+    color_to_level = {c: level_remap[v] for c, v in color_to_level.items()}
+    part_pick_level = {p: level_remap[v] for p, v in part_pick_level.items()}
+
+    num_priorities = len(sorted_levels)
 
     # Initialise total-cost to zero (required by :action-costs)
     init.append("    (= (total-cost) 0)")

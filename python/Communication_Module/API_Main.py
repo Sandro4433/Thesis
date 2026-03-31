@@ -435,6 +435,139 @@ Your answer (NEW or OLD):"""
         return True
 
 
+# ── Priority ambiguity detection ─────────────────────────────────────────────
+
+def detect_priority_ambiguity(
+    priority_list: List[Dict[str, Any]],
+    color_map: Dict[str, str],          # part_name → color (lowercase)
+) -> List[str]:
+    """
+    Check a priority list for logical ambiguities that require user clarification
+    before a PDDL plan can be generated correctly.
+
+    Returns a list of human-readable ambiguity descriptions (empty = no conflict).
+
+    Detected ambiguities
+    ────────────────────
+    1. PART-vs-COLOR  — a part_name entry has a different order than the color
+       entry for its own color.  The planner remaps to contiguous levels, but the
+       relative ordering of that part vs. same-color siblings is undefined.
+       Example: color blue → order 1, Part_1 (blue) → order 2
+       → "Part_1 is blue (priority 1) but is itself assigned priority 2.
+          Should it be picked before or after the other blue parts?"
+
+    2. PART-vs-RECEPTACLE(input)  — a part_name entry and an input-receptacle
+       entry share the same order value, but the part does NOT sit in that
+       receptacle.  The effective pick level is the same, but the intent is
+       ambiguous (same-level tie has no defined winner).
+       Example: Source_1 → order 1, Part_5 (not in Source_1) → order 1
+
+    3. COLOR-vs-RECEPTACLE(input)  — a color entry and an input-receptacle entry
+       share the same order value, but the receptacle contains parts of a
+       different color (or mixed colors).
+       Example: color blue → order 1, Source_1 (contains only red) → order 1
+
+    4. DUPLICATE ORDER across incompatible types  — two entries of different types
+       (color / part_name / input-receptacle) share the same order value while
+       referring to disjoint sets of parts.  The relative pick order within that
+       level is undefined.
+       Example: color blue → order 1, Part_3 (red) → order 1
+
+    5. CONTRADICTORY OUTPUT-RECEPTACLE  — the same receptacle appears with
+       different order values (already caught by detect_conflicts, but double-
+       checked here for priority-only changes).
+    """
+    ambiguities: List[str] = []
+
+    color_entries   = {e["color"].lower(): int(e["order"])
+                       for e in priority_list if "color" in e}
+    part_entries    = {e["part_name"]: int(e["order"])
+                       for e in priority_list if "part_name" in e}
+    rec_entries     = {e["receptacle"]: int(e["order"])
+                       for e in priority_list if "receptacle" in e}
+
+    # Invert color_map: color → set of part names
+    parts_by_color: Dict[str, List[str]] = {}
+    for part, col in color_map.items():
+        parts_by_color.setdefault(col, []).append(part)
+
+    # ── 1. Part-vs-Color: part has a different priority level than its color ──
+    for part, p_order in part_entries.items():
+        col = color_map.get(part, "").lower()
+        if col and col in color_entries:
+            c_order = color_entries[col]
+            if p_order != c_order:
+                ambiguities.append(
+                    f"Part-vs-color conflict: {part} is {col} "
+                    f"(color priority {c_order}) but has its own priority {p_order}. "
+                    f"Should {part} be picked before, after, or together with the other "
+                    f"{col} parts?"
+                )
+
+    # ── 2 & 4. Same order across different types on disjoint part sets ────────
+    # Collect (type-label, order, frozenset-of-parts) for all pick-priority entries.
+    pick_groups: List[tuple] = []
+
+    for col, order in color_entries.items():
+        parts = frozenset(parts_by_color.get(col, []))
+        pick_groups.append(("color", col, order, parts))
+
+    for part, order in part_entries.items():
+        pick_groups.append(("part_name", part, order, frozenset([part])))
+
+    # For receptacle-priority entries that refer to INPUT receptacles we would
+    # need the live scene to know which parts are in them; we flag the ambiguity
+    # only when the order collides with a color/part_name of a non-overlapping set.
+    # (Full receptacle expansion happens in pddl_planner; here we do a best-effort check.)
+
+    # Detect same-order collisions between different type groups
+    from collections import defaultdict
+    by_order: Dict[int, List[tuple]] = defaultdict(list)
+    for grp in pick_groups:
+        by_order[grp[2]].append(grp)
+
+    for order, grps in by_order.items():
+        if len(grps) < 2:
+            continue
+        # Check if any two groups refer to disjoint part sets
+        for i in range(len(grps)):
+            for j in range(i + 1, len(grps)):
+                t1, label1, _, parts1 = grps[i]
+                t2, label2, _, parts2 = grps[j]
+                if t1 == t2 == "color":
+                    continue  # two colors at same level: fine — they're unordered siblings
+                if parts1 & parts2:
+                    continue  # overlapping sets: same part, handled by rule 1
+                ambiguities.append(
+                    f"Same-order conflict at priority {order}: "
+                    f"{t1} '{label1}' and {t2} '{label2}' cover different parts "
+                    f"but share the same pick priority. "
+                    f"Which should be picked first?"
+                )
+
+    # ── 5. Duplicate output-receptacle order values ───────────────────────────
+    order_to_recs: Dict[int, List[str]] = {}
+    for rec, order in rec_entries.items():
+        order_to_recs.setdefault(order, []).append(rec)
+    for order, recs in order_to_recs.items():
+        if len(recs) > 1:
+            ambiguities.append(
+                f"Receptacle-order conflict: {' and '.join(recs)} are both assigned "
+                f"fill priority {order}. Which should be filled first?"
+            )
+
+    return ambiguities
+
+
+def format_priority_ambiguities(ambiguities: List[str]) -> str:
+    """Format priority ambiguities into a user-facing message."""
+    if not ambiguities:
+        return ""
+    lines = ["⚠️  Priority conflict detected — please clarify:\n"]
+    for i, a in enumerate(ambiguities, 1):
+        lines.append(f"  {i}. {a}")
+    return "\n".join(lines)
+
 # ── File saving ───────────────────────────────────────────────────────────────
 
 def save_sequence(sequence: List[List]) -> Path:
@@ -764,6 +897,36 @@ Sequential filling is the DEFAULT — you do not need to add receptacle prioriti
 Only add receptacle priorities when the user wants a SPECIFIC non-alphabetical order
 (e.g. "fill Kit_2 first").
 
+PRIORITY AMBIGUITY — ASK BEFORE OUTPUTTING A BLOCK:
+Before emitting a changes block that contains a "priority" list, check for logical
+conflicts. If ANY of the following are true, DO NOT output a block — ask the user
+to clarify instead (one focused question per conflict, never a list of questions):
+
+  A. Part-vs-color conflict:
+     A part_name entry has a DIFFERENT order than the color entry for its own color.
+     Example: color blue → order 1, Part_1 (which IS blue) → order 2
+     → Part_1 would be picked AFTER the other blue parts. Is that the intent?
+     → Ask: "Part_1 is blue (priority 1) but you also gave it priority 2.
+             Should it be picked before, after, or at the same time as the other blue parts?"
+
+  B. Same-order collision across different type groups (disjoint parts):
+     A color entry and a part_name entry share the same order value but cover
+     DIFFERENT parts (no overlap).
+     Example: color blue → order 1, Part_3 (red, not blue) → order 1
+     → Both would be picked at the same level with no defined winner.
+     → Ask: "Blue parts and Part_3 both have priority 1.
+             Which should be picked first — blue parts or Part_3?"
+
+  C. Same-order collision with input-receptacle entry:
+     An input-receptacle priority and a color or part_name priority share the same
+     order value but refer to different parts.
+     → Ask which takes precedence at that level.
+
+  D. Duplicate output-receptacle order:
+     Two or more output receptacles (kits/containers) are assigned the same fill
+     priority order value.
+     → Ask which should be filled first.
+
 IMPORTANT — NEVER ASSUME, BUT ONLY ASK WHEN RELEVANT:
 Do NOT hardcode a fixed checklist of questions. Use judgment — only ask about things
 that are genuinely ambiguous or missing given the user's request.
@@ -783,7 +946,7 @@ Color priority:
 - If only one color is involved → color priority is meaningless, don't ask about it.
 
 Kit recipe:
-- Only ask if the user mentions multiple colors but hasn't specified quantities.
+- Only ask if the user mentions multiple colors but haven't specified quantities.
 - If the user already said "1 green part per kit" → you have the recipe, don't ask.
 - If only one color and no quantity specified → you can ask, or infer "fill available slots".
 
@@ -791,6 +954,16 @@ Examples:
   - "prioritize blue, then red" → [{"color": "blue", "order": 1}, {"color": "red", "order": 2}]
   - "fill Kit_1 first" or "finish Kit_1 before the others" → [{"receptacle": "Kit_1", "order": 1}]
   - "blue first, and fill Kit_1 before Kit_2" → [{"color": "blue", "order": 1}, {"receptacle": "Kit_1", "order": 1}, {"receptacle": "Kit_2", "order": 2}]
+  - "blue first, and also Part_1 and Part_8 first" (Part_1 and Part_8 are NOT blue):
+    → CONFLICT: blue = order 1, Part_1 = ?, Part_8 = ? — disjoint sets at the same level
+    → Ask: "Part_1 and Part_8 are not blue. Should they be picked before, after,
+            or at the same time as the blue parts?"
+  - "blue first, and also Part_2 first" (Part_2 IS blue):
+    → No conflict — Part_2 is already covered by the blue group (order 1).
+    → No separate part_name entry needed unless Part_2 should be singled out WITHIN
+      the blue group. If that's the intent, ask:
+      "Should Part_2 be picked before the other blue parts, or just before red?"
+
 
 PART COMPATIBILITY RULES:
 Rules use AND logic for part selectors. Each rule can have:
@@ -1010,6 +1183,30 @@ E — Only ask clarifying questions that are genuinely needed given what the use
     (e.g. don't ask about color priority when there's only one color).
 F — Always emit: source roles, destination roles, workspace. Add priority and kit_recipe
     only when the user has explicitly provided them.
+
+G — CAPACITY CHECK — always do this before emitting a changes block:
+    Count the total empty slots across all output kits (from the INPUT JSON).
+    Count the parts available from the containers you are about to mark as input.
+    If available parts < total kit slots:
+      → The kits cannot all be filled with just those parts.
+      → DO NOT silently leave kits partially empty.
+      → Ask the user what should fill the remaining slots BEFORE emitting a block.
+    Typical triggers:
+      - User says "use [color] parts first" but only one container holds that color
+        and it does not have enough parts to fill all kits.
+      - User specifies specific parts to prioritize, but those parts are fewer than
+        the total number of kit slots.
+    Example: 3 kits × 3 slots = 9 slots. Only 6 green parts are available.
+    → Ask: "There are only 6 green parts but 9 kit slots total. Should the remaining
+            3 slots be filled with red or blue parts? And which container holds those?"
+
+H — CONTAINER SCOPE — derive which containers must be inputs from the capacity check:
+    If the user says "use green first" and green parts do not fill all kits,
+    the other containers (red, blue) must ALSO be set as role="input" so the planner
+    can access them for the remaining slots — unless the user explicitly said otherwise.
+    Do NOT limit inputs to only the containers holding the priority color.
+    Set ALL containers that will contribute parts as role="input".
+
 Example: User says "kitting with blue and red parts". Scene has Container_2 (red parts)
 and Container_3 (blue parts). BOTH must be set to role="input", not just one.
 NOTE: This inference ONLY applies when user explicitly requests kitting setup.
@@ -1357,6 +1554,35 @@ def run_session(client: OpenAI, mode: str) -> None:
                         "Please rewrite the changes block."
                     ),
                 })
+                continue
+
+        # ── Priority ambiguity guard ──────────────────────────────────────────
+        # If the LLM produced a changes block containing a priority list, check
+        # it for logical conflicts before showing it to the user.  Conflicts are
+        # fed back into the conversation so the LLM asks for clarification itself.
+        if pending_changes and "priority" in pending_changes:
+            _preds      = state.get("predicates", {})
+            _color_map  = {
+                e["part"]: (e.get("color") or "").lower()
+                for e in _preds.get("color", [])
+            }
+            _ambiguities = detect_priority_ambiguity(
+                pending_changes["priority"], _color_map
+            )
+            if _ambiguities:
+                _msg = format_priority_ambiguities(_ambiguities)
+                print(f"  [Priority ambiguity detected — asking LLM to clarify]\n{_msg}")
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Before I confirm, I need clarification on the priority list "
+                        "you proposed. There is a logical conflict:\n\n"
+                        + _msg
+                        + "\n\nDo NOT output a changes block yet. "
+                        "Ask me the clarification question above first."
+                    ),
+                })
+                pending_changes = None   # discard the ambiguous block
                 continue
 
         user_input = input("YOU: ").strip()
