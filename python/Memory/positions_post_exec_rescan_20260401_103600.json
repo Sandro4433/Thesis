@@ -186,11 +186,11 @@
       },
       {
         "object": "Container_2",
-        "role": "input"
+        "role": null
       },
       {
         "object": "Container_3",
-        "role": "input"
+        "role": null
       },
       {
         "object": "Kit_1",
@@ -198,11 +198,11 @@
       },
       {
         "object": "Kit_2",
-        "role": "output"
+        "role": null
       },
       {
         "object": "Kit_3",
-        "role": "output"
+        "role": null
       }
     ],
     "color": [
@@ -279,39 +279,17 @@
         "color": "blue"
       }
     ],
-    "priority": [
+    "priority": [],
+    "kit_recipe": [],
+    "part_compatibility": [
       {
-        "color": "green",
-        "order": 2
-      },
-      {
-        "part_name": "Part_7",
-        "order": 1
-      },
-      {
-        "part_name": "Part_14",
-        "order": 1
-      },
-      {
-        "part_name": "Part_2",
-        "order": 1
+        "part_color": "green",
+        "allowed_in": [
+          "Kit_1"
+        ],
+        "target_slot": "Kit_1_Pos_1"
       }
     ],
-    "kit_recipe": [
-      {
-        "color": "green",
-        "quantity": 1
-      },
-      {
-        "color": "red",
-        "quantity": 1
-      },
-      {
-        "color": "blue",
-        "quantity": 1
-      }
-    ],
-    "part_compatibility": [],
     "fragility": []
   },
   "metric": {
