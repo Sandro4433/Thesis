@@ -104,10 +104,6 @@
         "slot": "Container_1_Pos_2"
       },
       {
-        "part": "Part_7",
-        "slot": "Container_1_Pos_3"
-      },
-      {
         "part": "Part_9",
         "slot": "Container_1_Pos_4"
       },
@@ -166,10 +162,13 @@
       {
         "part": "Part_5",
         "slot": "Container_3_Pos_6"
+      },
+      {
+        "part": "Part_7",
+        "slot": "Kit_1_Pos_1"
       }
     ],
     "slot_empty": [
-      "Kit_1_Pos_1",
       "Kit_1_Pos_2",
       "Kit_1_Pos_3",
       "Kit_2_Pos_1",
@@ -186,11 +185,11 @@
       },
       {
         "object": "Container_2",
-        "role": "input"
+        "role": null
       },
       {
         "object": "Container_3",
-        "role": "input"
+        "role": null
       },
       {
         "object": "Kit_1",
@@ -198,11 +197,11 @@
       },
       {
         "object": "Kit_2",
-        "role": "output"
+        "role": null
       },
       {
         "object": "Kit_3",
-        "role": "output"
+        "role": null
       }
     ],
     "color": [
@@ -212,10 +211,6 @@
       },
       {
         "part": "Part_8",
-        "color": "green"
-      },
-      {
-        "part": "Part_7",
         "color": "green"
       },
       {
@@ -277,41 +272,23 @@
       {
         "part": "Part_5",
         "color": "blue"
+      },
+      {
+        "part": "Part_7",
+        "color": "green"
       }
     ],
-    "priority": [
+    "priority": [],
+    "kit_recipe": [],
+    "part_compatibility": [
       {
-        "color": "green",
-        "order": 2
-      },
-      {
-        "part_name": "Part_7",
-        "order": 1
-      },
-      {
-        "part_name": "Part_14",
-        "order": 1
-      },
-      {
-        "part_name": "Part_2",
-        "order": 1
+        "part_color": "green",
+        "allowed_in": [
+          "Kit_1"
+        ],
+        "target_slot": "Kit_1_Pos_1"
       }
     ],
-    "kit_recipe": [
-      {
-        "color": "green",
-        "quantity": 1
-      },
-      {
-        "color": "red",
-        "quantity": 1
-      },
-      {
-        "color": "blue",
-        "quantity": 1
-      }
-    ],
-    "part_compatibility": [],
     "fragility": []
   },
   "metric": {
@@ -721,20 +698,6 @@
       ],
       "orientation": -30.515864423643563
     },
-    "Part_7": {
-      "pos": [
-        0.5546404070854187,
-        0.41333171820640563,
-        0.2
-      ],
-      "quat": [
-        -0.9214052431423866,
-        -0.3884316547590146,
-        -0.011368659081744474,
-        0.001995264788503215
-      ],
-      "orientation": 29.484135576356437
-    },
     "Part_9": {
       "pos": [
         0.49743246507644656,
@@ -944,6 +907,20 @@
         0.001995264788503215
       ],
       "orientation": 30.987680355539737
+    },
+    "Part_7": {
+      "pos": [
+        0.6397600581191122,
+        0.22337919138396092,
+        0.2
+      ],
+      "quat": [
+        -0.9214052431423866,
+        -0.3884316547590146,
+        -0.011368659081744474,
+        0.001995264788503215
+      ],
+      "orientation": -20.813212287595746
     }
   }
 }
