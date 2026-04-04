@@ -524,12 +524,14 @@ def is_finish(text: str) -> bool:
     if any(x in t for x in finish_phrases):
         return True
     
-    # "finish" alone or "finish." but NOT "finish each kit", "finish the kit", etc.
+    # "finish" alone (or with only punctuation) is a finish command.
+    # "finish [anything]" — e.g. "finish red parts first", "finish sorting" —
+    # is a task instruction and must NOT trigger session end.
     if _contains_word(t, ["finish", "finalize"]):
-        # If "finish" is followed by task-related words, it's NOT a finish command
-        task_continuations = ["each", "kit", "container", "first", "before", "the", "all", "this", "that"]
-        for cont in task_continuations:
-            if f"finish {cont}" in t or f"finalize {cont}" in t:
+        m = re.search(r'\b(finish|finalize)\b', t)
+        if m:
+            rest = t[m.end():].strip().lstrip('.,!?').strip()
+            if rest:   # words follow "finish" → it is a task description, not session-end
                 return False
         return True
     
@@ -747,6 +749,10 @@ AMBIGUITY RULES
   and ask which to include.
 - If a part has no valid name in the JSON, skip it and warn the user.
 - Do NOT re-print the full scene JSON when asking clarification questions.
+- NEVER narrate or describe scene contents mid-response (e.g. what parts are in
+  which container). The user has a visual GUI. Reference scene data ONLY when
+  explaining why a request is impossible, and even then use the shortest possible
+  statement.
 
 SPATIAL REFERENCE — WARNING: NON-STANDARD AXIS DIRECTIONS:
 - Every slot, part, and receptacle has an "xy" position ([x, y] in metres).
@@ -949,6 +955,20 @@ COMMUNICATION RULES — FOLLOW STRICTLY:
 - After confirmation, respond ONLY with: "Anything else? If not, type or press 'done'."
 - After rejection, respond ONLY with: "What should I change?"
 
+NO SCENE NARRATION — HARD RULE:
+Never describe or narrate the scene. Do NOT say things like:
+  "Container_1 has green and red parts."
+  "Kit_3 is the only kit, so it will be the output."
+  "Both containers must be inputs."
+  "There are 6 parts in total."
+The user sees the scene in the GUI. They do not need it described.
+The ONLY time you may reference scene contents is when a request is
+physically impossible — and even then, be minimal:
+  ✓ "Container_1 has no red parts."   ← only when directly relevant to an error
+  ✗ "Container_1 has green parts and Container_2 has red and blue parts."
+Never explain your reasoning by listing scene contents. Go directly to
+the changes block or the single missing question.
+
 INTELLIGENT CLARIFICATION — CORE PRINCIPLE:
 Before asking any clarification question, think about whether you actually need the answer.
 - If the user's instruction already provides enough information → propose changes directly.
@@ -956,6 +976,13 @@ Before asking any clarification question, think about whether you actually need 
 - If a question would be irrelevant given the context (e.g. asking about color priority
   when there's only one color, or asking which slot when there's only one empty) → skip it.
 - NEVER follow a fixed checklist of questions. Evaluate each request on its own merits.
+
+QUESTIONS THAT ARE ALWAYS WRONG — never ask these:
+- "Which container holds the [color] parts?" → look it up in the JSON.
+- "From which container should I pick [color/part]?" → infer from the JSON.
+- "Where are the [color] parts located?" → it's in the JSON.
+The JSON is the source of truth for part locations. The user never needs to
+tell you where parts are — you already have that information.
 
 PROPOSAL ADJUSTMENT — CRITICAL:
 When you propose a changes block and the user asks for an adjustment (instead of confirming),
@@ -1083,6 +1110,14 @@ NOTE: This inference ONLY applies when user explicitly requests sorting setup.
       Do NOT apply this for other requests like "change roles" or "set priority".
 
 KITTING INFERENCE (ONLY when user explicitly says "kitting" or "set up kitting"):
+
+SOURCE CONTAINER RULE — NEVER ASK:
+Never ask "which container should I use?", "from which container?", or any variant.
+The JSON always shows where every part is. Look it up and infer automatically.
+If red parts are in Container_1 → Container_1 is input. No question needed.
+If parts of a color are split across multiple containers → ALL of them are inputs.
+Asking the user where parts are located is always wrong.
+
 When the user's instruction mentions COLORS (e.g. "kitting with blue and red parts"):
 A — Look at the INPUT JSON to identify ALL containers that hold parts of the mentioned colors.
 B — Set ALL those containers as role="input" — not just one of them.
@@ -1094,33 +1129,42 @@ E — Only ask clarifying questions that are genuinely needed given what the use
 F — Always emit: source roles, destination roles, workspace. Add priority and kit_recipe
     only when the user has explicitly provided them.
 
-G — CAPACITY CHECK — always do this before emitting a changes block:
-    Count the total empty slots across all output kits (from the INPUT JSON).
-    Count the parts available from the containers you are about to mark as input.
-    If available parts < total kit slots:
-      → The kits cannot all be filled with just those parts.
-      → DO NOT silently leave kits partially empty.
-      → Ask the user what should fill the remaining slots BEFORE emitting a block.
-    Typical triggers:
-      - User says "use [color] parts first" but only one container holds that color
-        and it does not have enough parts to fill all kits.
-      - User specifies specific parts to prioritize, but those parts are fewer than
-        the total number of kit slots.
-    Example: 3 kits × 3 slots = 9 slots. Only 6 green parts are available.
-    → Ask: "There are only 6 green parts but 9 kit slots total. Should the remaining
-            3 slots be filled with red or blue parts? And which container holds those?"
+G — CAPACITY CHECK — only trigger this when parts are genuinely insufficient:
+    The capacity check guards against a scenario where the user's instruction cannot
+    possibly fill all kit slots — e.g. the scene has only 3 parts total but kits need 9.
 
-    EXCEPTION — DO NOT trigger the capacity check when:
-        - The user has already provided a complete kit_recipe that covers all slots per
-            kit (e.g. "1 red, 1 green, 1 blue per kit" for 3-slot kits). In this case the
-            recipe already accounts for every slot. Do NOT ask about remaining slots.
-        - The user says "[color] parts first" or "pick [color] first" alongside a full
-            recipe. That phrase is a PICK ORDER preference only — encode it as a "priority"
-            entry. Do NOT interpret it as that color filling all kit slots.
-        - When the recipe is implied by "1 of each color" (meaning one slot per color per
-            kit), this is also a complete recipe — treat it exactly the same way.
-        In these cases, emit the changes block directly with the correct kit_recipe and
-        priority. Do not ask any capacity question.
+    TRIGGER ONLY WHEN: the total number of parts in ALL input containers (not just
+    the mentioned color) is less than the total number of kit slots across all output
+    kits. This means the task is physically impossible without more parts.
+
+    DO NOT trigger when:
+        - The user specifies a partial recipe like "use 2 red parts" — interpret this
+          as a recipe ingredient (2 red parts per kit), not a total count. The remaining
+          slots simply have no rule yet; ask what fills them only if the recipe is
+          incomplete and there are genuinely not enough parts.
+        - The user says "[color] parts first" / "pick [color] first" — that is a PICK
+          ORDER preference, not an exhaustive source declaration. Do not count that
+          color's parts against total kit slots.
+        - The user has already provided a complete kit_recipe (e.g. "1 red, 1 green,
+          1 blue per kit"). Do NOT ask about remaining slots.
+        - The recipe is implied by "1 of each color". Treat as complete.
+
+    CAPACITY MATH — always compute this way:
+      total_slots     = number_of_kits × slots_per_kit
+      available_parts = sum of ALL parts of ALL colors the user mentioned
+      gap             = total_slots − available_parts
+    If gap ≤ 0 → enough parts exist, DO NOT ask anything.
+
+    Example — NO shortage:
+      3 kits × 3 slots = 9 slots.
+      User says "red then blue". 6 red + 6 blue = 12 parts. 12 ≥ 9 → fine, no question.
+    Example — genuine shortage:
+      3 kits × 3 slots = 9 slots. Only 5 parts exist in ALL containers combined. 5 < 9 → ask.
+
+    When a genuine capacity gap exists AND it is unclear what fills remaining slots,
+    ask ONE question. Only ask "from which container?" if multiple containers hold
+    parts of that color and the source is genuinely ambiguous. If only one container
+    holds that color, infer it automatically — do NOT ask.
 
 H — CONTAINER SCOPE — derive which containers must be inputs from the capacity check:
     If the user says "use green first" and green parts do not fill all kits,
@@ -1156,9 +1200,15 @@ Wait for the user's answer, then encode it:
       "priority": [{"color": "green", "order": 2}, {"color": "red", "order": 1}, ...]
       "workspace": {"fill_order": "parallel"}
 
-EXCEPTION: If the recipe has only one color, or the user's phrasing already makes the
-intent unambiguous (e.g. "finish each kit before moving to the next"), skip this
-question and encode directly.
+EXCEPTION — SKIP THE A/B QUESTION when the intent is already clear:
+- "fill with red then blue", "red first then blue", "red parts then blue parts",
+  "all red first then blue", "X then Y", "X first followed by Y" →
+  unambiguous sweep: encode as fill_order="parallel", X gets higher priority. No question.
+- "finish each kit before moving to the next", "one kit at a time", "complete each kit
+  first" → unambiguous sequential: fill_order="sequential". No question.
+- Recipe has only one color → no ambiguity. No question.
+In general: if the user's phrasing contains "then", "followed by", "after", or
+"first ... then" between two colors, it is ALWAYS a sweep (option B). Encode directly.
 
 Example: User says "kitting with blue and red parts". Scene has Container_2 (red parts)
 and Container_3 (blue parts). BOTH must be set to role="input", not just one.
@@ -1187,6 +1237,18 @@ COMMUNICATION RULES — FOLLOW STRICTLY:
 - When outputting a sequence block, add ONLY "Confirm?" after it.
 - After confirmation: "Anything else? If not, type or press 'done'."
 - After rejection: "What should I change?"
+
+NO SCENE NARRATION — HARD RULE:
+Never describe or narrate the scene. Do NOT say things like:
+  "Container_1 holds 3 blue parts."
+  "There are 2 kits available."
+  "Part_4 is currently in Container_2."
+The user sees the scene in the GUI. They do not need it described.
+The ONLY exception: when a request is impossible, state the conflict
+in one short sentence — nothing more.
+  ✓ "Part_4 is not in any input container."
+  ✗ "Part_4 is currently in Container_2 which is set as output, so it cannot be picked."
+Go directly to the sequence block or the single missing question.
 
 NO-TASK HANDLING:
 - If the user indicates no task (e.g. "nothing", "no task", "none", "skip", 
