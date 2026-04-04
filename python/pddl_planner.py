@@ -103,7 +103,8 @@ DOMAIN_PDDL_BASIC = """\
 
 # ── Action-costs domain (Fast Downward) ───────────────────────────────────────
 
-def build_domain_pddl_costs(num_priorities: int, num_kit_priorities: int = 0) -> str:
+def build_domain_pddl_costs(num_priorities: int, num_kit_priorities: int = 0,
+                            kit_scoped_priority: bool = False) -> str:
     """
     Generate a PDDL domain with action costs + derived predicates that enforces
     priority ordering as a hard constraint.
@@ -121,6 +122,18 @@ def build_domain_pddl_costs(num_priorities: int, num_kit_priorities: int = 0) ->
     requires (not (rec_priority_K_needs_filling)), so the planner must
     fill higher-priority receptacles before lower-priority ones.
     Works for both kits AND containers.
+
+    Kit-scoped priority (kit_scoped_priority=True):
+    When BOTH pick priorities and receptacle priorities are active (e.g.
+    kitting with "pick green first" + multiple kits), the pick-priority
+    derived predicates are scoped to the currently-fillable kit using a
+    (for-kit ?p - part ?r - receptacle) predicate.  This means
+    "priority-1-available" only fires for priority-1 parts whose target
+    kit still has empty goal slots AND is not blocked by a higher
+    receptacle priority.  This avoids deadlock (where globally-required
+    priority-1 parts destined for later kits block priority-2 picks for
+    the current kit) and achieves the desired "within each kit, pick
+    green first" behavior.
 
     Requirements: :typing :negative-preconditions :existential-preconditions
                   :derived-predicates :action-costs
@@ -152,6 +165,11 @@ def build_domain_pddl_costs(num_priorities: int, num_kit_priorities: int = 0) ->
     for k in range(1, num_priorities + 1):
         pred_lines.append(f"    (priority_{k}_available)")
 
+    # ── Kit-scoped priority predicate ──
+    if kit_scoped_priority:
+        pred_lines.append("    (for-kit ?p - part ?r - receptacle)")
+        pred_lines.append("    (kit-fillable ?r - receptacle)")
+
     # ── Receptacle priority predicates ──
     if num_kit_priorities > 0:
         pred_lines.append("    (is-goal-slot ?s - slot)")
@@ -160,18 +178,11 @@ def build_domain_pddl_costs(num_priorities: int, num_kit_priorities: int = 0) ->
         for k in range(1, num_kit_priorities + 1):
             pred_lines.append(f"    (rec_priority_{k}_needs_filling)")
 
-    # Derived predicates for pick ordering
+    # ── Derived predicates ──
     derived_blocks = []
-    for k in range(1, num_priorities + 1):
-        block = (
-            f"  (:derived (priority_{k}_available)" + NL +
-            f"    (exists (?p - part ?s - slot ?r - receptacle)" + NL +
-            f"      (and (priority-{k} ?p) (at ?p ?s)" + NL +
-            f"           (slot-of ?s ?r) (role-input ?r))))" + NL
-        )
-        derived_blocks.append(block)
 
-    # ── Receptacle priority derived predicates ──
+    # ── Receptacle priority derived predicates (generated FIRST because
+    #    kit-scoped pick priority depends on them) ──
     for k in range(1, num_kit_priorities + 1):
         block = (
             f"  (:derived (rec_priority_{k}_needs_filling)" + NL +
@@ -180,6 +191,49 @@ def build_domain_pddl_costs(num_priorities: int, num_kit_priorities: int = 0) ->
             f"           (is-goal-slot ?s) (slot-empty ?s))))" + NL
         )
         derived_blocks.append(block)
+
+    # ── Kit-fillable derived predicates (one per receptacle priority level) ──
+    # A kit at rec-priority-K is fillable when it still has empty goal slots
+    # AND all higher-priority (lower-K) receptacles are already filled.
+    if kit_scoped_priority:
+        for k in range(1, num_kit_priorities + 1):
+            higher_filled = "".join(
+                NL + f"           (not (rec_priority_{j}_needs_filling))"
+                for j in range(1, k)
+            )
+            block = (
+                f"  (:derived (kit-fillable ?r - receptacle)" + NL +
+                f"    (and (rec-priority-{k} ?r)" + NL +
+                f"         (exists (?s - slot)" + NL +
+                f"           (and (slot-of ?s ?r) (is-goal-slot ?s) (slot-empty ?s){higher_filled}))))" + NL
+            )
+            derived_blocks.append(block)
+
+    # ── Pick-priority derived predicates ──
+    if kit_scoped_priority and num_kit_priorities > 0:
+        # Kit-scoped: priority_K_available only fires for parts whose
+        # target kit is currently fillable.  This prevents parts destined
+        # for later kits from blocking picks for the current kit.
+        for k in range(1, num_priorities + 1):
+            block = (
+                f"  (:derived (priority_{k}_available)" + NL +
+                f"    (exists (?p - part ?s - slot ?r - receptacle ?rk - receptacle)" + NL +
+                f"      (and (priority-{k} ?p) (at ?p ?s)" + NL +
+                f"           (slot-of ?s ?r) (role-input ?r)" + NL +
+                f"           (for-kit ?p ?rk) (kit-fillable ?rk))))" + NL
+            )
+            derived_blocks.append(block)
+    else:
+        # Global (original): priority_K_available fires for any priority-K
+        # part still in an input receptacle.
+        for k in range(1, num_priorities + 1):
+            block = (
+                f"  (:derived (priority_{k}_available)" + NL +
+                f"    (exists (?p - part ?s - slot ?r - receptacle)" + NL +
+                f"      (and (priority-{k} ?p) (at ?p ?s)" + NL +
+                f"           (slot-of ?s ?r) (role-input ?r))))" + NL
+            )
+            derived_blocks.append(block)
 
     # Pick actions — one per priority level with hard blocking preconditions.
     # pick-priority-K requires (not priority_J_available) for all J < K, so the
@@ -656,10 +710,10 @@ def state_to_pddl_problem(state: Dict[str, Any]) -> str:
 
 # ── Action-costs problem (Fast Downward) ──────────────────────────────────────
 
-def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
+def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, bool]:
     """
     Generate a PDDL 2.1 problem with numeric fluents and a minimize metric.
-    Returns (problem_str, num_priorities, num_kit_priorities).
+    Returns (problem_str, num_priorities, num_kit_priorities, kit_scoped_priority).
     """
     objs  = state.get("objects",    {})
     preds = state.get("predicates", {})
@@ -750,32 +804,20 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
 
     import re as _re
     goal_parts: set = set()
+    # Build part → target kit mapping from goal lines (for kit-scoped priority)
+    goal_part_to_kit: Dict[str, str] = {}
     for g in goal_lines:
-        m = _re.search(r'\(at\s+(\S+)\s+\S+\)', g)
+        m = _re.search(r'\(at\s+(\S+)\s+(\S+)\)', g)
         if m:
-            goal_parts.add(m.group(1))
+            p_name = m.group(1)
+            s_name = m.group(2)
+            goal_parts.add(p_name)
+            parent = slot_belongs.get(s_name, "")
+            if parent:
+                goal_part_to_kit[p_name] = _to_pddl_name(parent)
 
     # Initialise total-cost to zero (required by :action-costs)
     init.append("    (= (total-cost) 0)")
-
-    # Sequential fill: suppress PDDL pick-priority tags so the planner fills
-    # one kit at a time instead of doing a global color sweep.
-    # Color priority is still used for goal slot assignment above.
-    _fill_order_early = (state.get("workspace", {}).get("fill_order") or "").lower()
-    if _fill_order_early == "sequential":
-        num_priorities = 0
-        score_to_level = {}
-        has_pick_order = False
-        part_scores    = {p: 0 for p in part_scores}
-
-    # Assign PDDL priority-K tags from additive scores (goal-bound parts only)
-    for p_orig in objs.get("parts", []):
-        p_pddl = _to_pddl_name(p_orig)
-        score  = part_scores.get(p_orig, 0)
-        if score > 0 and p_pddl in goal_parts:
-            init.append(f"    (priority-{score_to_level[score]} {p_pddl})")
-        else:
-            init.append(f"    (no-priority {p_pddl})")
 
     # ── receptacle (output) priority assignments ──────────────────────────
     # Only OUTPUT receptacle priorities control fill order.
@@ -792,12 +834,53 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
         [_to_pddl_name(r) for r in outputs],
         key=lambda r: r
     )
-    if (not rec_to_level and not has_pick_order
+    # Auto-assign sequential receptacle priorities when there are multiple
+    # output receptacles and no explicit parallel fill order.
+    # Unlike the old code, this no longer requires `not has_pick_order` —
+    # kit-scoped priority (see below) allows both pick ordering and
+    # receptacle ordering to coexist without deadlock.
+    if (not rec_to_level
             and len(output_receptacles) >= 2 and fill_order != "parallel"):
         for idx, rec_name in enumerate(output_receptacles, start=1):
             rec_to_level[rec_name] = idx
 
     num_kit_priorities = max(rec_to_level.values(), default=0)
+
+    # ── Determine whether to use kit-scoped priority ─────────────────────
+    # When kitting with color priorities AND sequential kit filling, scope
+    # the pick-priority derived predicates to the currently-fillable kit.
+    # This prevents parts destined for later kits from blocking picks for
+    # the current kit.
+    # Explicit fill_order="sequential" without pick priorities suppresses
+    # priorities entirely (legacy behavior).
+    _fill_order_early = (workspace_cfg.get("fill_order") or "").lower()
+    kit_scoped = (
+        has_pick_order
+        and num_kit_priorities >= 2
+        and mode == "kitting"
+        and fill_order != "parallel"
+    )
+
+    if _fill_order_early == "sequential" and not has_pick_order:
+        # Legacy: explicit sequential without pick priorities → suppress all
+        num_priorities = 0
+        score_to_level = {}
+        has_pick_order = False
+        part_scores    = {p: 0 for p in part_scores}
+
+    # Assign PDDL priority-K tags from additive scores (goal-bound parts only)
+    for p_orig in objs.get("parts", []):
+        p_pddl = _to_pddl_name(p_orig)
+        score  = part_scores.get(p_orig, 0)
+        if score > 0 and p_pddl in goal_parts:
+            init.append(f"    (priority-{score_to_level[score]} {p_pddl})")
+        else:
+            init.append(f"    (no-priority {p_pddl})")
+
+    # ── for-kit predicates (kit-scoped priority only) ────────────────────
+    if kit_scoped:
+        for p_pddl, kit_pddl in goal_part_to_kit.items():
+            init.append(f"    (for-kit {p_pddl} {kit_pddl})")
 
     if num_kit_priorities > 0:
         all_receptacles = kits + containers
@@ -827,7 +910,7 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
         "  (:metric minimize (total-cost))\n"
         ")\n"
     )
-    return problem, num_priorities, num_kit_priorities
+    return problem, num_priorities, num_kit_priorities, kit_scoped
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1543,12 +1626,13 @@ def plan_sequence(
         if use_fd:
             # ── Fast Downward: PDDL 2.1 action costs ─────────────────────────
             try:
-                problem, num_priorities, num_kit_priorities = state_to_pddl_problem_costs(state)
+                problem, num_priorities, num_kit_priorities, kit_scoped = state_to_pddl_problem_costs(state)
             except ValueError as e:
                 print(f"❌ PDDL problem generation failed: {e}")
                 return None
 
-            domain = build_domain_pddl_costs(num_priorities, num_kit_priorities)
+            domain = build_domain_pddl_costs(num_priorities, num_kit_priorities,
+                                             kit_scoped_priority=kit_scoped)
 
             with open(domain_path,  "w") as f: f.write(domain)
             with open(problem_path, "w") as f: f.write(problem)
@@ -1562,7 +1646,8 @@ def plan_sequence(
 
             print(f"  backend        : Fast Downward  "
                   f"(PDDL 2.1 action costs, {num_priorities} color priority level(s)"
-                  f", {num_kit_priorities} receptacle priority level(s))")
+                  f", {num_kit_priorities} receptacle priority level(s)"
+                  f"{', kit-scoped' if kit_scoped else ''})")
             plan_text = run_fast_downward(domain_path, problem_path, plan_path, fd_path)
 
         else:
