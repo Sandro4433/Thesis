@@ -1,32 +1,47 @@
 [
   [
-    "Part_3",
-    "Container_3_Pos_1",
+    "Part_13",
+    "Kit_1_Pos_2",
     0.05
   ],
   [
-    "Part_5",
-    "Container_2_Pos_1",
+    "Part_14",
+    "Kit_1_Pos_3",
     0.05
   ],
   [
-    "Part_4",
-    "Container_3_Pos_2",
+    "Part_15",
+    "Kit_1_Pos_1",
     0.05
   ],
   [
-    "Part_6",
-    "Container_2_Pos_2",
+    "Part_16",
+    "Kit_2_Pos_1",
+    0.05
+  ],
+  [
+    "Part_17",
+    "Kit_2_Pos_3",
+    0.05
+  ],
+  [
+    "Part_18",
+    "Kit_2_Pos_2",
     0.05
   ],
   [
     "Part_1",
-    "Container_1_Pos_1",
+    "Kit_3_Pos_2",
     0.05
   ],
   [
     "Part_2",
-    "Container_1_Pos_2",
+    "Kit_3_Pos_3",
+    0.05
+  ],
+  [
+    "Part_3",
+    "Kit_3_Pos_1",
     0.05
   ]
 ]
