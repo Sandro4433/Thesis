@@ -139,12 +139,15 @@ def merge_changes(
     merged = {k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v)
                for k, v in accumulated.items()}
     for key, value in new_block.items():
-        if key in ("priority", "kit_recipe", "part_compatibility") and isinstance(value, list):
-            # EXTEND list keys — accumulate rules across multiple confirmations
+        if key == "part_compatibility" and isinstance(value, list):
+            # Accumulate compatibility rules across multiple confirmations
             existing = merged.get(key, [])
             if not isinstance(existing, list):
                 existing = []
             merged[key] = existing + value
+        elif key in ("priority", "kit_recipe") and isinstance(value, list):
+            # Replace — a new recipe/priority supersedes the previous one entirely
+            merged[key] = list(value)
         elif key == "workspace" and isinstance(value, dict):
             merged.setdefault("workspace", {})
             merged["workspace"].update(value)
@@ -1125,6 +1128,37 @@ H — CONTAINER SCOPE — derive which containers must be inputs from the capaci
     can access them for the remaining slots — unless the user explicitly said otherwise.
     Do NOT limit inputs to only the containers holding the priority color.
     Set ALL containers that will contribute parts as role="input".
+
+DEFAULT KIT FILL ORDER:
+Unless the user explicitly says otherwise, always fill one kit completely before
+starting the next. This is the default sequential behavior — do NOT add receptacle
+fill-order priorities unless the user specifies a non-default order.
+
+I — COLOR PRIORITY AMBIGUITY WITH MULTI-COLOR RECIPE — ask before outputting a block:
+When the user gives a color pick priority (e.g. "pick green first") alongside a
+multi-color kit recipe (e.g. "1 red, 1 green, 1 blue per kit"), the phrase is
+ambiguous. You MUST ask EXACTLY this clarification before doing anything else:
+
+  "Do you mean:
+   (A) Complete each kit fully before starting the next, but place the green part
+       first within each kit? Or
+   (B) Use up all green parts first across all kits, then continue with the
+       remaining colors?"
+
+Wait for the user's answer, then encode it:
+  - Answer A → sequential kit fill. Green is placed first within each kit via
+    goal slot ordering. Encode as:
+      "priority": [{"color": "green", "order": 2}, {"color": "red", "order": 1}, ...]
+      "workspace": {"fill_order": "sequential"}
+    Do NOT add receptacle priority entries — sequential kit fill is automatic.
+
+  - Answer B → color sweep across all kits. Encode as:
+      "priority": [{"color": "green", "order": 2}, {"color": "red", "order": 1}, ...]
+      "workspace": {"fill_order": "parallel"}
+
+EXCEPTION: If the recipe has only one color, or the user's phrasing already makes the
+intent unambiguous (e.g. "finish each kit before moving to the next"), skip this
+question and encode directly.
 
 Example: User says "kitting with blue and red parts". Scene has Container_2 (red parts)
 and Container_3 (blue parts). BOTH must be set to role="input", not just one.

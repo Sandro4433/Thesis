@@ -568,6 +568,13 @@ def _build_compat_init(state, kits, containers):
                 for rec in matching_receptacles:
                     compatible_pairs.add((part, rec))
         
+        # If no inclusion rules produced any pairs, default to all-compatible
+        # (same as the no-rules case) so that exclusion-only rules work correctly.
+        if not compatible_pairs and exclusion_rules:
+            for part in all_parts_pddl:
+                for rec in all_receptacles:
+                    compatible_pairs.add((part, rec))
+
         # SECOND PASS: Process pure exclusion rules (override inclusions)
         for rule in exclusion_rules:
             # ── Find matching parts (AND logic) ──
@@ -750,6 +757,16 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int]:
 
     # Initialise total-cost to zero (required by :action-costs)
     init.append("    (= (total-cost) 0)")
+
+    # Sequential fill: suppress PDDL pick-priority tags so the planner fills
+    # one kit at a time instead of doing a global color sweep.
+    # Color priority is still used for goal slot assignment above.
+    _fill_order_early = (state.get("workspace", {}).get("fill_order") or "").lower()
+    if _fill_order_early == "sequential":
+        num_priorities = 0
+        score_to_level = {}
+        has_pick_order = False
+        part_scores    = {p: 0 for p in part_scores}
 
     # Assign PDDL priority-K tags from additive scores (goal-bound parts only)
     for p_orig in objs.get("parts", []):
