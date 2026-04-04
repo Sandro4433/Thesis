@@ -37,7 +37,41 @@
   "priority": [
     {
       "color": "green",
+      "order": 2
+    },
+    {
+      "color": "red",
       "order": 1
+    },
+    {
+      "color": "blue",
+      "order": 1
+    }
+  ],
+  "part_compatibility": [
+    {
+      "part_name": "Part_1",
+      "not_allowed_in": [
+        "Kit_1",
+        "Kit_2",
+        "Kit_3"
+      ]
+    },
+    {
+      "part_name": "Part_3",
+      "not_allowed_in": [
+        "Kit_1",
+        "Kit_2",
+        "Kit_3"
+      ]
+    },
+    {
+      "part_name": "Part_5",
+      "not_allowed_in": [
+        "Kit_1",
+        "Kit_2",
+        "Kit_3"
+      ]
     }
   ]
 }
