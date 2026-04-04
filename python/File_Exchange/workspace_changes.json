@@ -37,18 +37,6 @@
   "priority": [
     {
       "color": "green",
-      "order": 2
-    },
-    {
-      "part_name": "Part_7",
-      "order": 1
-    },
-    {
-      "part_name": "Part_14",
-      "order": 1
-    },
-    {
-      "part_name": "Part_2",
       "order": 1
     }
   ]
