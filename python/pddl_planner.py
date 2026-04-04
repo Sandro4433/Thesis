@@ -830,10 +830,36 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, b
 
     workspace_cfg = state.get("workspace", {})
     fill_order = (workspace_cfg.get("fill_order") or "").lower()
+
+    # Compute the maximum pick-priority score of parts compatible with each
+    # output receptacle.  Used below to align rec-priority ordering with
+    # part pick ordering so the planner never deadlocks (e.g. "sort red
+    # first" → red → Container_2, so Container_2 must be rec-priority-1).
+    _output_pddl = {_to_pddl_name(r) for r in outputs}
+    _color_lower  = {p: (color_map_raw.get(p, "")).lower()
+                     for p in objs.get("parts", [])}
+    _rec_max_score: Dict[str, int] = {r: 0 for r in _output_pddl}
+    for _rule in preds.get("part_compatibility", []):
+        _rule_color = (_rule.get("part_color") or "").lower()
+        _rule_score = max(
+            (part_scores.get(p_orig, 0)
+             for p_orig in objs.get("parts", [])
+             if _color_lower.get(p_orig) == _rule_color),
+            default=0,
+        )
+        for _rec_orig in _rule.get("allowed_in", []):
+            _rec_pddl = _to_pddl_name(_rec_orig)
+            if _rec_pddl in _rec_max_score:
+                _rec_max_score[_rec_pddl] = max(_rec_max_score[_rec_pddl], _rule_score)
+
+    # Sort output receptacles: when pick-order exists, the receptacle that
+    # receives the highest-priority parts should be filled first (rec-priority-1).
+    # Without pick-order, fall back to alphabetical (stable, deterministic).
     output_receptacles = sorted(
-        [_to_pddl_name(r) for r in outputs],
-        key=lambda r: r
+        list(_output_pddl),
+        key=lambda r: (-_rec_max_score.get(r, 0), r) if has_pick_order else r,
     )
+
     # Auto-assign sequential receptacle priorities when there are multiple
     # output receptacles and no explicit parallel fill order.
     # Unlike the old code, this no longer requires `not has_pick_order` —
