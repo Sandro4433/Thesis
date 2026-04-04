@@ -1,8 +1,7 @@
 {
   "workspace": {
     "operation_mode": "kitting",
-    "batch_size": null,
-    "fill_order": "parallel"
+    "batch_size": null
   },
   "objects": {
     "kits": [
@@ -183,7 +182,7 @@
     "role": [
       {
         "object": "Container_1",
-        "role": null
+        "role": "input"
       },
       {
         "object": "Container_2",
@@ -191,7 +190,7 @@
       },
       {
         "object": "Container_3",
-        "role": "input"
+        "role": null
       },
       {
         "object": "Kit_1",
@@ -283,11 +282,11 @@
     "priority": [
       {
         "color": "red",
-        "order": 2
+        "order": 1
       },
       {
-        "color": "blue",
-        "order": 1
+        "color": "green",
+        "order": 2
       }
     ],
     "kit_recipe": [],
