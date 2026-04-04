@@ -860,15 +860,32 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, b
         key=lambda r: (-_rec_max_score.get(r, 0), r) if has_pick_order else r,
     )
 
-    # Auto-assign sequential receptacle priorities when there are multiple
-    # output receptacles and no explicit parallel fill order.
-    # Unlike the old code, this no longer requires `not has_pick_order` —
-    # kit-scoped priority (see below) allows both pick ordering and
-    # receptacle ordering to coexist without deadlock.
+    # Auto-assign receptacle priorities when there are multiple output
+    # receptacles and no explicit parallel fill order.
+    #
+    # KEY INVARIANT: two receptacles that share the same max part pick-score
+    # must receive the SAME rec-priority level.  Giving them different levels
+    # causes deadlock: after picking a priority-1 part destined for the
+    # lower-ranked container, the planner cannot place it (the higher-ranked
+    # container is not full yet) and cannot put it back — no solution.
+    #
+    # When pick-order is active we group receptacles by their max part score
+    # and assign contiguous levels to the groups (highest score -> level 1).
+    # When there is no pick-order we fall back to sequential alphabetical
+    # assignment (legacy behaviour, no deadlock risk there).
     if (not rec_to_level
             and len(output_receptacles) >= 2 and fill_order != "parallel"):
-        for idx, rec_name in enumerate(output_receptacles, start=1):
-            rec_to_level[rec_name] = idx
+        if has_pick_order:
+            distinct_rec_scores = sorted(
+                {_rec_max_score.get(r, 0) for r in output_receptacles},
+                reverse=True,
+            )
+            _score_to_rec_level = {s: i + 1 for i, s in enumerate(distinct_rec_scores)}
+            for rec_name in output_receptacles:
+                rec_to_level[rec_name] = _score_to_rec_level[_rec_max_score.get(rec_name, 0)]
+        else:
+            for idx, rec_name in enumerate(output_receptacles, start=1):
+                rec_to_level[rec_name] = idx
 
     num_kit_priorities = max(rec_to_level.values(), default=0)
 

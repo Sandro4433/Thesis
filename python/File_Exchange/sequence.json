@@ -1,12 +1,22 @@
 [
   [
-    "Part_4",
+    "Part_3",
     "Container_3_Pos_1",
     0.05
   ],
   [
     "Part_5",
+    "Container_2_Pos_1",
+    0.05
+  ],
+  [
+    "Part_4",
     "Container_3_Pos_2",
+    0.05
+  ],
+  [
+    "Part_6",
+    "Container_2_Pos_2",
     0.05
   ],
   [
@@ -17,11 +27,6 @@
   [
     "Part_2",
     "Container_1_Pos_2",
-    0.05
-  ],
-  [
-    "Part_3",
-    "Container_1_Pos_3",
     0.05
   ]
 ]
