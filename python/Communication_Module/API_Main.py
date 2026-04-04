@@ -1107,6 +1107,18 @@ G — CAPACITY CHECK — always do this before emitting a changes block:
     → Ask: "There are only 6 green parts but 9 kit slots total. Should the remaining
             3 slots be filled with red or blue parts? And which container holds those?"
 
+    EXCEPTION — DO NOT trigger the capacity check when:
+        - The user has already provided a complete kit_recipe that covers all slots per
+            kit (e.g. "1 red, 1 green, 1 blue per kit" for 3-slot kits). In this case the
+            recipe already accounts for every slot. Do NOT ask about remaining slots.
+        - The user says "[color] parts first" or "pick [color] first" alongside a full
+            recipe. That phrase is a PICK ORDER preference only — encode it as a "priority"
+            entry. Do NOT interpret it as that color filling all kit slots.
+        - When the recipe is implied by "1 of each color" (meaning one slot per color per
+            kit), this is also a complete recipe — treat it exactly the same way.
+        In these cases, emit the changes block directly with the correct kit_recipe and
+        priority. Do not ask any capacity question.
+
 H — CONTAINER SCOPE — derive which containers must be inputs from the capacity check:
     If the user says "use green first" and green parts do not fill all kits,
     the other containers (red, blue) must ALSO be set as role="input" so the planner
