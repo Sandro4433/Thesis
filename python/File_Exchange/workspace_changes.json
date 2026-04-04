@@ -17,14 +17,32 @@
   "workspace": {
     "operation_mode": "kitting"
   },
+  "kit_recipe": [
+    {
+      "color": "red",
+      "quantity": 3
+    }
+  ],
   "priority": [
     {
       "color": "red",
-      "order": 1
+      "order": 2
     },
     {
       "color": "green",
+      "order": 1
+    },
+    {
+      "receptacle": "Kit_1",
+      "order": 1
+    },
+    {
+      "receptacle": "Kit_2",
       "order": 2
+    },
+    {
+      "receptacle": "Kit_3",
+      "order": 3
     }
   ]
 }
