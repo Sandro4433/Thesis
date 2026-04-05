@@ -414,24 +414,41 @@ def _color_map(preds: Dict[str, Any]) -> Dict[str, str]:
     return {e["part"]: (e.get("color") or "").lower() for e in preds.get("color", [])}
 
 
-def _compute_part_score(part: str, color: str, preds: Dict[str, Any]) -> int:
+def _compute_part_score(part: str, color: str, preds: Dict[str, Any],
+                        part_to_receptacle: Optional[Dict[str, str]] = None,
+                        fragility_map: Optional[Dict[str, str]] = None) -> int:
     """
     Additive priority score for a part.
     Each applicable rule in the priority list contributes its 'order' value as a score.
     Higher total score = higher priority = picked first.
 
-    Rules that contribute:
-      - {"color": "green", "order": 2}  → all green parts get +2
-      - {"part_name": "Part_3", "order": 1} → Part_3 gets +1
+    Supported priority rule types (all additive):
+      - {"color": "green", "order": 2}           → all green parts get +2
+      - {"part_name": "Part_3", "order": 1}      → Part_3 gets +1
+      - {"fragility": "fragile", "order": 3}     → all fragile parts get +3
+      - {"source": "Container_2", "order": 2}    → all parts in Container_2 get +2
 
-    Example: Part_3 is green.
-      green score = 2, part_name score = 1 → total = 3  (picked before other greens or Part_3 alone)
+    Destination (receptacle fill) priority uses "destination" key and is rank-based
+    (not additive). It is handled separately and does NOT contribute to pick scores.
+
+    Example: Part_3 is green and fragile, in Container_2.
+      color score = 2, fragility score = 3, part_name score = 1 → total = 6
     """
     score = 0
+    part_frag = (fragility_map or {}).get(part, "normal")
+    part_rec  = (part_to_receptacle or {}).get(part, "")
+
     for e in preds.get("priority", []):
+        # Skip destination priorities — they control place ordering, not pick scoring
+        if "destination" in e:
+            continue
         if "color" in e and (e["color"] or "").lower() == color:
             score += int(e.get("order", 0))
         elif "part_name" in e and e["part_name"] == part:
+            score += int(e.get("order", 0))
+        elif "fragility" in e and (e["fragility"] or "").lower() == part_frag:
+            score += int(e.get("order", 0))
+        elif "source" in e and e["source"] == part_rec:
             score += int(e.get("order", 0))
     return score
 
@@ -445,11 +462,18 @@ def _priority_key(preds: Dict[str, Any]):
     return lambda color: -score.get((color or "").lower(), 0)
 
 
-def _receptacle_priority_key(preds: Dict[str, Any]):
-    """Return sort key for receptacles (kits/containers) based on priority list."""
+def _destination_priority_key(preds: Dict[str, Any]):
+    """Return sort key for destination receptacles (kits/containers) based on priority list.
+    
+    Uses 'destination' key in priority entries. Lower order = higher priority (filled first).
+    Falls back to legacy 'receptacle' key for backward compatibility.
+    """
     order = {}
     for e in preds.get("priority", []):
-        if "receptacle" in e:
+        if "destination" in e:
+            order[e["destination"]] = e.get("order", 999)
+        elif "receptacle" in e and "destination" not in e and "source" not in e:
+            # Legacy format: bare "receptacle" key treated as destination
             order[e["receptacle"]] = e.get("order", 999)
     return lambda rec: (order.get(rec, 999), rec)  # secondary sort by name for stability
 
@@ -738,52 +762,48 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, b
     init += _build_compat_init(state, kits, containers)
 
     # ── priority assignments (additive score system) ─────────────────────────
-    # Each priority rule contributes its 'order' value as a SCORE (higher = more
-    # important, picked first).  A part that matches multiple rules gets the SUM
-    # of all applicable scores and is therefore picked before parts that only
-    # match one rule.
+    # Each PICK priority rule contributes its 'order' value as a SCORE
+    # (higher = more important, picked first).  A part that matches multiple
+    # rules gets the SUM of all applicable scores.
     #
-    # Example ("always pick green first AND prioritise Part_3 and Part_7"):
-    #   {"color": "green", "order": 2}       → all green parts get +2
-    #   {"part_name": "Part_3", "order": 1}  → Part_3 gets +1 extra
-    #   {"part_name": "Part_7", "order": 1}  → Part_7 gets +1 extra
+    # Supported pick-priority types (all additive):
+    #   {"color": "green", "order": 2}           → all green parts get +2
+    #   {"part_name": "Part_3", "order": 1}      → Part_3 gets +1
+    #   {"fragility": "fragile", "order": 3}     → all fragile parts get +3
+    #   {"source": "Container_2", "order": 2}    → parts in Container_2 get +2
     #
-    #   Part_3 (green + named): 2 + 1 = 3  → priority-1 (picked first)
-    #   Part_7 (green + named): 2 + 1 = 3  → priority-1 (same level as Part_3)
-    #   Other greens:           2           → priority-2
-    #   Everything else:        0           → no-priority
+    # Destination priority uses RANK (1 = fill first), not additive score:
+    #   {"destination": "Kit_1", "order": 1}     → fill Kit_1 first
+    #   {"destination": "Container_3", "order": 2} → fill Container_3 second
     #
-    # Output-receptacle entries still use 'order' as RANK (1 = fill first).
-    # They are on a separate axis (PLACE ordering) and do not add to pick scores.
+    # Legacy format: {"receptacle": "X", "order": N} is auto-classified as
+    # "destination" if X is an output, or "source" if X is an input.
 
     priority_entries = preds.get("priority", [])
     slot_belongs     = state.get("slot_belongs_to", {})
     color_map_raw    = {e["part"]: (e.get("color") or "").lower()
                         for e in preds.get("color", [])}
 
-    # Build part → container lookup for input-receptacle expansion
+    # Build part → container lookup for source-priority expansion
     part_to_receptacle: Dict[str, str] = {}
     for entry in preds.get("at", []):
         parent = slot_belongs.get(entry["slot"], "")
         part_to_receptacle[entry["part"]] = parent
 
-    # Compute additive score for every part (color + part_name contributions)
+    # Build fragility lookup
+    fragility_map: Dict[str, str] = {}
+    for entry in preds.get("fragility", []):
+        fragility_map[entry["part"]] = (entry.get("fragility") or "normal").lower()
+
+    # Compute additive score for every part (all pick-priority types)
     part_scores: Dict[str, int] = {}
     for p_orig in objs.get("parts", []):
         color = color_map_raw.get(p_orig, "")
-        part_scores[p_orig] = _compute_part_score(p_orig, color, preds)
-
-    # Input-receptacle entries add their score to all parts currently in that container
-    for entry in priority_entries:
-        if "receptacle" not in entry:
-            continue
-        rec_name  = entry["receptacle"]
-        if rec_name not in inputs:
-            continue
-        rec_score = int(entry.get("order", 0))
-        for p_orig in objs.get("parts", []):
-            if part_to_receptacle.get(p_orig) == rec_name:
-                part_scores[p_orig] = part_scores.get(p_orig, 0) + rec_score
+        part_scores[p_orig] = _compute_part_score(
+            p_orig, color, preds,
+            part_to_receptacle=part_to_receptacle,
+            fragility_map=fragility_map,
+        )
 
     has_pick_order = any(s > 0 for s in part_scores.values())
 
@@ -819,14 +839,20 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, b
     # Initialise total-cost to zero (required by :action-costs)
     init.append("    (= (total-cost) 0)")
 
-    # ── receptacle (output) priority assignments ──────────────────────────
-    # Only OUTPUT receptacle priorities control fill order.
-    rec_priority_entries = [e for e in priority_entries if "receptacle" in e]
+    # ── destination (output) priority assignments ────────────────────────
+    # Destination priorities control fill order (rank-based, 1 = first).
+    # Supports both new "destination" key and legacy "receptacle" key.
     rec_to_level: Dict[str, int] = {}
-    for e in rec_priority_entries:
-        rec_name = _to_pddl_name(e["receptacle"])
-        if e["receptacle"] in outputs:
-            rec_to_level[rec_name] = int(e["order"])
+    for e in priority_entries:
+        if "destination" in e:
+            rec_name = _to_pddl_name(e["destination"])
+            if e["destination"] in outputs:
+                rec_to_level[rec_name] = int(e["order"])
+        elif "receptacle" in e and "source" not in e:
+            # Legacy format: bare "receptacle" key → auto-classify
+            rec_name_raw = e["receptacle"]
+            if rec_name_raw in outputs:
+                rec_to_level[_to_pddl_name(rec_name_raw)] = int(e["order"])
 
     workspace_cfg = state.get("workspace", {})
     fill_order = (workspace_cfg.get("fill_order") or "").lower()
@@ -987,7 +1013,7 @@ def _goal_sorting(state: Dict[str, Any]) -> List[str]:
     inputs, outputs = _role_map(preds)
     color_map       = _color_map(preds)
     pkey            = _priority_key(preds)
-    rkey            = _receptacle_priority_key(preds)
+    rkey            = _destination_priority_key(preds)
 
     parts_in_slot = {e["part"] for e in preds.get("at", [])}
     parts_in_input = [
@@ -997,12 +1023,22 @@ def _goal_sorting(state: Dict[str, Any]) -> List[str]:
     standalone    = [p for p in objs.get("parts", []) if p not in parts_in_slot]
     parts_to_move = parts_in_input + standalone
 
-    # Build part-name priority lookup
-    _part_prio = {e["part_name"]: int(e.get("order", 0))
-                  for e in preds.get("priority", []) if "part_name" in e}
-    # Sort by additive score descending: higher score = assigned first
-    # _priority_key already returns -score so ascending sort gives descending priority
-    parts_to_move.sort(key=lambda p: (-_part_prio.get(p, 0), pkey(color_map.get(p, ""))))
+    # Build lookups for full additive scoring
+    frag_map = {e["part"]: e.get("fragility", "normal") for e in preds.get("fragility", [])}
+    part_to_receptacle: Dict[str, str] = {}
+    for entry in preds.get("at", []):
+        parent = slot_belongs.get(entry["slot"], "")
+        part_to_receptacle[entry["part"]] = parent
+
+    # Sort by full additive score descending: higher score = assigned first
+    def _sort_key(p):
+        color = color_map.get(p, "")
+        score = _compute_part_score(p, color, preds,
+                                    part_to_receptacle=part_to_receptacle,
+                                    fragility_map=frag_map)
+        return (-score, pkey(color))
+
+    parts_to_move.sort(key=_sort_key)
 
     compat_rules = preds.get("part_compatibility", [])
     
@@ -1161,8 +1197,8 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
     
     Universal recipes are expanded to all kits with role=output.
     
-    Receptacle priority (from priority list with "receptacle" key):
-      - [{"receptacle": "Kit_1", "order": 1}, {"receptacle": "Kit_2", "order": 2}]
+    Receptacle priority (from priority list with "destination" or legacy "receptacle" key):
+      - [{"destination": "Kit_1", "order": 1}, {"destination": "Kit_2", "order": 2}]
       - Lower order = higher priority (filled first)
       - This naturally achieves "finish Kit_1 before Kit_2" behavior
     """
@@ -1172,7 +1208,7 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
     inputs, outputs = _role_map(preds)
     color_map    = _color_map(preds)
     pkey         = _priority_key(preds)
-    rkey         = _receptacle_priority_key(preds)
+    rkey         = _destination_priority_key(preds)
 
     # Build available parts (in input receptacles or standalone)
     available_parts: List[str] = []
@@ -1231,11 +1267,11 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
 
     # ── If we have kit_recipe, use color-based selection ──
     if raw_recipes:
-        # Build part-name priority lookup for candidate sorting
-        _part_priority_map: Dict[str, int] = {}
-        for e in preds.get("priority", []):
-            if "part_name" in e:
-                _part_priority_map[e["part_name"]] = int(e.get("order", 0))
+        # Build lookups for full additive scoring
+        _part_to_rec: Dict[str, str] = {}
+        for entry in preds.get("at", []):
+            parent = slot_belongs.get(entry["slot"], "")
+            _part_to_rec[entry["part"]] = parent
 
         # Group available parts by color
         available_by_color: Dict[str, List[str]] = {}
@@ -1276,10 +1312,13 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
                 p for p in available_by_color.get(color, [])
                 if p not in used_parts and kit not in part_exclusions.get(p, set())
             ]
-            # Sort: parts with explicit part-name priority first (by order),
-            # then remaining parts (stable order)
+            # Sort by full additive score: fragility, source, part_name all contribute
             # Higher score = picked first; negate for ascending sort
-            candidates.sort(key=lambda p: -_part_priority_map.get(p, 0))
+            candidates.sort(key=lambda p: -_compute_part_score(
+                p, color_map.get(p, ""), preds,
+                part_to_receptacle=_part_to_rec,
+                fragility_map=frag_map,
+            ))
 
             for part, slot in zip(candidates[:qty], free_slots[:qty]):
                 goals.append(f"(at {_to_pddl_name(part)} {_to_pddl_name(slot)})")
@@ -1371,10 +1410,18 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
                 if part in part_info:
                     part_info[part]["allowed_kits"] -= excluded_kits
         
-        # Generate goals for each part, sorted by part-name priority then color priority
-        _pp = {e["part_name"]: int(e.get("order", 0))
-               for e in preds.get("priority", []) if "part_name" in e}
-        sorted_parts = sorted(part_info.keys(), key=lambda p: (-_pp.get(p, 0), pkey(color_map.get(p, ""))))
+        # Generate goals for each part, sorted by full additive score
+        _part_to_rec_compat: Dict[str, str] = {}
+        for entry in preds.get("at", []):
+            parent = slot_belongs.get(entry["slot"], "")
+            _part_to_rec_compat[entry["part"]] = parent
+
+        sorted_parts = sorted(part_info.keys(), key=lambda p: (
+            -_compute_part_score(p, color_map.get(p, ""), preds,
+                                 part_to_receptacle=_part_to_rec_compat,
+                                 fragility_map=frag_map_local),
+            pkey(color_map.get(p, "")),
+        ))
         for part in sorted_parts:
             info = part_info[part]
             if part in used_parts:
@@ -1632,8 +1679,18 @@ def _sort_sequence_by_priority(sequence: List[List], state: Dict[str, Any]) -> L
     """Soft priority enforcement for pyperplan (no action costs)."""
     preds     = state.get("predicates", {})
     color_map = _color_map(preds)
-    pkey      = _priority_key(preds)
-    return sorted(sequence, key=lambda s: pkey(color_map.get(s[0], "")))
+    slot_belongs = state.get("slot_belongs_to", {})
+    frag_map = {e["part"]: e.get("fragility", "normal") for e in preds.get("fragility", [])}
+    part_to_rec: Dict[str, str] = {}
+    for entry in preds.get("at", []):
+        parent = slot_belongs.get(entry["slot"], "")
+        part_to_rec[entry["part"]] = parent
+
+    return sorted(sequence, key=lambda s: -_compute_part_score(
+        s[0], color_map.get(s[0], ""), preds,
+        part_to_receptacle=part_to_rec,
+        fragility_map=frag_map,
+    ))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
