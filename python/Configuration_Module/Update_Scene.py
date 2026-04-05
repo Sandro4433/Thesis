@@ -389,15 +389,26 @@ def apply_update_mapping(
     mapping: Dict[str, str],
 ) -> Dict[str, Any]:
     """
-    Apply the LLM-produced identity mapping to produce the final merged state.
+    Apply the combined identity mapping (auto-matches + LLM overrides) to
+    produce the final merged state.
 
     Parameters
     ----------
     old_state   : previous configuration (source of high-level attributes)
     fresh_state : fresh vision scan (source of physical state)
-    mapping     : {fresh_part_name: old_part_name | "new"}
+    mapping     : {fresh_part_name: old_part_name | "new"} — LLM/user overrides
+
+    The function first computes the auto-matches (position+colour), then layers
+    the user-provided mapping on top.  User overrides take precedence — if the
+    user says Part_5→Part_4 but auto-match had Part_3→Part_4, the auto-match
+    for Part_3 is displaced and Part_3 gets a new ID instead.
     """
     result = copy.deepcopy(fresh_state)
+
+    # ── compute auto-matches ──────────────────────────────────────────────────
+    auto_matched, new_parts, missing_parts = _match_parts_by_position(
+        old_state, fresh_state,
+    )
 
     # ── collect all old part numbers so new IDs don't collide ────────────────
     used_numbers: set = set()
@@ -408,9 +419,32 @@ def apply_update_mapping(
             except ValueError:
                 pass
 
-    # ── build rename map ──────────────────────────────────────────────────────
+    # ── build full rename map: auto-matches first, then user overrides ───────
     rename_map: Dict[str, str] = {}
 
+    # Start with auto-matches (fresh_name → old_name)
+    for old_name, fresh_name in auto_matched:
+        rename_map[fresh_name] = old_name
+
+    # Layer user/LLM mapping on top — these override auto-matches
+    # First, find which old_names the user is claiming for different fresh parts
+    user_claimed_old: Dict[str, str] = {}  # old_name → fresh_name (from user)
+    for fresh_name, target in mapping.items():
+        if target != "new":
+            user_claimed_old[target] = fresh_name
+
+    # Displace any auto-match that conflicts with a user override
+    for fresh_name_auto, old_name_auto in list(rename_map.items()):
+        if old_name_auto in user_claimed_old:
+            user_fresh = user_claimed_old[old_name_auto]
+            if user_fresh != fresh_name_auto:
+                # User is assigning this old_name to a DIFFERENT fresh part
+                # → displace the auto-match (this fresh part will get a new ID)
+                del rename_map[fresh_name_auto]
+                if fresh_name_auto not in mapping:
+                    new_parts.append(fresh_name_auto)
+
+    # Apply user overrides
     for fresh_name, target in mapping.items():
         if target != "new":
             rename_map[fresh_name] = target
@@ -420,15 +454,45 @@ def apply_update_mapping(
                 except ValueError:
                     pass
 
-    # Assign new sequential IDs for "new" parts
+    # Also track numbers from auto-matches
+    for old_name in rename_map.values():
+        if old_name.startswith("Part_"):
+            try:
+                used_numbers.add(int(old_name.split("_", 1)[1]))
+            except ValueError:
+                pass
+
+    # Assign new sequential IDs for "new" parts and displaced auto-matches
+    all_new = [fn for fn, tgt in mapping.items() if tgt == "new"]
+    # Also include fresh parts not in any mapping (auto-match or user)
+    all_fresh = set(fresh_state.get("objects", {}).get("parts", []))
+    unmapped = [p for p in sorted(all_fresh) if p not in rename_map and p not in all_new]
+    all_new = all_new + [p for p in new_parts if p not in all_new] + unmapped
+
     next_num = max(used_numbers, default=0) + 1
-    for fresh_name, target in mapping.items():
-        if target == "new":
-            while next_num in used_numbers:
-                next_num += 1
-            rename_map[fresh_name] = f"Part_{next_num}"
-            used_numbers.add(next_num)
+    for fresh_name in all_new:
+        if fresh_name in rename_map:
+            continue  # already assigned
+        while next_num in used_numbers:
             next_num += 1
+        rename_map[fresh_name] = f"Part_{next_num}"
+        used_numbers.add(next_num)
+        next_num += 1
+
+    # ── validate: no duplicate target names ──────────────────────────────────
+    target_counts: Dict[str, List[str]] = {}
+    for fresh, old in rename_map.items():
+        target_counts.setdefault(old, []).append(fresh)
+    for target, sources in target_counts.items():
+        if len(sources) > 1:
+            print(f"  ⚠  ID collision: {sources} all map to '{target}' — "
+                  f"keeping first, reassigning others")
+            for extra in sources[1:]:
+                while next_num in used_numbers:
+                    next_num += 1
+                rename_map[extra] = f"Part_{next_num}"
+                used_numbers.add(next_num)
+                next_num += 1
 
     _rename_parts_in_state(result, rename_map)
 
