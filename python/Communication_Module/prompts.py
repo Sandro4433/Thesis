@@ -64,17 +64,48 @@ Allowed keys and values:
   "kit_recipe"                     → [{"color": "blue", "quantity": 2}, ...]
   "part_compatibility"             → see COMPATIBILITY FORMAT below
 
-PRIORITY FORMAT — ADDITIVE SCORE SYSTEM:
-⚠ CRITICAL: "order" is an additive SCORE — HIGHER number = HIGHER priority = picked FIRST.
-  This is NOT a rank. 1 is NOT first. The LARGEST number is picked first.
+PRIORITY FORMAT — FIVE PRIORITY TYPES:
+All PICK priorities use an additive SCORE system — HIGHER number = HIGHER priority = picked FIRST.
+Destination priority is the ONE EXCEPTION — it uses RANK (1 = fill first), not score.
 
-  Color priority:      {"color": "red", "order": 2}    ← red picked FIRST (2 > 1)
-  Part-name priority:  {"part_name": "Part_3", "order": 1}
-  Receptacle fill order: {"receptacle": "Kit_1", "order": 1}  (exception: rank, not score)
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ TYPE 1: COLOR PRIORITY (pick score, additive)                         │
+  │   {"color": "red", "order": 2}                                        │
+  │   Use case: "do blue parts first", "do red and green before blue"     │
+  │   Works in: sorting (pick red parts first) and kitting (fill one      │
+  │   color into kits before others when filling in parallel)             │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ TYPE 2: DESTINATION PRIORITY (fill rank, NOT additive)                │
+  │   {"destination": "Container_3", "order": 1}                          │
+  │   {"destination": "Kit_2", "order": 2}                                │
+  │   Use case: "fill container 3 first", "fill Kit 2 first"             │
+  │   Works in: sorting and kitting. Lower order = filled first.          │
+  │   ⚠ This is the ONLY type that uses RANK (1 = first), not score.     │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ TYPE 3: SOURCE (PICK) PRIORITY (pick score, additive)                 │
+  │   {"source": "Container_2", "order": 2}                               │
+  │   Use case: "pick parts from container 2 first"                       │
+  │   Works in: kitting (when same-color parts are in multiple containers │
+  │   and you want to empty one container before the others)              │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ TYPE 4: SPECIFIC PART PRIORITY (pick score, additive)                 │
+  │   {"part_name": "Part_3", "order": 1}                                 │
+  │   Use case: "use Part 3 and Part 14 before others"                    │
+  │   Works in: sorting and kitting                                       │
+  ├─────────────────────────────────────────────────────────────────────────┤
+  │ TYPE 5: FRAGILITY PRIORITY (pick score, additive)                     │
+  │   {"fragility": "fragile", "order": 3}                                │
+  │   Use case: "use fragile parts first"                                 │
+  │   Works in: sorting and kitting                                       │
+  └─────────────────────────────────────────────────────────────────────────┘
 
   Scores from multiple rules ADD TOGETHER for the same part.
 
-MAPPING FROM USER INTENT TO ORDER VALUES:
+⚠ CRITICAL: For pick priorities (color, source, part_name, fragility),
+  "order" is an additive SCORE — HIGHER number = HIGHER priority = picked FIRST.
+  This is NOT a rank. 1 is NOT first. The LARGEST number is picked first.
+
+MAPPING FROM USER INTENT TO ORDER VALUES (pick priorities):
   "red first, then green"       → red gets order 2, green gets order 1  (2 > 1, so red first)
   "green first"                 → green gets order 2, others get order 1 or 0
   "blue first, then red, then green" → blue: 3, red: 2, green: 1
@@ -82,17 +113,19 @@ MAPPING FROM USER INTENT TO ORDER VALUES:
   ⚠ WRONG: "red first" → red order 1, green order 2  ← THIS IS BACKWARDS. DO NOT DO THIS.
   ✓ RIGHT: "red first" → red order 2, green order 1  ← higher score = picked first.
 
-Combination example:
-  [{"color": "green", "order": 2}, {"part_name": "Part_3", "order": 1}]
-  → Part_3 (green) gets 2+1=3, other greens get 2, non-greens get 0.
+Combination example (all types can be mixed):
+  [{"color": "green", "order": 2}, {"part_name": "Part_3", "order": 1},
+   {"fragility": "fragile", "order": 3}, {"source": "Container_1", "order": 1}]
+  → A fragile green Part_3 in Container_1 gets 2+1+3+1=7 (highest priority).
 
-Receptacle fill order is the ONE EXCEPTION — it uses RANK (1 = fill first), not score.
-Sequential filling is the DEFAULT — add receptacle priorities only for non-default order.
-If user says "fill evenly/in parallel" → omit receptacle priorities.
+Destination fill order rules:
+- Sequential filling is the DEFAULT — add destination priorities only for non-default order.
+- If user says "fill evenly/in parallel" → omit destination priorities and set fill_order: "parallel".
 
-Color score rules:
-- NEVER invent scores. Only set color priority when user EXPLICITLY states an order.
+Score rules:
+- NEVER invent scores. Only set priority when user EXPLICITLY states an order or preference.
 - If only one color → no color priority needed.
+- If only one destination → no destination priority needed.
 
 COMPATIBILITY FORMAT:
 Rules use AND logic for part selectors. Each rule can have:
@@ -158,7 +191,7 @@ Information you MUST have before proposing (ask if missing):
 - Color priority: when multiple colors are mentioned but no pick order given
   → ask which color should be picked first (only skip if user already said
   e.g. "red first").
-- Receptacle fill order: when multiple output kits exist and user hasn't
+- Receptacle fill order: when multiple output kits/containers exist and user hasn't
   specified order → use default (sequential, alphabetical). Only ask if user
   gives contradictory hints.
 
@@ -198,9 +231,10 @@ instead of answering, treat their response as the new request — don't repeat
 your question.
 
 PRIORITY CLARIFICATION — NATURAL LANGUAGE:
-When the user gives instructions involving BOTH a color preference AND specific
-part preferences, and some named parts share the priority color, you need to
-understand relative importance. Ask naturally:
+When the user gives instructions involving MULTIPLE priority types (color,
+fragility, source container, specific parts), and some overlap (e.g. a named
+part is already the priority color, or a priority source container only has
+fragile parts), you may need to clarify relative importance. Ask naturally:
 
   Example: User says "use green parts first, but also prioritise Part_3 and Part_1"
   Part_3 is green. Part_1 is blue.
@@ -208,12 +242,12 @@ understand relative importance. Ask naturally:
     Should being green matter more overall, or should the specific parts you
     named take the top spot regardless of color?"
 
-  If the named parts are NOT the priority color, there's no ambiguity — just
-  encode directly without asking.
+  If there is no overlap between the priority types, there's no ambiguity —
+  just encode directly without asking.
 
 DUPLICATE FILL ORDER:
-If two output receptacles end up with the same fill position, ask which
-should be filled first. Use natural language, not rank numbers.
+If two output receptacles end up with the same destination fill position, ask
+which should be filled first. Use natural language, not rank numbers.
 
 Kit recipe:
 - Only ask about recipe if user mentions multiple colors without specifying quantities.
@@ -283,7 +317,7 @@ SKIP this question when:
 
 DEFAULT KIT FILL ORDER:
 Fill one kit completely before starting the next (sequential). Don't add
-receptacle fill-order priorities unless user specifies a non-default order.
+destination fill-order priorities unless user specifies a non-default order.
 
 {_CHANGES_BLOCK_FORMAT}
 
@@ -298,7 +332,7 @@ Example (kitting — "blue first, then red"):
 }}
 ```
 
-Example (multi-source kitting — "blue first, then red"):
+Example (multi-source kitting — "blue first, then red", fill Kit_1 before Kit_2):
 ```changes
 {{
   "Container_2": {{"role": "input"}},
@@ -307,7 +341,54 @@ Example (multi-source kitting — "blue first, then red"):
   "Kit_2": {{"role": "output"}},
   "workspace": {{"operation_mode": "kitting"}},
   "priority": [{{"color": "blue", "order": 2}}, {{"color": "red", "order": 1}},
-               {{"receptacle": "Kit_1", "order": 1}}, {{"receptacle": "Kit_2", "order": 2}}]
+               {{"destination": "Kit_1", "order": 1}}, {{"destination": "Kit_2", "order": 2}}]
+}}
+```
+
+Example (sorting — fill Container_3 first):
+```changes
+{{
+  "Container_1": {{"role": "input"}},
+  "Container_2": {{"role": "output"}},
+  "Container_3": {{"role": "output"}},
+  "workspace": {{"operation_mode": "sorting"}},
+  "part_compatibility": [{{"part_color": "blue", "allowed_in": ["Container_2"]}},
+                         {{"part_color": "red", "allowed_in": ["Container_3"]}}],
+  "priority": [{{"destination": "Container_3", "order": 1}}, {{"destination": "Container_2", "order": 2}}]
+}}
+```
+
+Example (kitting — pick from Container_2 first):
+```changes
+{{
+  "Container_1": {{"role": "input"}},
+  "Container_2": {{"role": "input"}},
+  "Kit_1": {{"role": "output"}},
+  "workspace": {{"operation_mode": "kitting"}},
+  "kit_recipe": [{{"color": "blue", "quantity": 3}}],
+  "priority": [{{"source": "Container_2", "order": 2}}]
+}}
+```
+
+Example (use fragile parts first):
+```changes
+{{
+  "Container_1": {{"role": "input"}},
+  "Kit_1": {{"role": "output"}},
+  "workspace": {{"operation_mode": "kitting"}},
+  "kit_recipe": [{{"color": "blue", "quantity": 3}}],
+  "priority": [{{"fragility": "fragile", "order": 2}}]
+}}
+```
+
+Example (use Part_3 and Part_14 before others):
+```changes
+{{
+  "Container_1": {{"role": "input"}},
+  "Container_2": {{"role": "output"}},
+  "workspace": {{"operation_mode": "sorting"}},
+  "part_compatibility": [{{"part_color": "blue", "allowed_in": ["Container_2"]}}],
+  "priority": [{{"part_name": "Part_3", "order": 1}}, {{"part_name": "Part_14", "order": 1}}]
 }}
 ```
 

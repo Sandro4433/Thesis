@@ -278,7 +278,10 @@ def detect_priority_ambiguity(
     color_map: Dict[str, str],
 ) -> List[str]:
     """
-    Detect duplicate output-receptacle fill-order ranks.
+    Detect duplicate destination fill-order ranks.
+
+    Checks both new "destination" key and legacy "receptacle" key (when used
+    as destination, i.e. no "source" key present).
 
     This is the only remaining ambiguity type — additive part scores resolve
     automatically and don't need clarification.
@@ -287,15 +290,20 @@ def detect_priority_ambiguity(
 
     order_to_recs: Dict[int, List[str]] = {}
     for entry in priority_list:
-        if "receptacle" in entry:
+        rec = None
+        if "destination" in entry:
+            rec = entry["destination"]
+        elif "receptacle" in entry and "source" not in entry:
+            # Legacy format: bare "receptacle" key treated as destination
             rec = entry["receptacle"]
+        if rec is not None:
             order = int(entry["order"])
             order_to_recs.setdefault(order, []).append(rec)
 
     for order, recs in order_to_recs.items():
         if len(recs) > 1:
             ambiguities.append(
-                f"Receptacle fill-order conflict: {' and '.join(recs)} are both "
+                f"Destination fill-order conflict: {' and '.join(recs)} are both "
                 f"assigned the same fill position. Which should be filled first?"
             )
 
