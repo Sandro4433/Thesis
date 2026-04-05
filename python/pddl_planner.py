@@ -1223,6 +1223,12 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
     kit_set     = set(objs.get("kits", []))
     # Only consider kits that are marked as output, sorted by priority
     output_kits = sorted([k for k in kit_set if k in outputs], key=rkey)
+
+    # ── batch_size: limit how many kits are filled in one planning cycle ──
+    workspace_cfg = state.get("workspace", {})
+    batch_size = workspace_cfg.get("batch_size")
+    if batch_size is not None and isinstance(batch_size, int) and batch_size > 0:
+        output_kits = output_kits[:batch_size]
     
     empty_slots: Dict[str, List[str]] = {}
     for s in preds.get("slot_empty", []):

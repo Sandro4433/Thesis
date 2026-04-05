@@ -11,15 +11,8 @@
   "Kit_1": {
     "role": "output"
   },
-  "Kit_2": {
-    "role": "output"
-  },
-  "Kit_3": {
-    "role": "output"
-  },
   "workspace": {
-    "operation_mode": "kitting",
-    "batch_size": 1
+    "operation_mode": "kitting"
   },
   "kit_recipe": [
     {
