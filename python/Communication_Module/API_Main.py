@@ -279,33 +279,33 @@ def _build_update_prompt(old_state: Dict, fresh_state: Dict) -> str:
         raise ValueError(f"build_update_context returned unexpected type: {type(context)}")
 
     return "\n".join([
-        "A fresh vision scan detected changes. Help me match parts.",
+        "Fresh vision scan compared to old scene:",
         "",
         context,
         "",
-        "For each unmatched fresh part, tell me which old part it corresponds to, "
-        "or say 'new' if it's a brand-new part. Output a ```mapping``` block:",
-        "```mapping",
-        '{"Part_<fresh>": "Part_<old>", "Part_<fresh2>": "new"}',
-        "```",
+        "Briefly summarise the result, then output a ```mapping``` block with only",
+        "overrides (auto-matches are applied automatically):",
+        "- To reassign: {\"Part_<fresh>\": \"Part_<old>\"}",
+        "- For new parts: {\"Part_<fresh>\": \"new\"}",
+        "- No overrides needed: {}",
         "",
-        "If all parts are already auto-matched, output an empty mapping:",
-        "```mapping",
-        "{}",
-        "```",
+        "No duplicate IDs allowed — if a reassignment conflicts with an auto-match,",
+        "flag it and ask which part should keep the identity.",
     ])
 
 
 def _run_update_dialogue(client: OpenAI) -> None:
     from Configuration_Module.Update_Scene import prepare_update, apply_update_mapping
 
+    # prepare_update() runs vision internally and returns both old and fresh states.
+    # Do NOT call _run_vision_subprocess() here — it would overwrite configuration.json
+    # before prepare_update() reads it, losing high-level config (fragility, roles, etc.).
     try:
-        _run_vision_subprocess()
+        old_state, fresh_state = prepare_update()
     except RuntimeError as e:
         print(f"\n❌  Vision failed: {e}\n")
         return
 
-    old_state, fresh_state = prepare_update()
     if old_state is None or fresh_state is None:
         print("⚠  Update aborted (missing state files).")
         return
@@ -315,8 +315,13 @@ def _run_update_dialogue(client: OpenAI) -> None:
         {
             "role": "system",
             "content": (
-                "You are a helper that maps detected parts to their previous IDs.\n"
-                "Output ONLY a ```mapping``` block, nothing else."
+                "You help match parts between vision scans.\n\n"
+                "STYLE: Be brief and natural. One or two sentences summarising "
+                "the result, then the mapping block. No bullet lists, no filler.\n\n"
+                "ALWAYS end with a ```mapping``` block (empty {} if no overrides).\n\n"
+                "CONSTRAINT: Every part must have a unique ID. If a user override "
+                "would create a duplicate, point out the conflict in one sentence "
+                "and ask how to resolve it."
             ),
         },
         {"role": "user", "content": prompt_text},
@@ -334,14 +339,14 @@ def _run_update_dialogue(client: OpenAI) -> None:
         except Exception as e:
             print(f"  [Mapping parse error: {e}]")
             user = input("YOU (clarify or 'skip' to accept auto-matches only): ").strip()
-            if user.lower() == "skip":
+            if user.lower() in ("skip", "done"):
                 mapping = {}
                 break
             messages.append({"role": "user", "content": user})
             continue
 
         user = input("YOU (confirm / reject / adjust): ").strip()
-        if is_yes(user):
+        if not user or is_yes(user) or user.lower() == "done":
             break
         if is_no(user):
             messages.append({"role": "user", "content": "Rejected. Ask me again."})

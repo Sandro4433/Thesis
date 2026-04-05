@@ -106,8 +106,12 @@ def extract_mapping_block(text: str) -> Dict[str, str]:
         raise ValueError("No ```mapping``` block found.")
 
     data = json.loads(m.group(1).strip())
-    if not isinstance(data, dict) or not data:
-        raise ValueError("Mapping block must be a non-empty JSON object.")
+    if not isinstance(data, dict):
+        raise ValueError("Mapping block must be a JSON object.")
+
+    # Empty mapping is valid — means all parts are auto-matched
+    if not data:
+        return data
 
     for k, v in data.items():
         if not isinstance(k, str) or not isinstance(v, str):
