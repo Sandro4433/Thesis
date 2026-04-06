@@ -283,24 +283,25 @@ def _build_update_prompt(old_state: Dict, fresh_state: Dict) -> str:
         "",
         context,
         "",
-        "Briefly summarise the result, then output a ```mapping``` block with only",
-        "overrides (auto-matches are applied automatically):",
-        "- To reassign: {\"Part_<fresh>\": \"Part_<old>\"}",
-        "- For new parts: {\"Part_<fresh>\": \"new\"}",
+        "Output a ```mapping``` block with only overrides",
+        "(auto-matches are applied automatically).",
+        "Use the part names as they appear in the image:",
+        "- To reassign: {\"<name_in_image>\": \"<desired_old_name>\"}",
+        "- For new parts: {\"<name_in_image>\": \"new\"}",
         "- No overrides needed: {}",
         "",
         "No duplicate IDs allowed — if a reassignment conflicts with an auto-match,",
         "flag it and ask which part should keep the identity.",
         "",
-        "IMPORTANT: If the analysis above lists POSSIBLE MOVES, address them in",
-        "your summary. Ask the user to confirm or deny each suspected move BEFORE",
-        "proposing a final mapping. Use the suggested override format from the",
-        "hypothesis if the user confirms the move.",
+        "If POSSIBLE MOVES are listed above, ask the user about them before",
+        "proposing a mapping. Do not explain the scene — just ask.",
     ])
 
 
 def _run_update_dialogue(client: OpenAI) -> None:
-    from Configuration_Module.Update_Scene import prepare_update, apply_update_mapping
+    from Configuration_Module.Update_Scene import (
+        prepare_update, apply_update_mapping, redraw_image_with_auto_matches,
+    )
 
     # prepare_update() runs vision internally and returns both old and fresh states.
     # Do NOT call _run_vision_subprocess() here — it would overwrite configuration.json
@@ -315,31 +316,38 @@ def _run_update_dialogue(client: OpenAI) -> None:
         print("⚠  Update aborted (missing state files).")
         return
 
+    # Re-annotate the image with auto-matched names so the user sees
+    # old-config IDs (where auto-matching succeeded) during the dialogue,
+    # not the arbitrary sequential IDs from the vision detector.
+    redraw_image_with_auto_matches(old_state, fresh_state)
+
     prompt_text = _build_update_prompt(old_state, fresh_state)
     messages: List[Dict[str, str]] = [
         {
             "role": "system",
             "content": (
                 "You help match parts between vision scans.\n\n"
-                "STYLE: Be brief and natural. One or two sentences summarising "
-                "the result, then the mapping block. No bullet lists, no filler.\n\n"
+                "STYLE: Be brief. Do NOT describe or narrate the scene, do NOT "
+                "explain what the auto-matcher did, do NOT list what parts are "
+                "where. The user has a GUI and can see the scene. Just ask "
+                "your questions and output the mapping block. One or two "
+                "sentences max before the mapping block.\n\n"
                 "ALWAYS end with a ```mapping``` block (empty {} if no overrides).\n\n"
                 "CONSTRAINT: Every part must have a unique ID. If a user override "
                 "would create a duplicate, point out the conflict in one sentence "
                 "and ask how to resolve it.\n\n"
-                "MAPPING DIRECTION: The mapping block uses "
-                "{\"<fresh_scan_name>\": \"<old_config_name>\"}.\n"
-                "Example: if the user says 'Part_3 was moved to where Part_5 "
-                "was', and the fresh scan calls that detection 'Part_5', the "
-                "correct mapping override is: {\"Part_5\": \"Part_3\"}.\n"
-                "The user thinks in terms of OLD part identities and physical "
-                "actions (moved, removed, added). You must translate to FRESH "
-                "scan names as keys.\n\n"
+                "IMAGE NAMES: The image shows auto-matched parts with their "
+                "old-config names and new detections with fresh vision names. "
+                "The mapping block uses these image-visible names as keys. "
+                "Use the names exactly as they appear in the analysis.\n\n"
                 "PROACTIVE MOVE DETECTION: When the analysis lists POSSIBLE "
-                "MOVES, ask the user about them BEFORE proposing a mapping. "
-                "Frame it naturally, e.g.: 'It looks like [old_part] may have "
-                "been moved to [new_slot]. Is that correct, or is the part "
-                "there actually [auto-matched_name]?'\n\n"
+                "MOVES, ask the user about them concisely — don't explain the "
+                "analysis, just ask. For example: 'Was [old_part] moved to "
+                "[slot], or was it removed?'\n\n"
+                "NEW DETECTIONS: Parts listed under NEW DETECTIONS are already "
+                "known to be new — always include them as {\"<name>\": \"new\"} "
+                "in your mapping block. Do not wait for the user to tell you "
+                "they are new.\n\n"
                 "HANDLING SPATIAL REFERENCES: If the user refers to positions "
                 "(left, right, top, bottom), consult the SLOT-BY-SLOT "
                 "COMPARISON table to identify which part they mean. Remember "

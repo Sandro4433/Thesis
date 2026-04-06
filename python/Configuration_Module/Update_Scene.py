@@ -310,8 +310,13 @@ def build_update_context(
     Compute the structural diff between old and fresh states and return a
     human-readable analysis for the LLM prompt.
 
-    Includes a slot-level comparison table and move hypotheses for missing
-    parts whose colour appears at a different slot in the fresh scan.
+    The GUI image has been re-annotated by redraw_image_with_auto_matches()
+    so auto-matched parts show their old-config name and new detections keep
+    their fresh vision name.  This context uses the same image-visible names
+    so the LLM, the user, and the image are all consistent.
+
+    The mapping block also uses image-visible names as keys — apply_update_mapping
+    translates them back to fresh-scan names internally.
     """
     matched, new_parts, missing_parts = _match_parts_by_position(
         old_state, fresh_state,
@@ -326,6 +331,13 @@ def build_update_context(
 
     old_at   = {e["part"]: e["slot"] for e in old_preds.get("at", [])}
     fresh_at = {e["part"]: e["slot"] for e in fresh_preds.get("at", [])}
+
+    # Image-visible name: old name for auto-matched, fresh name for new
+    img_name: Dict[str, str] = {}   # fresh_name → image label
+    for mem_name, fresh_name in matched:
+        img_name[fresh_name] = mem_name
+    for np_name in new_parts:
+        img_name[np_name] = np_name
 
     # Receptacle diff
     old_recs = set(
@@ -347,15 +359,17 @@ def build_update_context(
 
     # ── Auto-matched parts ────────────────────────────────────────────────
     if matched:
-        lines.append("\nAUTO-MATCHED PARTS (same slot + same colour → assumed same part):")
+        lines.append(
+            "\nAUTO-MATCHED PARTS (same slot + same colour → assumed same part):"
+        )
+        lines.append(
+            "  (The image shows these with their old-config name.)"
+        )
         for mem_name, fresh_name in matched:
             fc   = fresh_colors.get(fresh_name, "?")
             slot = fresh_at.get(fresh_name, "standalone")
             frag = f", fragile" if mem_name in old_frag else ""
-            lines.append(
-                f"  New scan '{fresh_name}' → Old '{mem_name}' "
-                f"({fc}{frag}) in {slot}"
-            )
+            lines.append(f"  '{mem_name}' ({fc}{frag}) in {slot}")
 
     # ── Unmatched new detections ─────────────────────────────────────────
     if new_parts:
@@ -375,40 +389,33 @@ def build_update_context(
             lines.append(f"  '{mp}' ({oc}{frag}) was in {slot}")
 
     # ── Slot-level comparison table ──────────────────────────────────────
-    # Shows what was in each slot before vs after, making color changes
-    # and empty/occupied transitions visible at a glance.
-    old_slot_to_part  = {s: p for p, s in old_at.items()}
+    old_slot_to_part   = {s: p for p, s in old_at.items()}
     fresh_slot_to_part = {s: p for p, s in fresh_at.items()}
     all_slots = sorted(set(list(old_at.values()) + list(fresh_at.values())))
 
     if all_slots:
-        lines.append("\nSLOT-BY-SLOT COMPARISON (old scan → fresh scan):")
+        lines.append("\nSLOT-BY-SLOT COMPARISON (old config → current image):")
         for slot in all_slots:
-            op = old_slot_to_part.get(slot, "empty")
-            fp = fresh_slot_to_part.get(slot, "empty")
+            op       = old_slot_to_part.get(slot, "empty")
+            fp_fresh = fresh_slot_to_part.get(slot, "empty")
+            fp_img   = img_name.get(fp_fresh, fp_fresh) if fp_fresh != "empty" else "empty"
             oc = f"/{old_colors.get(op, '?')}" if op != "empty" else ""
-            fc = f"/{fresh_colors.get(fp, '?')}" if fp != "empty" else ""
+            fc = f"/{fresh_colors.get(fp_fresh, '?')}" if fp_fresh != "empty" else ""
             of = ",fragile" if op in old_frag else ""
             change = ""
-            if op == "empty" and fp != "empty":
+            if op == "empty" and fp_fresh != "empty":
                 change = " ← NEW OCCUPANT"
-            elif op != "empty" and fp == "empty":
+            elif op != "empty" and fp_fresh == "empty":
                 change = " ← NOW EMPTY"
-            elif op != "empty" and fp != "empty":
-                op_color = old_colors.get(op, "?")
-                fp_color = fresh_colors.get(fp, "?")
-                if op_color != fp_color:
+            elif op != "empty" and fp_fresh != "empty":
+                if old_colors.get(op, "?") != fresh_colors.get(fp_fresh, "?"):
                     change = " ← COLOR CHANGED"
             lines.append(
-                f"  {slot}: {op}{oc}{of} → {fp}{fc}{change}"
+                f"  {slot}: {op}{oc}{of} → {fp_img}{fc}{change}"
             )
 
     # ── Move hypotheses ──────────────────────────────────────────────────
-    # Auto-matching works by slot+colour, so when a part is moved to a
-    # different slot that previously held a same-colour part, the matcher
-    # assigns it the OLD slot occupant's identity instead.  Detect this
-    # pattern: a missing part whose colour appears at a different slot
-    # (auto-matched to a different old identity).
+    # Uses image-visible names (mem_name for auto-matched parts).
     if missing_parts:
         move_hyps: List[str] = []
         for mp in missing_parts:
@@ -422,19 +429,15 @@ def build_update_context(
                 fc = fresh_colors.get(fresh_name, "?")
                 if fc != mp_color or mp_color == "?":
                     continue
-                # Same colour, different identity — the part at this slot
-                # could be the missing part moved here.
                 fresh_slot = fresh_at.get(fresh_name, "?")
                 matched_old_slot = old_at.get(mem_name, "?")
-                # Skip if this auto-match is at the missing part's own old
-                # slot (that would mean the part didn't move).
                 if matched_old_slot == mp_slot:
                     continue
+                # Image shows mem_name — use that in the override syntax
                 move_hyps.append(
-                    f"  '{fresh_name}' in {fresh_slot} (auto-matched to "
-                    f"'{mem_name}') could actually be '{mp}'"
-                    f"({mp_color}{frag}) moved from {mp_slot}. "
-                    f"If so, override: {{\"{fresh_name}\": \"{mp}\"}}"
+                    f"  '{mem_name}' in {fresh_slot} could actually be "
+                    f"'{mp}'({mp_color}{frag}) moved from {mp_slot}. "
+                    f"If so, override: {{\"{mem_name}\": \"{mp}\"}}"
                 )
 
         if move_hyps:
@@ -450,8 +453,6 @@ def build_update_context(
             )
 
     # ── High-level attributes to preserve ────────────────────────────────
-    # List any user-assigned attributes from the old config so the LLM
-    # knows they need to be carried over when identities are resolved.
     if old_frag:
         lines.append("\nHIGH-LEVEL ATTRIBUTES TO PRESERVE (from old config):")
         for part_name, frag_val in sorted(old_frag.items()):
@@ -476,12 +477,13 @@ def apply_update_mapping(
     ----------
     old_state   : previous configuration (source of high-level attributes)
     fresh_state : fresh vision scan (source of physical state)
-    mapping     : {fresh_part_name: old_part_name | "new"} — LLM/user overrides
+    mapping     : {image_visible_name: old_part_name | "new"} — LLM/user overrides.
+                  Keys use the names shown in the GUI image: old-config names
+                  for auto-matched parts, fresh-scan names for new detections.
 
-    The function first computes the auto-matches (position+colour), then layers
-    the user-provided mapping on top.  User overrides take precedence — if the
-    user says Part_5→Part_4 but auto-match had Part_3→Part_4, the auto-match
-    for Part_3 is displaced and Part_3 gets a new ID instead.
+    The function first computes the auto-matches (position+colour), translates
+    image-visible mapping keys back to fresh-scan names, then layers the user
+    overrides on top.
     """
     result = copy.deepcopy(fresh_state)
 
@@ -489,6 +491,25 @@ def apply_update_mapping(
     auto_matched, new_parts, missing_parts = _match_parts_by_position(
         old_state, fresh_state,
     )
+
+    # ── translate image-visible mapping keys → fresh-scan names ──────────────
+    # The image shows auto-matched parts with old-config names (mem_name).
+    # The mapping from the LLM uses these image-visible names as keys.
+    # We need fresh-scan names for the rename logic below.
+    old_to_fresh: Dict[str, str] = {}  # old_name → fresh_name (from auto-match)
+    for old_name, fresh_name in auto_matched:
+        old_to_fresh[old_name] = fresh_name
+
+    translated_mapping: Dict[str, str] = {}
+    for img_key, target in mapping.items():
+        # If the key is an old-config name that was auto-matched, translate
+        # to the corresponding fresh name
+        if img_key in old_to_fresh:
+            translated_mapping[old_to_fresh[img_key]] = target
+        else:
+            # Key is already a fresh-scan name (new detection) or unmatched
+            translated_mapping[img_key] = target
+    mapping = translated_mapping
 
     # ── collect all old part numbers so new IDs don't collide ────────────────
     used_numbers: set = set()
@@ -676,6 +697,55 @@ def _redraw_annotated_image(
 
     except Exception as exc:
         print(f"  ⚠  Image re-annotation failed: {exc}")
+
+
+def redraw_image_with_auto_matches(
+    old_state: Dict[str, Any],
+    fresh_state: Dict[str, Any],
+) -> None:
+    """
+    Re-annotate latest_image.png with auto-matched part names BEFORE the
+    LLM dialogue starts.  This way the user sees old-config IDs (for parts
+    that auto-matched) and fresh IDs only for genuinely new detections,
+    rather than the arbitrary sequential IDs assigned by the vision detector.
+
+    Called from _run_update_dialogue() right after prepare_update().
+    """
+    matched, new_parts, _missing = _match_parts_by_position(
+        old_state, fresh_state,
+    )
+
+    # Build preliminary rename map: auto-matches only
+    rename_map: Dict[str, str] = {}
+    for old_name, fresh_name in matched:
+        rename_map[fresh_name] = old_name
+
+    # For new (unmatched) parts keep the fresh name as-is
+    # (no rename needed — they'll show as Part_N from vision)
+
+    # Build fragility set from old config so FRAGILE labels appear
+    # on auto-matched parts that had fragility in the previous config
+    old_preds = old_state.get("predicates", {})
+    old_frag = {
+        e["part"] for e in old_preds.get("fragility", [])
+        if e.get("fragility") == "fragile"
+    }
+
+    # The fragile_set needs to use the NEW names (after rename), so
+    # translate: if old Part_3 was fragile and auto-matched to fresh Part_5,
+    # the fragile_set should contain "Part_3" (the display name after rename)
+    fragile_set: set = set()
+    for fresh_name, old_name in rename_map.items():
+        if old_name in old_frag:
+            fragile_set.add(old_name)
+
+    _redraw_annotated_image(rename_map, {
+        "predicates": {
+            "fragility": [
+                {"part": p, "fragility": "fragile"} for p in fragile_set
+            ]
+        }
+    })
 
 
 # ── post-execution automated rescan ──────────────────────────────────────────
