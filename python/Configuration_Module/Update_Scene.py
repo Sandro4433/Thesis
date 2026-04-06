@@ -309,6 +309,9 @@ def build_update_context(
     """
     Compute the structural diff between old and fresh states and return a
     human-readable analysis for the LLM prompt.
+
+    Includes a slot-level comparison table and move hypotheses for missing
+    parts whose colour appears at a different slot in the fresh scan.
     """
     matched, new_parts, missing_parts = _match_parts_by_position(
         old_state, fresh_state,
@@ -342,9 +345,9 @@ def build_update_context(
     for r in sorted(old_recs - fresh_recs):
         lines.append(f"  - {r} — no longer detected")
 
-    # Auto-matched parts
+    # ── Auto-matched parts ────────────────────────────────────────────────
     if matched:
-        lines.append("\nAUTO-MATCHED PARTS (position + colour confirmed):")
+        lines.append("\nAUTO-MATCHED PARTS (same slot + same colour → assumed same part):")
         for mem_name, fresh_name in matched:
             fc   = fresh_colors.get(fresh_name, "?")
             slot = fresh_at.get(fresh_name, "standalone")
@@ -354,15 +357,15 @@ def build_update_context(
                 f"({fc}{frag}) in {slot}"
             )
 
-    # Unmatched new detections
+    # ── Unmatched new detections ─────────────────────────────────────────
     if new_parts:
-        lines.append("\nNEW DETECTIONS (no matching old part at same position+colour):")
+        lines.append("\nNEW DETECTIONS (no matching old part at same slot+colour):")
         for np_name in new_parts:
             fc   = fresh_colors.get(np_name, "?")
             slot = fresh_at.get(np_name, "standalone")
             lines.append(f"  '{np_name}' ({fc}) in {slot}")
 
-    # Missing old parts
+    # ── Missing old parts ────────────────────────────────────────────────
     if missing_parts:
         lines.append("\nMISSING FROM NEW SCAN:")
         for mp in missing_parts:
@@ -371,7 +374,84 @@ def build_update_context(
             frag = f", fragile" if mp in old_frag else ""
             lines.append(f"  '{mp}' ({oc}{frag}) was in {slot}")
 
-    # High-level attributes summary
+    # ── Slot-level comparison table ──────────────────────────────────────
+    # Shows what was in each slot before vs after, making color changes
+    # and empty/occupied transitions visible at a glance.
+    old_slot_to_part  = {s: p for p, s in old_at.items()}
+    fresh_slot_to_part = {s: p for p, s in fresh_at.items()}
+    all_slots = sorted(set(list(old_at.values()) + list(fresh_at.values())))
+
+    if all_slots:
+        lines.append("\nSLOT-BY-SLOT COMPARISON (old scan → fresh scan):")
+        for slot in all_slots:
+            op = old_slot_to_part.get(slot, "empty")
+            fp = fresh_slot_to_part.get(slot, "empty")
+            oc = f"/{old_colors.get(op, '?')}" if op != "empty" else ""
+            fc = f"/{fresh_colors.get(fp, '?')}" if fp != "empty" else ""
+            of = ",fragile" if op in old_frag else ""
+            change = ""
+            if op == "empty" and fp != "empty":
+                change = " ← NEW OCCUPANT"
+            elif op != "empty" and fp == "empty":
+                change = " ← NOW EMPTY"
+            elif op != "empty" and fp != "empty":
+                op_color = old_colors.get(op, "?")
+                fp_color = fresh_colors.get(fp, "?")
+                if op_color != fp_color:
+                    change = " ← COLOR CHANGED"
+            lines.append(
+                f"  {slot}: {op}{oc}{of} → {fp}{fc}{change}"
+            )
+
+    # ── Move hypotheses ──────────────────────────────────────────────────
+    # Auto-matching works by slot+colour, so when a part is moved to a
+    # different slot that previously held a same-colour part, the matcher
+    # assigns it the OLD slot occupant's identity instead.  Detect this
+    # pattern: a missing part whose colour appears at a different slot
+    # (auto-matched to a different old identity).
+    if missing_parts:
+        move_hyps: List[str] = []
+        for mp in missing_parts:
+            mp_color = old_colors.get(mp, "?")
+            mp_slot  = old_at.get(mp, "?")
+            frag = ", fragile" if mp in old_frag else ""
+
+            for mem_name, fresh_name in matched:
+                if mem_name == mp:
+                    continue
+                fc = fresh_colors.get(fresh_name, "?")
+                if fc != mp_color or mp_color == "?":
+                    continue
+                # Same colour, different identity — the part at this slot
+                # could be the missing part moved here.
+                fresh_slot = fresh_at.get(fresh_name, "?")
+                matched_old_slot = old_at.get(mem_name, "?")
+                # Skip if this auto-match is at the missing part's own old
+                # slot (that would mean the part didn't move).
+                if matched_old_slot == mp_slot:
+                    continue
+                move_hyps.append(
+                    f"  '{fresh_name}' in {fresh_slot} (auto-matched to "
+                    f"'{mem_name}') could actually be '{mp}'"
+                    f"({mp_color}{frag}) moved from {mp_slot}. "
+                    f"If so, override: {{\"{fresh_name}\": \"{mp}\"}}"
+                )
+
+        if move_hyps:
+            lines.append(
+                "\nPOSSIBLE MOVES — the auto-matcher assigns identity by "
+                "slot+colour, so a part moved to a different slot gets the "
+                "wrong identity if that slot previously held a same-colour part:"
+            )
+            lines.extend(move_hyps)
+            lines.append(
+                "  → Ask the user which interpretation is correct before "
+                "accepting the auto-match."
+            )
+
+    # ── High-level attributes to preserve ────────────────────────────────
+    # List any user-assigned attributes from the old config so the LLM
+    # knows they need to be carried over when identities are resolved.
     if old_frag:
         lines.append("\nHIGH-LEVEL ATTRIBUTES TO PRESERVE (from old config):")
         for part_name, frag_val in sorted(old_frag.items()):

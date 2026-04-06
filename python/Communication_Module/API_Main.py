@@ -291,6 +291,11 @@ def _build_update_prompt(old_state: Dict, fresh_state: Dict) -> str:
         "",
         "No duplicate IDs allowed — if a reassignment conflicts with an auto-match,",
         "flag it and ask which part should keep the identity.",
+        "",
+        "IMPORTANT: If the analysis above lists POSSIBLE MOVES, address them in",
+        "your summary. Ask the user to confirm or deny each suspected move BEFORE",
+        "proposing a final mapping. Use the suggested override format from the",
+        "hypothesis if the user confirms the move.",
     ])
 
 
@@ -321,7 +326,24 @@ def _run_update_dialogue(client: OpenAI) -> None:
                 "ALWAYS end with a ```mapping``` block (empty {} if no overrides).\n\n"
                 "CONSTRAINT: Every part must have a unique ID. If a user override "
                 "would create a duplicate, point out the conflict in one sentence "
-                "and ask how to resolve it."
+                "and ask how to resolve it.\n\n"
+                "MAPPING DIRECTION: The mapping block uses "
+                "{\"<fresh_scan_name>\": \"<old_config_name>\"}.\n"
+                "Example: if the user says 'Part_3 was moved to where Part_5 "
+                "was', and the fresh scan calls that detection 'Part_5', the "
+                "correct mapping override is: {\"Part_5\": \"Part_3\"}.\n"
+                "The user thinks in terms of OLD part identities and physical "
+                "actions (moved, removed, added). You must translate to FRESH "
+                "scan names as keys.\n\n"
+                "PROACTIVE MOVE DETECTION: When the analysis lists POSSIBLE "
+                "MOVES, ask the user about them BEFORE proposing a mapping. "
+                "Frame it naturally, e.g.: 'It looks like [old_part] may have "
+                "been moved to [new_slot]. Is that correct, or is the part "
+                "there actually [auto-matched_name]?'\n\n"
+                "HANDLING SPATIAL REFERENCES: If the user refers to positions "
+                "(left, right, top, bottom), consult the SLOT-BY-SLOT "
+                "COMPARISON table to identify which part they mean. Remember "
+                "the axis convention: LARGER X = LEFT, LARGER Y = LOWER."
             ),
         },
         {"role": "user", "content": prompt_text},

@@ -4,9 +4,7 @@
     "batch_size": null
   },
   "objects": {
-    "kits": [
-      "Kit_3"
-    ],
+    "kits": [],
     "containers": [
       "Container_1"
     ],
@@ -24,10 +22,7 @@
       "Container_1_Pos_3",
       "Container_1_Pos_4",
       "Container_1_Pos_5",
-      "Container_1_Pos_6",
-      "Kit_3_Pos_1",
-      "Kit_3_Pos_2",
-      "Kit_3_Pos_3"
+      "Container_1_Pos_6"
     ]
   },
   "slot_belongs_to": {
@@ -36,10 +31,7 @@
     "Container_1_Pos_3": "Container_1",
     "Container_1_Pos_4": "Container_1",
     "Container_1_Pos_5": "Container_1",
-    "Container_1_Pos_6": "Container_1",
-    "Kit_3_Pos_1": "Kit_3",
-    "Kit_3_Pos_2": "Kit_3",
-    "Kit_3_Pos_3": "Kit_3"
+    "Container_1_Pos_6": "Container_1"
   },
   "predicates": {
     "at": [
@@ -48,7 +40,7 @@
         "slot": "Container_1_Pos_1"
       },
       {
-        "part": "Part_3",
+        "part": "Part_1",
         "slot": "Container_1_Pos_2"
       },
       {
@@ -57,29 +49,21 @@
       },
       {
         "part": "Part_2",
+        "slot": "Container_1_Pos_4"
+      },
+      {
+        "part": "Part_3",
         "slot": "Container_1_Pos_5"
       },
       {
         "part": "Part_5",
         "slot": "Container_1_Pos_6"
-      },
-      {
-        "part": "Part_1",
-        "slot": "Kit_3_Pos_2"
       }
     ],
-    "slot_empty": [
-      "Container_1_Pos_4",
-      "Kit_3_Pos_1",
-      "Kit_3_Pos_3"
-    ],
+    "slot_empty": [],
     "role": [
       {
         "object": "Container_1",
-        "role": null
-      },
-      {
-        "object": "Kit_3",
         "role": null
       }
     ],
@@ -89,8 +73,8 @@
         "color": "green"
       },
       {
-        "part": "Part_3",
-        "color": "green"
+        "part": "Part_1",
+        "color": "blue"
       },
       {
         "part": "Part_6",
@@ -101,12 +85,12 @@
         "color": "blue"
       },
       {
-        "part": "Part_5",
-        "color": "green"
+        "part": "Part_3",
+        "color": "blue"
       },
       {
-        "part": "Part_1",
-        "color": "blue"
+        "part": "Part_5",
+        "color": "green"
       }
     ],
     "priority": [],
@@ -116,64 +100,52 @@
   },
   "positions_xy": {
     "Container_1_Pos_1": [
-      0.2964,
-      0.2775
+      0.4863,
+      0.3169
     ],
     "Container_1_Pos_2": [
-      0.3519,
-      0.3065
+      0.5406,
+      0.3481
     ],
     "Container_1_Pos_3": [
-      0.3532,
-      0.3764
+      0.539,
+      0.4181
     ],
     "Container_1_Pos_4": [
-      0.2988,
-      0.4074
+      0.4833,
+      0.4468
     ],
     "Container_1_Pos_5": [
-      0.2432,
-      0.3784
+      0.429,
+      0.4155
     ],
     "Container_1_Pos_6": [
-      0.242,
-      0.3084
-    ],
-    "Kit_3_Pos_1": [
-      0.4374,
-      0.5189
-    ],
-    "Kit_3_Pos_2": [
-      0.4583,
-      0.5752
-    ],
-    "Kit_3_Pos_3": [
-      0.3963,
-      0.5662
+      0.4306,
+      0.3456
     ],
     "Part_1": [
-      0.4758,
-      0.5724
+      0.5525,
+      0.3475
     ],
     "Part_2": [
-      0.2396,
-      0.3759
+      0.4902,
+      0.4502
     ],
     "Part_3": [
-      0.3553,
-      0.3057
+      0.4321,
+      0.4143
     ],
     "Part_4": [
-      0.2959,
-      0.2727
+      0.4942,
+      0.3124
     ],
     "Part_5": [
-      0.2384,
-      0.3081
+      0.4339,
+      0.3468
     ],
     "Part_6": [
-      0.3574,
-      0.3733
+      0.5508,
+      0.4171
     ]
   }
 }
