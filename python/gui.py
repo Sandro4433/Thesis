@@ -45,6 +45,7 @@ except ImportError:
     HAS_PIL = False
 
 LATEST_IMAGE_PATH = PROJECT_DIR / "File_Exchange" / "latest_image.png"
+CANCEL_SENTINEL   = PROJECT_DIR / "File_Exchange" / ".cancel_execution"
 
 # ── Tell Vision_Main to skip cv2.imshow (GUI shows the image instead) ─────────
 os.environ["ROBOT_GUI_MODE"] = "1"
@@ -764,11 +765,23 @@ class RobotGUI:
             self._btn(self._btn_bar, text, color, cmd).pack(side=tk.LEFT, padx=5)
 
     def _show_cancel_bar(self) -> None:
-        """Show only the Done button (used during configure mode)."""
+        """Show only the Done button (used during configure/planning mode)."""
         self._clear_bar()
         self._btn(
             self._btn_bar, "Done", C["bg_accent"],
             self._cancel_configure,
+        ).pack(side=tk.LEFT, padx=5)
+
+    def _show_execute_bar(self) -> None:
+        """Show Cancel + Log buttons during robot execution."""
+        self._clear_bar()
+        self._btn(
+            self._btn_bar, "Cancel", C["bg_red"],
+            self._cancel_execution,
+        ).pack(side=tk.LEFT, padx=5)
+        self._btn(
+            self._btn_bar, "Log", C["bg_orange"],
+            self._open_log_window,
         ).pack(side=tk.LEFT, padx=5)
 
     def _show_configure_options(self) -> None:
@@ -807,6 +820,17 @@ class RobotGUI:
         self._append("YOU: done\n", "user")
         self._in_resp_q.put("done")
 
+    def _cancel_execution(self) -> None:
+        """Signal the execution subprocess to stop after the current step."""
+        try:
+            CANCEL_SENTINEL.parent.mkdir(parents=True, exist_ok=True)
+            CANCEL_SENTINEL.write_text("cancel", encoding="utf-8")
+            self._append("\n⚠  Cancel requested — the robot will finish its current "
+                        "pick-and-place and then return to Camera Home.\n", "warn")
+            self._set_status("Cancelling...", C["fg_warn"])
+        except Exception as exc:
+            self._append(f"\n[ERR] Could not request cancel: {exc}\n", "error")
+
     def _show_text_input(self) -> None:
         if self._in_configure_mode:
             self._show_cancel_bar()
@@ -831,8 +855,17 @@ class RobotGUI:
         self._current_mode = mode
         self._in_configure_mode = True
 
+        # Clean up any leftover cancel sentinel
+        try:
+            CANCEL_SENTINEL.unlink(missing_ok=True)
+        except Exception:
+            pass
+
         self._set_status("Running...", C["fg_muted"])
-        self._show_cancel_bar()
+        if mode == "execute":
+            self._show_execute_bar()
+        else:
+            self._show_cancel_bar()
         self._set_input(False)
         threading.Thread(target=self._worker, args=(mode,), daemon=True).start()
 
@@ -1331,7 +1364,7 @@ class RobotGUI:
         ):
             return
         if self._current_mode == "execute" and tag not in (
-            "success", "error", "user", "divider",
+            "success", "error", "user", "divider", "warn",
         ):
             return
 

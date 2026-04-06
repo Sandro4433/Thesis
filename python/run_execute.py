@@ -25,9 +25,22 @@ sequence = json.loads(SEQUENCE_PATH.read_text(encoding="utf-8"))
 print(f"\n  Executing {len(sequence)} step(s) from: {SEQUENCE_PATH.resolve()}")
 
 from Execution_Module.Robot_Main import main as robot_main  # type: ignore
-robot_main()
+completed = robot_main()
 
-print("\n-- Execution complete. --\n")
+if completed is None:
+    # Backwards-compat: if main() returned None treat as fully completed
+    completed = len(sequence)
+
+if completed < len(sequence):
+    print(f"\n-- Execution cancelled after {completed}/{len(sequence)} step(s). --\n")
+else:
+    print("\n-- Execution complete. --\n")
+
+# Only apply the steps that were actually executed
+executed_sequence = sequence[:completed]
 
 from Configuration_Module.Apply_Sequence_Changes import apply_and_save  # type: ignore
-apply_and_save(CONFIGURATION_PATH, sequence, save_memory=True)
+if executed_sequence:
+    apply_and_save(CONFIGURATION_PATH, executed_sequence, save_memory=True)
+else:
+    print("  No steps were executed — configuration unchanged.")

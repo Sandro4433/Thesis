@@ -6,6 +6,7 @@ from Execution_Module.pick_and_place import pick_and_place
 
 SEQUENCE_PATH      = Path(LLM_RESPONSE_JSON.resolve()).parent / "sequence.json"
 CONFIGURATION_PATH = Path(CONFIGURATION_JSON.resolve())
+CANCEL_SENTINEL    = CONFIGURATION_PATH.parent / ".cancel_execution"
 
 # Gripper width defaults (fallback if not specified in sequence)
 GRIPPER_OPEN_WIDTH           = 0.075   # never changes
@@ -28,6 +29,19 @@ def _load_fragility_map() -> dict:
         return {}
 
 
+def _is_cancelled() -> bool:
+    """Check whether the GUI has requested cancellation."""
+    return CANCEL_SENTINEL.exists()
+
+
+def _clear_cancel() -> None:
+    """Remove the cancel sentinel file."""
+    try:
+        CANCEL_SENTINEL.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 def execute_sequence(robot):
     """
     Reads sequence.json and executes each pick-and-place step.
@@ -40,11 +54,22 @@ def execute_sequence(robot):
 
     Fragility is read from configuration.json at execution time — fragile
     parts use reduced speed throughout their pick-and-place cycle.
+
+    Returns the number of steps that were actually executed (may be less
+    than total if the user cancelled mid-sequence).
     """
     entries       = json.loads(SEQUENCE_PATH.read_text(encoding="utf-8"))
     fragility_map = _load_fragility_map()
+    completed     = 0
 
     for i, entry in enumerate(entries):
+        # ── check for cancellation before starting the next step ──────────
+        if _is_cancelled():
+            _clear_cancel()
+            print(f"\n⚠  Cancellation received after step {completed}/{len(entries)} "
+                  f"— skipping remaining steps.")
+            return completed
+
         if len(entry) == 3:
             pick_name, place_name, gripper_close_width = entry
             gripper_close_width = float(gripper_close_width)
@@ -70,5 +95,7 @@ def execute_sequence(robot):
             gripper_close_width=gripper_close_width,
             fragile=fragile,
         )
+        completed += 1
 
     print(f"\n✅  Sequence complete ({len(entries)} step(s)).")
+    return completed

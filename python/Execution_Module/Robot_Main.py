@@ -24,12 +24,15 @@ def main() -> None:
     robot.MoveJ_J("Camera_Home")
 
     # ── Option A: Run a sequence from sequence.json (standard usage) ──────────
-    execute_sequence(robot)
+    completed = execute_sequence(robot)
 
     # ── Option B: Single manual pick-and-place (still works as before) ────────
     # robot.pick_and_place("Container_1_Pos_1", "Kit_0_Pos_1")
 
     robot.MoveJ_J("Camera_Home")
+
+    # Return step count so run_execute.py can apply only the completed portion
+    return completed
 
 
 if __name__ == "__main__":
