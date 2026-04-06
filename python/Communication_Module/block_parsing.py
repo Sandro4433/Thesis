@@ -23,6 +23,9 @@ CHANGES_BLOCK_FALLBACK_RE = re.compile(
 MAPPING_BLOCK_RE = re.compile(
     r"```mapping\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE
 )
+MAPPING_BLOCK_FALLBACK_RE = re.compile(
+    r"(?:^|\n)\s*mapping\s*\n\s*(\{.*?\})", re.DOTALL | re.IGNORECASE
+)
 
 # ── Valid attribute values ────────────────────────────────────────────────────
 
@@ -100,8 +103,10 @@ def extract_changes_block(text: str) -> Dict[str, Any]:
 
 
 def extract_mapping_block(text: str) -> Dict[str, str]:
-    """Parse a ```mapping``` block → {fresh_name: old_name | "new"}."""
+    """Parse a ```mapping``` block → {image_name: old_name | "new"}."""
     m = MAPPING_BLOCK_RE.search(text or "")
+    if not m:
+        m = MAPPING_BLOCK_FALLBACK_RE.search(text or "")
     if not m:
         raise ValueError("No ```mapping``` block found.")
 

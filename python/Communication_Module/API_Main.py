@@ -271,10 +271,13 @@ def select_scene() -> dict:
 
 # ── Update Scene dialogue ────────────────────────────────────────────────────
 
-def _build_update_prompt(old_state: Dict, fresh_state: Dict) -> str:
+def _build_update_prompt(
+    old_state: Dict, fresh_state: Dict,
+    image_rename_map: Optional[Dict[str, str]] = None,
+) -> str:
     from Configuration_Module.Update_Scene import build_update_context
 
-    context = build_update_context(old_state, fresh_state)
+    context = build_update_context(old_state, fresh_state, image_rename_map)
     if not isinstance(context, str):
         raise ValueError(f"build_update_context returned unexpected type: {type(context)}")
 
@@ -319,9 +322,9 @@ def _run_update_dialogue(client: OpenAI) -> None:
     # Re-annotate the image with auto-matched names so the user sees
     # old-config IDs (where auto-matching succeeded) during the dialogue,
     # not the arbitrary sequential IDs from the vision detector.
-    redraw_image_with_auto_matches(old_state, fresh_state)
+    image_rename_map = redraw_image_with_auto_matches(old_state, fresh_state)
 
-    prompt_text = _build_update_prompt(old_state, fresh_state)
+    prompt_text = _build_update_prompt(old_state, fresh_state, image_rename_map)
     messages: List[Dict[str, str]] = [
         {
             "role": "system",
@@ -383,7 +386,7 @@ def _run_update_dialogue(client: OpenAI) -> None:
             continue
         messages.append({"role": "user", "content": user})
 
-    apply_update_mapping(old_state, fresh_state, mapping)
+    apply_update_mapping(old_state, fresh_state, mapping, image_rename_map)
     print("✅  Update complete.\n")
 
 
