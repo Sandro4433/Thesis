@@ -201,18 +201,33 @@ def _rename_parts_in_state(
 
 
 def _apply_rename_pass(state: Dict[str, Any], rmap: Dict[str, str]) -> None:
-    """Single rename pass across all part-referencing sections."""
+    """
+    Single rename pass across all part-referencing sections.
+
+    Handles any predicate that references parts, regardless of key name:
+      - "part" field  (used by at, color, fragility, and any future per-part predicate)
+      - "part_name" field (used by priority and part_compatibility entries)
+    """
+    # ── objects.parts list ────────────────────────────────────────────────
     parts = state.get("objects", {}).get("parts", [])
     for i, p in enumerate(parts):
         if p in rmap:
             parts[i] = rmap[p]
 
+    # ── all predicates: rename "part" and "part_name" fields ─────────────
     preds = state.get("predicates", {})
-    for pred_key in ("at", "color", "fragility"):
-        for entry in preds.get(pred_key, []):
+    for _pred_key, entries in preds.items():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
             if entry.get("part") in rmap:
                 entry["part"] = rmap[entry["part"]]
+            if entry.get("part_name") in rmap:
+                entry["part_name"] = rmap[entry["part_name"]]
 
+    # ── metric ───────────────────────────────────────────────────────────
     metric = state.get("metric", {})
     for old_name in list(rmap.keys()):
         if old_name in metric:
@@ -227,23 +242,30 @@ def _apply_high_level(fresh: Dict[str, Any], memory: Dict[str, Any]) -> Dict[str
     high-level configuration attributes from memory.
 
     Part IDs in the fresh state must already be stabilised (renamed) before
-    calling this, so fragility is carried over by name.
+    calling this, so attributes are carried over by name.
+
+    High-level predicates (everything except the physical predicates produced
+    by vision: at, slot_empty, color) are copied from the old config and
+    filtered to remove references to parts/receptacles that no longer exist.
     """
     result    = copy.deepcopy(fresh)
     mem_ws    = memory.get("workspace", {})
     mem_preds = memory.get("predicates", {})
     res_preds = result.setdefault("predicates", {})
 
-    # workspace
-    result.setdefault("workspace", {})
-    result["workspace"]["operation_mode"] = mem_ws.get("operation_mode")
-    result["workspace"]["batch_size"]     = mem_ws.get("batch_size")
-
-    # role — carry over for receptacles that still exist
+    fresh_parts_set = set(result.get("objects", {}).get("parts", []))
     fresh_receptacles = set(
         result.get("objects", {}).get("kits", []) +
         result.get("objects", {}).get("containers", [])
     )
+    fresh_slots = set(result.get("objects", {}).get("slots", []))
+
+    # ── workspace ────────────────────────────────────────────────────────
+    result.setdefault("workspace", {})
+    result["workspace"]["operation_mode"] = mem_ws.get("operation_mode")
+    result["workspace"]["batch_size"]     = mem_ws.get("batch_size")
+
+    # ── role — carry over for receptacles that still exist ───────────────
     res_preds["role"] = [
         e for e in mem_preds.get("role", [])
         if e.get("object") in fresh_receptacles
@@ -252,17 +274,64 @@ def _apply_high_level(fresh: Dict[str, Any], memory: Dict[str, Any]) -> Dict[str
     for rec in sorted(fresh_receptacles - existing):
         res_preds["role"].append({"object": rec, "role": None})
 
-    # list predicates — carry over wholesale
-    res_preds["priority"]           = mem_preds.get("priority",           [])
-    res_preds["kit_recipe"]         = mem_preds.get("kit_recipe",         [])
-    res_preds["part_compatibility"] = mem_preds.get("part_compatibility",  [])
+    # ── kit_recipe — no part references, carry over wholesale ────────────
+    res_preds["kit_recipe"] = mem_preds.get("kit_recipe", [])
 
-    # fragility — carry over by name (IDs are stable at this point)
-    fresh_parts_set = set(result.get("objects", {}).get("parts", []))
-    res_preds["fragility"] = [
-        entry for entry in mem_preds.get("fragility", [])
-        if entry.get("part") in fresh_parts_set
-    ]
+    # ── predicates with part references — filter out stale entries ───────
+    # Physical predicates (at, slot_empty, color) come from the fresh state
+    # and are already correct.  Everything else is high-level config from
+    # the old state and needs stale-reference filtering.
+    #
+    # An entry is stale if it references a part, receptacle, or slot that
+    # no longer exists in the fresh state.
+
+    _PHYSICAL_PREDS = {"at", "slot_empty", "color", "role", "kit_recipe"}
+
+    for pred_key, mem_entries in mem_preds.items():
+        if pred_key in _PHYSICAL_PREDS:
+            continue
+        if not isinstance(mem_entries, list):
+            continue
+
+        filtered = []
+        for entry in mem_entries:
+            if not isinstance(entry, dict):
+                filtered.append(entry)
+                continue
+
+            # Check all fields that might reference scene objects
+            stale = False
+
+            # "part" field (used by fragility and any future per-part predicate)
+            if "part" in entry and entry["part"] not in fresh_parts_set:
+                stale = True
+
+            # "part_name" field (used by priority and part_compatibility)
+            if "part_name" in entry and entry["part_name"] not in fresh_parts_set:
+                stale = True
+
+            # "source" / "destination" fields (priority — reference receptacles)
+            if "source" in entry and entry["source"] not in fresh_receptacles:
+                stale = True
+            if "destination" in entry and entry["destination"] not in fresh_receptacles:
+                stale = True
+
+            # "allowed_in" / "not_allowed_in" (part_compatibility — lists of receptacles)
+            for list_key in ("allowed_in", "not_allowed_in"):
+                if list_key in entry and isinstance(entry[list_key], list):
+                    entry[list_key] = [
+                        r for r in entry[list_key]
+                        if r in fresh_receptacles
+                    ]
+
+            # "target_slot" (part_compatibility — single slot reference)
+            if "target_slot" in entry and entry["target_slot"] not in fresh_slots:
+                stale = True
+
+            if not stale:
+                filtered.append(entry)
+
+        res_preds[pred_key] = filtered
 
     return result
 
@@ -305,18 +374,22 @@ def prepare_update() -> Tuple[Dict[str, Any], Dict[str, Any]]:
 def build_update_context(
     old_state: Dict[str, Any],
     fresh_state: Dict[str, Any],
+    image_rename_map: Optional[Dict[str, str]] = None,
 ) -> str:
     """
     Compute the structural diff between old and fresh states and return a
     human-readable analysis for the LLM prompt.
 
     The GUI image has been re-annotated by redraw_image_with_auto_matches()
-    so auto-matched parts show their old-config name and new detections keep
-    their fresh vision name.  This context uses the same image-visible names
+    so auto-matched parts show their old-config name and new detections get
+    unique non-colliding IDs.  This context uses the same image-visible names
     so the LLM, the user, and the image are all consistent.
 
-    The mapping block also uses image-visible names as keys — apply_update_mapping
-    translates them back to fresh-scan names internally.
+    Parameters
+    ----------
+    image_rename_map : {fresh_vision_name: image_label} returned by
+                       redraw_image_with_auto_matches(). If None, image-visible
+                       names are computed locally (backward compat).
     """
     matched, new_parts, missing_parts = _match_parts_by_position(
         old_state, fresh_state,
@@ -332,12 +405,16 @@ def build_update_context(
     old_at   = {e["part"]: e["slot"] for e in old_preds.get("at", [])}
     fresh_at = {e["part"]: e["slot"] for e in fresh_preds.get("at", [])}
 
-    # Image-visible name: old name for auto-matched, fresh name for new
-    img_name: Dict[str, str] = {}   # fresh_name → image label
-    for mem_name, fresh_name in matched:
-        img_name[fresh_name] = mem_name
-    for np_name in new_parts:
-        img_name[np_name] = np_name
+    # Image-visible name: use the map from redraw_image_with_auto_matches
+    # if provided, otherwise build locally for backward compatibility.
+    if image_rename_map is not None:
+        img_name = image_rename_map  # fresh_name → image label
+    else:
+        img_name = {}
+        for mem_name, fresh_name in matched:
+            img_name[fresh_name] = mem_name
+        for np_name in new_parts:
+            img_name[np_name] = np_name
 
     # Receptacle diff
     old_recs = set(
@@ -375,9 +452,10 @@ def build_update_context(
     if new_parts:
         lines.append("\nNEW DETECTIONS (no matching old part at same slot+colour):")
         for np_name in new_parts:
+            np_img = img_name.get(np_name, np_name)
             fc   = fresh_colors.get(np_name, "?")
             slot = fresh_at.get(np_name, "standalone")
-            lines.append(f"  '{np_name}' ({fc}) in {slot}")
+            lines.append(f"  '{np_img}' ({fc}) in {slot}")
 
     # ── Missing old parts ────────────────────────────────────────────────
     if missing_parts:
@@ -468,6 +546,7 @@ def apply_update_mapping(
     old_state: Dict[str, Any],
     fresh_state: Dict[str, Any],
     mapping: Dict[str, str],
+    image_rename_map: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """
     Apply the combined identity mapping (auto-matches + LLM overrides) to
@@ -479,11 +558,11 @@ def apply_update_mapping(
     fresh_state : fresh vision scan (source of physical state)
     mapping     : {image_visible_name: old_part_name | "new"} — LLM/user overrides.
                   Keys use the names shown in the GUI image: old-config names
-                  for auto-matched parts, fresh-scan names for new detections.
-
-    The function first computes the auto-matches (position+colour), translates
-    image-visible mapping keys back to fresh-scan names, then layers the user
-    overrides on top.
+                  for auto-matched parts, preliminary new IDs for new detections.
+    image_rename_map : {fresh_vision_name: image_label} returned by
+                       redraw_image_with_auto_matches(). Used to translate
+                       image-visible mapping keys back to fresh-scan names.
+                       If None, falls back to auto-match-only translation.
     """
     result = copy.deepcopy(fresh_state)
 
@@ -493,21 +572,24 @@ def apply_update_mapping(
     )
 
     # ── translate image-visible mapping keys → fresh-scan names ──────────────
-    # The image shows auto-matched parts with old-config names (mem_name).
-    # The mapping from the LLM uses these image-visible names as keys.
-    # We need fresh-scan names for the rename logic below.
-    old_to_fresh: Dict[str, str] = {}  # old_name → fresh_name (from auto-match)
-    for old_name, fresh_name in auto_matched:
-        old_to_fresh[old_name] = fresh_name
+    # The image shows renamed labels (old names for matched, new IDs for new
+    # detections).  The mapping from the LLM uses these image labels as keys.
+    # We need the original fresh-scan names for the rename logic below.
+    if image_rename_map:
+        # Build reverse: image_label → fresh_name
+        img_to_fresh: Dict[str, str] = {v: k for k, v in image_rename_map.items()}
+    else:
+        # Fallback: only auto-match translation (no new-detection translation)
+        img_to_fresh = {}
+        for old_name, fresh_name in auto_matched:
+            img_to_fresh[old_name] = fresh_name
 
     translated_mapping: Dict[str, str] = {}
     for img_key, target in mapping.items():
-        # If the key is an old-config name that was auto-matched, translate
-        # to the corresponding fresh name
-        if img_key in old_to_fresh:
-            translated_mapping[old_to_fresh[img_key]] = target
+        if img_key in img_to_fresh:
+            translated_mapping[img_to_fresh[img_key]] = target
         else:
-            # Key is already a fresh-scan name (new detection) or unmatched
+            # Key is already a fresh-scan name or unknown — pass through
             translated_mapping[img_key] = target
     mapping = translated_mapping
 
@@ -702,26 +784,44 @@ def _redraw_annotated_image(
 def redraw_image_with_auto_matches(
     old_state: Dict[str, Any],
     fresh_state: Dict[str, Any],
-) -> None:
+) -> Dict[str, str]:
     """
     Re-annotate latest_image.png with auto-matched part names BEFORE the
     LLM dialogue starts.  This way the user sees old-config IDs (for parts
-    that auto-matched) and fresh IDs only for genuinely new detections,
+    that auto-matched) and unique new IDs for genuinely new detections,
     rather than the arbitrary sequential IDs assigned by the vision detector.
 
     Called from _run_update_dialogue() right after prepare_update().
+
+    Returns the rename map {fresh_vision_name: image_label} so that
+    build_update_context() can use the same image-visible names.
     """
     matched, new_parts, _missing = _match_parts_by_position(
         old_state, fresh_state,
     )
 
-    # Build preliminary rename map: auto-matches only
+    # Build preliminary rename map: auto-matches → old names
     rename_map: Dict[str, str] = {}
     for old_name, fresh_name in matched:
         rename_map[fresh_name] = old_name
 
-    # For new (unmatched) parts keep the fresh name as-is
-    # (no rename needed — they'll show as Part_N from vision)
+    # Assign new detections unique IDs that don't collide with any old name
+    # or any auto-matched name.
+    used_numbers: set = set()
+    for name in old_state.get("objects", {}).get("parts", []):
+        if name.startswith("Part_"):
+            try:
+                used_numbers.add(int(name.split("_", 1)[1]))
+            except ValueError:
+                pass
+
+    next_num = max(used_numbers, default=0) + 1
+    for fresh_name in new_parts:
+        while next_num in used_numbers:
+            next_num += 1
+        rename_map[fresh_name] = f"Part_{next_num}"
+        used_numbers.add(next_num)
+        next_num += 1
 
     # Build fragility set from old config so FRAGILE labels appear
     # on auto-matched parts that had fragility in the previous config
@@ -731,9 +831,6 @@ def redraw_image_with_auto_matches(
         if e.get("fragility") == "fragile"
     }
 
-    # The fragile_set needs to use the NEW names (after rename), so
-    # translate: if old Part_3 was fragile and auto-matched to fresh Part_5,
-    # the fragile_set should contain "Part_3" (the display name after rename)
     fragile_set: set = set()
     for fresh_name, old_name in rename_map.items():
         if old_name in old_frag:
@@ -746,6 +843,8 @@ def redraw_image_with_auto_matches(
             ]
         }
     })
+
+    return rename_map
 
 
 # ── post-execution automated rescan ──────────────────────────────────────────
