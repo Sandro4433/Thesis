@@ -121,8 +121,15 @@ def is_finish(text: str) -> bool:
     return False
 
 
+def _is_pure_short(text: str, max_words: int = 5) -> bool:
+    """True if the text is short enough to be a pure confirmation/rejection."""
+    return len(text.split()) <= max_words
+
+
 def is_yes(text: str) -> bool:
     t = text.strip().lower()
+    if not _is_pure_short(t):
+        return False
     return (
         _contains_word(t, ["yes", "ok", "okay", "confirm", "confirmed", "sure", "correct"])
         or any(p in t for p in ["go ahead", "do it", "looks good"])
@@ -132,6 +139,8 @@ def is_yes(text: str) -> bool:
 
 def is_no(text: str) -> bool:
     t = text.strip().lower()
+    if not _is_pure_short(t):
+        return False
     return (
         _contains_word(t, ["no", "nope", "cancel", "reject", "wrong", "redo"])
         or t == "n"
