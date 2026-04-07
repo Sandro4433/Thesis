@@ -1,44 +1,51 @@
 [
   {
     "name": "Part_1",
-    "cx_px": 1028,
-    "cy_px": 281,
+    "cx_px": 1025,
+    "cy_px": 284,
     "color": "Blue",
-    "diameter_mm": 62.11746484041214
+    "diameter_mm": 63.40765953063965
   },
   {
     "name": "Part_2",
-    "cx_px": 1129,
-    "cy_px": 658,
+    "cx_px": 1132,
+    "cy_px": 664,
     "color": "Blue",
-    "diameter_mm": 53.02002839744091
+    "diameter_mm": 65.56296022608876
   },
   {
     "name": "Part_3",
-    "cx_px": 850,
-    "cy_px": 419,
+    "cx_px": 847,
+    "cy_px": 423,
     "color": "Green",
-    "diameter_mm": 44.63276267051697
+    "diameter_mm": 44.38066482543945
   },
   {
     "name": "Part_4",
-    "cx_px": 960,
-    "cy_px": 651,
+    "cx_px": 958,
+    "cy_px": 655,
     "color": "Green",
-    "diameter_mm": 43.37619245052338
+    "diameter_mm": 44.10678148269653
   },
   {
     "name": "Part_5",
-    "cx_px": 858,
-    "cy_px": 239,
-    "color": "Red",
-    "diameter_mm": 53.074538707733154
+    "cx_px": 1165,
+    "cy_px": 439,
+    "color": "Green",
+    "diameter_mm": 47.107701189816
   },
   {
     "name": "Part_6",
-    "cx_px": 1033,
-    "cy_px": 492,
+    "cx_px": 856,
+    "cy_px": 241,
     "color": "Red",
-    "diameter_mm": 43.82036626338959
+    "diameter_mm": 54.00681495666504
+  },
+  {
+    "name": "Part_7",
+    "cx_px": 1031,
+    "cy_px": 495,
+    "color": "Red",
+    "diameter_mm": 43.851807713508606
   }
 ]

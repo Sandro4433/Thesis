@@ -151,13 +151,17 @@ def is_no(text: str) -> bool:
 
 def _apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
     from Configuration_Module.Apply_Config_Changes import apply_changes
+    import io, contextlib
 
     if not CONFIGURATION_PATH.exists():
         print(f"⚠  configuration.json not found — cannot apply changes.")
         return
 
     scene = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
-    updated = apply_changes(scene, accumulated_changes)
+
+    # Suppress any verbose output from apply_changes
+    with contextlib.redirect_stdout(io.StringIO()):
+        updated = apply_changes(scene, accumulated_changes)
 
     tmp = str(CONFIGURATION_PATH) + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
@@ -657,7 +661,7 @@ def run_session(client: OpenAI, mode: str) -> None:
                     save_changes(accumulated_changes)
                     _apply_and_save_config(accumulated_changes)
                     print("✅  Changes saved.")
-                print("\n── Session complete. ──\n")
+                print("\n── Configuration complete. ──\n")
                 return
             if user_input:
                 messages.append({"role": "user", "content": user_input})
@@ -726,7 +730,7 @@ def _try_extract_sequence(
                 "role": "user",
                 "content": (
                     f"Your sequence block failed to parse: {e}\n"
-                    'Each entry must be ["pick", "place"] or ["pick", "place", 0.05].\n'
+                    'Each entry must be ["pick", "place"].\n'
                     "Please rewrite the sequence block."
                 ),
             })
@@ -798,7 +802,7 @@ def _finalize_session(
         _apply_and_save_config(accumulated)
         print("✅  Changes saved.")
 
-    print("\n── Session complete. ──\n")
+    print("\n── Configuration complete. ──\n")
 
 
 # ── Robot execution ──────────────────────────────────────────────────────────
