@@ -577,6 +577,28 @@ def build_update_context(
     if not new_parts and not missing_parts:
         lines.append("\nAll parts auto-matched successfully. No ambiguities.")
 
+    # ── Inventory summary (for sanity-checking user claims) ──────────────
+    old_parts_list = old_state.get("objects", {}).get("parts", [])
+    fresh_parts_list = fresh_state.get("objects", {}).get("parts", [])
+
+    # Count by colour
+    from collections import Counter
+    old_color_counts = Counter(old_colors.get(p, "unknown") for p in old_parts_list)
+    fresh_color_counts = Counter(fresh_colors.get(p, "unknown") for p in fresh_parts_list)
+    all_colors_seen = sorted(set(list(old_color_counts.keys()) + list(fresh_color_counts.keys())))
+
+    lines.append(f"\nINVENTORY SUMMARY (use to sanity-check user claims):")
+    lines.append(f"  Total parts:  old={len(old_parts_list)}, current={len(fresh_parts_list)}, "
+                 f"delta={len(fresh_parts_list) - len(old_parts_list):+d}")
+    for c in all_colors_seen:
+        oc = old_color_counts.get(c, 0)
+        fc = fresh_color_counts.get(c, 0)
+        delta = fc - oc
+        if delta != 0:
+            lines.append(f"  {c}: old={oc}, current={fc} (delta={delta:+d})")
+        else:
+            lines.append(f"  {c}: old={oc}, current={fc} (unchanged)")
+
     return "\n".join(lines)
 
 
