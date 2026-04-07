@@ -113,11 +113,24 @@ def _match_parts_by_position(
     threshold_m: float = POSITION_MATCH_THRESHOLD_M,
 ) -> Tuple[List[Tuple[str, str]], List[str], List[str]]:
     """
-    Match freshly detected parts to memory parts by XY proximity AND colour.
+    Match freshly detected parts to memory parts by slot identity OR
+    XY proximity, combined with colour compatibility.
 
-    A match requires BOTH:
-      - XY distance ≤ threshold_m
-      - colours agree (or at least one is unknown/missing)
+    Matching is done in two passes:
+
+    1. **Slot-based** (highest priority): if a memory part and a fresh part
+       occupy the same named slot (e.g. ``Container_1_Pos_2``) and their
+       colours are compatible, they are matched immediately.  This handles
+       the case where a container/kit was physically moved — the parts
+       inside stay in the same slot but their absolute XY coordinates
+       change, so pure position matching would fail.
+
+    2. **XY-based** (fallback for standalone parts or unmatched slotted
+       parts): memory and fresh parts within *threshold_m* metres AND
+       with compatible colours are matched greedily by distance.
+
+    A colour is "compatible" when both colours are known and equal, or
+    when at least one side is unknown/missing.
 
     Returns
     -------
@@ -135,9 +148,38 @@ def _match_parts_by_position(
     mem_colors   = {e["part"]: e.get("color") for e in mem_preds.get("color", [])}
     fresh_colors = {e["part"]: e.get("color") for e in fresh_preds.get("color", [])}
 
-    mem_pos   = {n: _part_xy(mem_metric, n) for n in mem_parts}
+    # ── Pass 1: slot-based matching ──────────────────────────────────────
+    # Build slot→part lookups from the "at" predicate.
+    mem_at:   Dict[str, str] = {}   # slot → mem_part
+    fresh_at: Dict[str, str] = {}   # slot → fresh_part
+    for e in mem_preds.get("at", []):
+        mem_at[e["slot"]] = e["part"]
+    for e in fresh_preds.get("at", []):
+        fresh_at[e["slot"]] = e["part"]
+
+    used_mem:   set = set()
+    used_fresh: set = set()
+    matched: List[Tuple[str, str]] = []
+
+    for slot, mn in mem_at.items():
+        fn = fresh_at.get(slot)
+        if fn is None:
+            continue                # slot is empty in fresh scan
+        if mn in used_mem or fn in used_fresh:
+            continue                # already matched (shouldn't happen, but safe)
+        # Colour compatibility check
+        fc = fresh_colors.get(fn)
+        mc = mem_colors.get(mn)
+        if fc and mc and fc != mc:
+            continue                # colour mismatch → don't match by slot
+        matched.append((mn, fn))
+        used_mem.add(mn)
+        used_fresh.add(fn)
+
+    # ── Pass 2: XY-based matching (for remaining unmatched parts) ────────
+    mem_pos   = {n: _part_xy(mem_metric, n) for n in mem_parts if n not in used_mem}
     mem_pos   = {k: v for k, v in mem_pos.items() if v is not None}
-    fresh_pos = {n: _part_xy(fresh_metric, n) for n in fresh_parts}
+    fresh_pos = {n: _part_xy(fresh_metric, n) for n in fresh_parts if n not in used_fresh}
     fresh_pos = {k: v for k, v in fresh_pos.items() if v is not None}
 
     # Build candidate pairs: within threshold AND colour-compatible
@@ -154,10 +196,6 @@ def _match_parts_by_position(
     candidates.sort()
 
     # Greedy assignment (closest first, no double-use)
-    used_mem: set   = set()
-    used_fresh: set = set()
-    matched: List[Tuple[str, str]] = []
-
     for _d, mn, fn in candidates:
         if mn in used_mem or fn in used_fresh:
             continue
@@ -437,7 +475,7 @@ def build_update_context(
     # ── Auto-matched parts ────────────────────────────────────────────────
     if matched:
         lines.append(
-            "\nAUTO-MATCHED PARTS (same slot + same colour → assumed same part):"
+            "\nAUTO-MATCHED PARTS (same slot + same colour, or same position + same colour → assumed same part):"
         )
         lines.append(
             "  (The image shows these with their old-config name.)"
@@ -450,7 +488,7 @@ def build_update_context(
 
     # ── Unmatched new detections ─────────────────────────────────────────
     if new_parts:
-        lines.append("\nNEW DETECTIONS (no matching old part at same slot+colour):")
+        lines.append("\nNEW DETECTIONS (no matching old part at same slot/position+colour):")
         for np_name in new_parts:
             np_img = img_name.get(np_name, np_name)
             fc   = fresh_colors.get(np_name, "?")
