@@ -192,6 +192,15 @@ Information you MUST have before proposing (ask if missing):
   specified order → use default (sequential, alphabetical). Only ask if user
   gives contradictory hints.
 
+INPUT JSON STRUCTURE:
+  - "workspace": operation_mode, batch_size
+  - "receptacle_xy": {{name: [x, y]}} — position of each Kit/Container
+  - "capacity": per-receptacle summary with total_slots, occupied, empty,
+    parts_by_color, and role. USE THIS for all constraint checks instead of
+    manually counting slots in the slots dict.
+  - "slots": slot-level detail with role, child_part, and xy
+  - "parts": standalone parts (not in any slot) with xy
+
 Questions you must NEVER ask (answer is in the JSON):
 - "Which container holds the [color] parts?" → look it up.
 - "From which container should I pick [color/part]?" → infer from JSON.
@@ -231,9 +240,18 @@ CHECK 2 — SUFFICIENT PARTS:
   - The user said "[color] first" — that's pick ORDER, not a quantity limit.
 
 CHECK 3 — DESTINATION HAS SPACE:
-  For each output receptacle, count its empty slots. If the recipe or task
-  requires more slots than are empty, tell the user:
-    "[Kit/Container] only has N empty slots but needs M."
+  For each output receptacle, count its empty slots. Compare against how many
+  parts will be routed there:
+    SORTING: count how many parts of each color exist in input containers.
+      The part_compatibility rules determine which colors go where. Sum up
+      ALL parts that would be routed to each output container. If the total
+      exceeds that container's empty slots, flag the problem.
+    KITTING: recipe total per kit must fit in available empty slots.
+  If parts_to_place > empty_slots for ANY output, do NOT propose a changes
+  block. Instead, ask the user concisely how to resolve it. For example:
+    "There are N [color] parts to sort into [Container_X], but it only has
+    M empty slots. Should I leave some parts unsorted, or use a different
+    container for overflow?"
   A receptacle with ZERO empty slots is full — it cannot be an output target.
 
 CHECK 4 — SOURCE PARTS ACCESSIBLE:
@@ -488,6 +506,8 @@ If user indicates no task ("nothing", "no task", "skip", etc.):
 INPUT JSON contains:
   - "workspace": operation_mode, batch_size
   - "receptacle_xy": {{name: [x, y]}} — position of each Kit/Container (metres)
+  - "capacity": per-receptacle summary with total_slots, occupied, empty,
+    parts_by_color, and role. Use for constraint checks.
   - "slots": Kit_*/Container_* positions with role, child_part, and xy
   - "parts": standalone parts with xy
 

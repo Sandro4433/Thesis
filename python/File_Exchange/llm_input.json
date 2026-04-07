@@ -48,14 +48,21 @@
     "Container_2_Pos_6": "Container_2"
   },
   "predicates": {
-    "at": [],
+    "at": [
+      {
+        "part": "Part_6",
+        "slot": "Container_1_Pos_5"
+      },
+      {
+        "part": "Part_3",
+        "slot": "Container_1_Pos_6"
+      }
+    ],
     "slot_empty": [
       "Container_1_Pos_1",
       "Container_1_Pos_2",
       "Container_1_Pos_3",
       "Container_1_Pos_4",
-      "Container_1_Pos_5",
-      "Container_1_Pos_6",
       "Container_2_Pos_1",
       "Container_2_Pos_2",
       "Container_2_Pos_3",
@@ -75,6 +82,14 @@
     ],
     "color": [
       {
+        "part": "Part_6",
+        "color": "red"
+      },
+      {
+        "part": "Part_3",
+        "color": "green"
+      },
+      {
         "part": "Part_1",
         "color": "blue"
       },
@@ -83,20 +98,12 @@
         "color": "blue"
       },
       {
-        "part": "Part_3",
-        "color": "green"
-      },
-      {
         "part": "Part_4",
         "color": "green"
       },
       {
         "part": "Part_5",
         "color": "green"
-      },
-      {
-        "part": "Part_6",
-        "color": "red"
       },
       {
         "part": "Part_7",
@@ -110,80 +117,80 @@
   },
   "positions_xy": {
     "Container_1_Pos_1": [
-      0.4937,
-      0.1382
+      0.4694,
+      0.2324
     ],
     "Container_1_Pos_2": [
-      0.5489,
-      0.1679
+      0.532,
+      0.2342
     ],
     "Container_1_Pos_3": [
-      0.5493,
-      0.2379
+      0.5638,
+      0.2965
     ],
     "Container_1_Pos_4": [
-      0.4945,
-      0.2682
+      0.5284,
+      0.3482
     ],
     "Container_1_Pos_5": [
-      0.4393,
-      0.2385
+      0.4658,
+      0.3465
     ],
     "Container_1_Pos_6": [
-      0.4389,
-      0.1685
+      0.434,
+      0.2841
     ],
     "Container_2_Pos_1": [
-      0.4819,
-      0.3173
+      0.5476,
+      0.4284
     ],
     "Container_2_Pos_2": [
-      0.5346,
-      0.3512
+      0.5977,
+      0.466
     ],
     "Container_2_Pos_3": [
-      0.5297,
-      0.421
+      0.5877,
+      0.5353
     ],
     "Container_2_Pos_4": [
-      0.4727,
-      0.447
+      0.5289,
+      0.5571
     ],
     "Container_2_Pos_5": [
-      0.4199,
-      0.4132
+      0.4788,
+      0.5195
     ],
     "Container_2_Pos_6": [
-      0.4249,
-      0.3434
+      0.4889,
+      0.4502
     ],
     "Part_1": [
       0.2497,
-      0.2454
+      0.2453
     ],
     "Part_2": [
-      0.1922,
-      0.4418
+      0.1933,
+      0.4412
     ],
     "Part_3": [
-      0.34,
-      0.3193
+      0.4368,
+      0.2839
     ],
     "Part_4": [
-      0.2814,
-      0.4382
+      0.3405,
+      0.3191
     ],
     "Part_5": [
-      0.1759,
-      0.3248
+      0.1827,
+      0.3229
     ],
     "Part_6": [
-      0.3371,
-      0.2249
+      0.4683,
+      0.345
     ],
     "Part_7": [
-      0.2449,
-      0.3554
+      0.3379,
+      0.2263
     ]
   }
 }

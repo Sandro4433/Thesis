@@ -117,9 +117,37 @@ def slim_scene(state: dict) -> dict:
         cy = round(sum(p[1] for p in xys) / len(xys), 4)
         receptacle_xy[name] = [cx, cy]
 
+    # ── Capacity summary (pre-computed for LLM constraint checks) ──────
+    # Counts parts by color per receptacle, and empty slots per receptacle.
+    capacity: Dict[str, Any] = {}
+    for rec_name in sorted(set(
+        objs.get("kits", []) + objs.get("containers", [])
+    )):
+        rec_slots = [s for s, p in slot_belongs.items() if p == rec_name]
+        occupied = []
+        empty_count = 0
+        color_counts: Dict[str, int] = {}
+        for s in rec_slots:
+            sv = slots_view.get(s, {})
+            cp = sv.get("child_part")
+            if cp is not None:
+                occupied.append(cp["name"])
+                c = (cp.get("color") or "unknown").lower()
+                color_counts[c] = color_counts.get(c, 0) + 1
+            else:
+                empty_count += 1
+        capacity[rec_name] = {
+            "total_slots": len(rec_slots),
+            "occupied": len(occupied),
+            "empty": empty_count,
+            "parts_by_color": color_counts if color_counts else {},
+            "role": role_map.get(rec_name),
+        }
+
     return {
         "workspace": state.get("workspace", {"operation_mode": None, "batch_size": None}),
         "receptacle_xy": receptacle_xy,
+        "capacity": capacity,
         "slots": slots_view,
         "parts": parts_view,
     }

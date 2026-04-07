@@ -551,6 +551,144 @@ def _handle_conflicts(
     return result
 
 
+# ── Capacity validation (sorting / kitting) ─────────────────────────────────
+
+def _validate_capacity(
+    changes: Dict[str, Any],
+) -> Optional[str]:
+    """
+    Check whether a proposed changes block would route more parts to an output
+    receptacle than it has empty slots.
+
+    Returns a human-readable warning string if a problem is found, or None if
+    everything fits.  Works for both sorting and kitting.
+    """
+    if not CONFIGURATION_PATH.exists():
+        return None
+
+    try:
+        state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    preds  = state.get("predicates", {})
+    objs   = state.get("objects", {})
+    s2p    = state.get("slot_belongs_to", {})
+
+    # Build role map: start from current roles, overlay proposed changes
+    role_map: Dict[str, Optional[str]] = {
+        e["object"]: e.get("role") for e in preds.get("role", [])
+    }
+    for key, val in changes.items():
+        if isinstance(val, dict) and "role" in val:
+            role_map[key] = val["role"]
+
+    # Identify output and input receptacles
+    all_recs = set(objs.get("kits", []) + objs.get("containers", []))
+    output_recs = {r for r in all_recs if role_map.get(r) == "output"}
+    input_recs  = {r for r in all_recs if role_map.get(r) == "input"}
+
+    if not output_recs:
+        return None
+
+    # Count empty slots per output receptacle
+    empty_slots: Dict[str, int] = {}
+    for rec in output_recs:
+        rec_slots = [s for s, p in s2p.items() if p == rec]
+        occupied = set()
+        for e in preds.get("at", []):
+            if e["slot"] in rec_slots:
+                occupied.add(e["slot"])
+        empty_slots[rec] = len(rec_slots) - len(occupied)
+
+    # Build color map for parts
+    color_of: Dict[str, str] = {
+        e["part"]: (e.get("color") or "unknown").lower()
+        for e in preds.get("color", [])
+    }
+
+    # Determine which parts are in input receptacles
+    slot_to_rec = s2p
+    part_at: Dict[str, str] = {e["part"]: e["slot"] for e in preds.get("at", [])}
+
+    input_parts: list = []
+    for part, slot in part_at.items():
+        rec = slot_to_rec.get(slot)
+        if rec in input_recs:
+            input_parts.append(part)
+
+    # Also count standalone parts (not in any slot) — they're implicitly available
+    in_slot_set = set(part_at.keys())
+    for p in objs.get("parts", []):
+        if p not in in_slot_set:
+            input_parts.append(p)
+
+    op_mode = (changes.get("workspace") or {}).get("operation_mode") or \
+              (state.get("workspace") or {}).get("operation_mode")
+
+    problems: list = []
+
+    if op_mode == "sorting":
+        # Determine routing from part_compatibility rules
+        compat = changes.get("part_compatibility") or preds.get("part_compatibility", [])
+        # Count how many parts would go to each output
+        routed: Dict[str, int] = {r: 0 for r in output_recs}
+
+        for part in input_parts:
+            pc = color_of.get(part, "unknown")
+            # Find which output this part would go to
+            destinations: list = []
+            for rule in compat:
+                match = True
+                if "part_color" in rule and rule["part_color"].lower() != pc:
+                    match = False
+                if "part_name" in rule and rule["part_name"] != part:
+                    match = False
+                if match and "allowed_in" in rule:
+                    destinations.extend(
+                        r for r in rule["allowed_in"] if r in output_recs
+                    )
+            # If no specific rule but there's a catch-all (no part_color filter)
+            if not destinations:
+                for rule in compat:
+                    if "part_color" not in rule and "part_name" not in rule:
+                        if "allowed_in" in rule:
+                            destinations.extend(
+                                r for r in rule["allowed_in"] if r in output_recs
+                            )
+            # If only one output, everything goes there
+            if not destinations and len(output_recs) == 1:
+                destinations = list(output_recs)
+
+            for dest in destinations:
+                routed[dest] = routed.get(dest, 0) + 1
+
+        for rec in output_recs:
+            needed = routed.get(rec, 0)
+            avail = empty_slots.get(rec, 0)
+            if needed > avail:
+                problems.append(
+                    f"{rec} would receive {needed} parts but only has "
+                    f"{avail} empty slot{'s' if avail != 1 else ''}."
+                )
+
+    elif op_mode == "kitting":
+        recipe = changes.get("kit_recipe") or preds.get("kit_recipe", [])
+        if recipe:
+            total_per_kit = sum(e.get("quantity", 0) for e in recipe)
+            for rec in output_recs:
+                avail = empty_slots.get(rec, 0)
+                if total_per_kit > avail:
+                    problems.append(
+                        f"{rec} needs {total_per_kit} slots for the recipe "
+                        f"but only has {avail} empty."
+                    )
+
+    if problems:
+        return "Capacity problem:\n" + "\n".join(f"  - {p}" for p in problems)
+    return None
+
+
 # ── Session runner ───────────────────────────────────────────────────────────
 
 def run_session(client: OpenAI, mode: str) -> None:
@@ -629,6 +767,24 @@ def run_session(client: OpenAI, mode: str) -> None:
                         + msg
                         + "\n\nDo NOT output a changes block yet. "
                         "Ask me the clarification question above first."
+                    ),
+                })
+                pending_changes = None
+                continue
+
+        # ── Capacity validation guard ────────────────────────────────────
+        if pending_changes:
+            cap_warning = _validate_capacity(pending_changes)
+            if cap_warning:
+                print(f"  [Capacity check failed]\n  {cap_warning}")
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"Before I confirm — there is a capacity problem with "
+                        f"your proposal:\n\n{cap_warning}\n\n"
+                        "Do NOT output a changes block yet. "
+                        "Ask the user how to resolve this (e.g. leave some "
+                        "parts unsorted, use a different container, etc.)."
                     ),
                 })
                 pending_changes = None
