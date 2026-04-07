@@ -23,7 +23,13 @@ CHANGES_BLOCK_FALLBACK_RE = re.compile(
 MAPPING_BLOCK_RE = re.compile(
     r"```mapping\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE
 )
+# Fallback 1: "mapping" on its own line, then a separate ``` block with JSON
 MAPPING_BLOCK_FALLBACK_RE = re.compile(
+    r"(?:^|\n)\s*mapping\s*\n\s*```[^\n]*\n\s*(\{.*?\})\s*\n\s*```",
+    re.DOTALL | re.IGNORECASE,
+)
+# Fallback 2: "mapping" on its own line, then bare JSON (no fences)
+MAPPING_BLOCK_FALLBACK2_RE = re.compile(
     r"(?:^|\n)\s*mapping\s*\n\s*(\{.*?\})", re.DOTALL | re.IGNORECASE
 )
 
@@ -103,10 +109,18 @@ def extract_changes_block(text: str) -> Dict[str, Any]:
 
 
 def extract_mapping_block(text: str) -> Dict[str, str]:
-    """Parse a ```mapping``` block → {image_name: old_name | "new"}."""
+    """Parse a ```mapping``` block → {image_name: old_name | "new"}.
+
+    Accepts several formats the LLM might produce:
+      1.  ```mapping\\n{...}\\n```        (canonical)
+      2.  mapping\\n```\\n{...}\\n```     (label outside fences)
+      3.  mapping\\n{...}                 (no fences at all)
+    """
     m = MAPPING_BLOCK_RE.search(text or "")
     if not m:
         m = MAPPING_BLOCK_FALLBACK_RE.search(text or "")
+    if not m:
+        m = MAPPING_BLOCK_FALLBACK2_RE.search(text or "")
     if not m:
         raise ValueError("No ```mapping``` block found.")
 
