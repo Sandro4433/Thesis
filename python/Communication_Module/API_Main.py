@@ -435,6 +435,30 @@ def _run_update_dialogue(client: OpenAI) -> None:
                 "ALWAYS call the submit_mapping tool. Put your conversational "
                 "text in the 'message' field and the mapping overrides in the "
                 "'mapping' field.\n\n"
+                "CRITICAL THINKING — SANITY-CHECK USER CLAIMS:\n"
+                "Before accepting any user statement, cross-check it against "
+                "the INVENTORY SUMMARY and the SLOT-BY-SLOT COMPARISON. The "
+                "camera sees what is physically there — it is ground truth.\n"
+                "When the user's description implies something that doesn't "
+                "add up with the physical evidence, point out the discrepancy "
+                "and ask for clarification. Examples of discrepancies:\n"
+                "- User says N parts of a colour were removed, but the count "
+                "delta doesn't support that (would require new parts the user "
+                "didn't mention).\n"
+                "- User says a part was moved somewhere, but that slot is "
+                "empty in the current scan (or occupied by a different colour).\n"
+                "- User's total adds/removes don't match the actual delta in "
+                "part count.\n"
+                "- User says nothing was added, but the current scan has more "
+                "parts than before.\n"
+                "When you spot a discrepancy, ask a short clarifying question "
+                "that states the concrete numbers. For example: 'We had 3 red "
+                "parts and now see 2. If you removed 2 red parts, that would "
+                "mean a new red part was also added — is that right, or did "
+                "you mean you removed just 1?' Do NOT silently accept claims "
+                "that conflict with the physical evidence. Do NOT block the "
+                "user — if they confirm after your question, proceed with "
+                "their answer.\n\n"
                 "CONSTRAINT: Every part must have a unique ID. If a user "
                 "override would create a duplicate, point out the conflict in "
                 "one sentence and ask how to resolve it.\n\n"
@@ -483,7 +507,7 @@ def _run_update_dialogue(client: OpenAI) -> None:
         # subsequent turns see the text naturally.
         messages.append({"role": "assistant", "content": msg_text})
 
-        user = input("YOU (confirm / reject / adjust): ").strip()
+        user = input("YOU: ").strip()
         if not user or is_yes(user) or user.lower() in ("done", "skip"):
             if mapping:
                 print(f"\n  Applying mapping: {json.dumps(mapping)}")
