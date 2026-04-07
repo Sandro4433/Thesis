@@ -295,9 +295,10 @@ def _build_update_prompt(
         "",
         context,
         "",
-        "Output a ```mapping``` block with only overrides",
+        "Call submit_mapping with only overrides",
         "(auto-matches are applied automatically).",
-        "Use the part names as they appear in the image:",
+        "Use the part names as they appear in the image.",
+        "Mapping entries:",
         "- To reassign: {\"<name_in_image>\": \"<desired_old_name>\"}",
         "- For new parts: {\"<name_in_image>\": \"new\"}",
         "- No overrides needed: {}",
@@ -305,9 +306,89 @@ def _build_update_prompt(
         "No duplicate IDs allowed — if a reassignment conflicts with an auto-match,",
         "flag it and ask which part should keep the identity.",
         "",
-        "If POSSIBLE MOVES are listed above, ask the user about them before",
-        "proposing a mapping. Do not explain the scene — just ask.",
+        "Start by asking the user if the auto-matched IDs are correct.",
     ])
+
+
+# ── Tool definition for structured mapping output ────────────────────────────
+
+_SUBMIT_MAPPING_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "submit_mapping",
+        "description": (
+            "Submit the part identity mapping overrides. Keys are the part "
+            "names visible in the image (e.g. 'Part_6'), values are either "
+            "an old part name (e.g. 'Part_1') or the literal string 'new'. "
+            "Submit an empty object {} when no overrides are needed yet."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": (
+                        "Your conversational reply to the user (questions, "
+                        "confirmations, clarifications). Always provide this."
+                    ),
+                },
+                "mapping": {
+                    "type": "object",
+                    "description": (
+                        "The mapping overrides. Each key is a Part_* name "
+                        "from the image, each value is either an old Part_* "
+                        "name or 'new'."
+                    ),
+                    "additionalProperties": {"type": "string"},
+                },
+            },
+            "required": ["message", "mapping"],
+        },
+    },
+}
+
+
+def _chat_update(
+    client: OpenAI,
+    messages: List[Dict[str, str]],
+    temperature: float = 0.2,
+) -> tuple:
+    """
+    Call the LLM with the submit_mapping tool.
+
+    Returns (message_text, mapping_dict).
+    The LLM is forced to call submit_mapping via tool_choice, so we always
+    get structured output — no regex parsing needed.
+    """
+    resp = client.chat.completions.create(
+        model=MODEL,
+        messages=messages,
+        temperature=temperature,
+        tools=[_SUBMIT_MAPPING_TOOL],
+        tool_choice={"type": "function", "function": {"name": "submit_mapping"}},
+    )
+    choice = resp.choices[0]
+
+    # Extract the tool call arguments
+    if choice.message.tool_calls:
+        tc = choice.message.tool_calls[0]
+        try:
+            args = json.loads(tc.function.arguments)
+        except json.JSONDecodeError:
+            args = {}
+        msg_text = args.get("message", "")
+        mapping  = args.get("mapping", {})
+
+        # Validate mapping values
+        clean: Dict[str, str] = {}
+        for k, v in mapping.items():
+            if isinstance(k, str) and isinstance(v, str):
+                clean[k] = v
+        return msg_text, clean
+
+    # Fallback: if the model returned plain text instead of a tool call
+    text = (choice.message.content or "").strip()
+    return text, {}
 
 
 def _run_update_dialogue(client: OpenAI) -> None:
@@ -342,24 +423,42 @@ def _run_update_dialogue(client: OpenAI) -> None:
                 "STYLE: Be brief. Do NOT describe or narrate the scene, do NOT "
                 "explain what the auto-matcher did, do NOT list what parts are "
                 "where. The user has a GUI and can see the scene. Just ask "
-                "your questions and output the mapping block. One or two "
-                "sentences max before the mapping block.\n\n"
-                "ALWAYS end with a ```mapping``` block (empty {} if no overrides).\n\n"
-                "CONSTRAINT: Every part must have a unique ID. If a user override "
-                "would create a duplicate, point out the conflict in one sentence "
-                "and ask how to resolve it.\n\n"
+                "your questions and provide the mapping. One or two sentences "
+                "max in the message field.\n\n"
+                "FIRST MESSAGE: Your very first message must simply ask the "
+                "user whether the auto-matched part identities look correct, "
+                "and if not, to explain what changed. Do NOT guess what might "
+                "be wrong, do NOT ask about specific parts or possible moves. "
+                "Example: 'Do the auto-matched part IDs look correct? If not, "
+                "tell me what changed.' Submit an empty mapping {} while "
+                "waiting for the user's answer.\n\n"
+                "ALWAYS call the submit_mapping tool. Put your conversational "
+                "text in the 'message' field and the mapping overrides in the "
+                "'mapping' field.\n\n"
+                "CONSTRAINT: Every part must have a unique ID. If a user "
+                "override would create a duplicate, point out the conflict in "
+                "one sentence and ask how to resolve it.\n\n"
                 "IMAGE NAMES: The image shows auto-matched parts with their "
                 "old-config names and new detections with fresh vision names. "
-                "The mapping block uses these image-visible names as keys. "
+                "The mapping uses these image-visible names as keys. "
                 "Use the names exactly as they appear in the analysis.\n\n"
-                "PROACTIVE MOVE DETECTION: When the analysis lists POSSIBLE "
-                "MOVES, ask the user about them concisely — don't explain the "
-                "analysis, just ask. For example: 'Was [old_part] moved to "
-                "[slot], or was it removed?'\n\n"
-                "NEW DETECTIONS: Parts listed under NEW DETECTIONS are already "
-                "known to be new — always include them as {\"<name>\": \"new\"} "
-                "in your mapping block. Do not wait for the user to tell you "
-                "they are new.\n\n"
+                "UNDERSTANDING SWAPS AND MOVES:\n"
+                "- 'Part_X was swapped with Part_Y' or 'X and Y switched "
+                "places' means BOTH parts moved to each other's old location. "
+                "The auto-matcher matches by slot, so after a swap it will "
+                "have assigned the WRONG identity to both. You must CROSS-"
+                "REASSIGN: map the image-name in Part_X's old slot to Part_Y, "
+                "and the image-name in Part_Y's old slot to Part_X.\n"
+                "- 'Part_X was moved to [slot]' means that part kept its "
+                "identity but is in a new location. If the auto-matcher gave "
+                "a new ID to the part now in that slot, map that new ID back "
+                "to Part_X.\n"
+                "- When parts are described as swapped/switched/moved, they "
+                "were NOT removed and NOT newly added — never mark moved "
+                "parts as \"new\".\n\n"
+                "NEW DETECTIONS: Parts listed under NEW DETECTIONS are "
+                "genuinely new. Include them as {\"<n>\": \"new\"} in your "
+                "mapping.\n\n"
                 "HANDLING SPATIAL REFERENCES: If the user refers to positions "
                 "(left, right, top, bottom), consult the SLOT-BY-SLOT "
                 "COMPARISON table to identify which part they mean. Remember "
@@ -371,24 +470,25 @@ def _run_update_dialogue(client: OpenAI) -> None:
 
     print("\n── Update Scene Dialogue ──\n")
 
-    while True:
-        assistant_text = chat(client, messages)
-        print(f"ASSISTANT:\n{assistant_text}\n")
-        messages.append({"role": "assistant", "content": assistant_text})
+    mapping: Dict[str, str] = {}
 
-        try:
-            mapping = extract_mapping_block(assistant_text)
-        except Exception as e:
-            print(f"  [Mapping parse error: {e}]")
-            user = input("YOU (clarify or 'skip' to accept auto-matches only): ").strip()
-            if user.lower() in ("skip", "done"):
-                mapping = {}
-                break
-            messages.append({"role": "user", "content": user})
-            continue
+    while True:
+        msg_text, mapping = _chat_update(client, messages)
+        print(f"ASSISTANT:\n{msg_text}\n")
+        if mapping:
+            print(f"  [Mapping: {json.dumps(mapping)}]")
+
+        # Record the assistant turn in conversation history.
+        # We store the tool call as a regular assistant message so
+        # subsequent turns see the text naturally.
+        messages.append({"role": "assistant", "content": msg_text})
 
         user = input("YOU (confirm / reject / adjust): ").strip()
-        if not user or is_yes(user) or user.lower() == "done":
+        if not user or is_yes(user) or user.lower() in ("done", "skip"):
+            if mapping:
+                print(f"\n  Applying mapping: {json.dumps(mapping)}")
+            else:
+                print("\n  No overrides — accepting auto-matches only.")
             break
         if is_no(user):
             messages.append({"role": "user", "content": "Rejected. Ask me again."})
