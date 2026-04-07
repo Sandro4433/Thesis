@@ -1672,7 +1672,7 @@ def parse_plan_to_sequence(plan_text: str, state: Dict[str, Any]) -> List[List]:
             if is_place and part_lower in pending:
                 pick_name = pending.pop(part_lower)
                 slot_orig = ci_map.get(slot_lower, tokens[2])
-                sequence.append([pick_name, slot_orig, GRIPPER_CLOSE_STANDARD])
+                sequence.append([pick_name, slot_orig])
                 continue
 
         # ── pyperplan concatenated format ─────────────────────────────────────
@@ -1730,7 +1730,7 @@ def parse_plan_to_sequence(plan_text: str, state: Dict[str, Any]) -> List[List]:
             pick_name = pending.pop(part_lower)
             if slot_token.lower() in virtual_to_part:
                 continue
-            sequence.append([pick_name, slot_token, GRIPPER_CLOSE_STANDARD])
+            sequence.append([pick_name, slot_token])
 
     return sequence
 

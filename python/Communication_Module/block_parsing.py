@@ -44,7 +44,12 @@ ALLOWED_PART_ATTRS = {"role", "color", "fragility"}
 
 
 def extract_sequence_block(text: str) -> List[List]:
-    """Parse a ```sequence``` block into a list of [pick, place] entries."""
+    """Parse a ```sequence``` block into a list of [pick, place] entries.
+
+    Accepts both 2-element and legacy 3-element entries (with gripper width).
+    Any third element is silently stripped — all parts use the standard
+    gripper width, which the executor applies automatically.
+    """
     m = SEQUENCE_BLOCK_RE.search(text or "")
     if not m:
         raise ValueError("No ```sequence``` block found.")
@@ -53,22 +58,19 @@ def extract_sequence_block(text: str) -> List[List]:
     if not isinstance(data, list) or not data:
         raise ValueError("Sequence block must be a non-empty JSON array.")
 
+    cleaned: List[List] = []
     for i, entry in enumerate(data):
         if not isinstance(entry, list) or len(entry) not in (2, 3):
             raise ValueError(
-                f"Entry {i} must be [pick_name, place_name] or "
-                f"[pick_name, place_name, 0.05], got: {entry!r}"
+                f"Entry {i} must be [pick_name, place_name], got: {entry!r}"
             )
         if not isinstance(entry[0], str) or not isinstance(entry[1], str):
             raise ValueError(f"Entry {i}: pick_name and place_name must be strings.")
         if not entry[0].strip() or not entry[1].strip():
             raise ValueError(f"Entry {i}: names must not be empty.")
-        if len(entry) == 3:
-            if not isinstance(entry[2], (int, float)) or entry[2] <= 0:
-                raise ValueError(
-                    f"Entry {i}: gripper_close_width must be a positive number, got: {entry[2]!r}"
-                )
-    return data
+        # Normalize to 2-element: strip gripper width if the LLM included it
+        cleaned.append([entry[0], entry[1]])
+    return cleaned
 
 
 def extract_changes_block(text: str) -> Dict[str, Any]:
