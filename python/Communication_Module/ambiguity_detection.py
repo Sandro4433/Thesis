@@ -22,6 +22,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
+from Communication_Module.capacity_tools import compute_position_labels
 
 
 # ── Ambiguity analysis prompt ────────────────────────────────────────────────
@@ -85,14 +86,18 @@ TYPE 4 — SPATIAL AMBIGUITY
   Spatial language ("left", "right", "top", "bottom", "next to", "near",
   "far", "between", "closest") admits multiple valid interpretations given
   the positions in the scene.
-  Remember: LARGER X = LEFT, LARGER Y = LOWER (inverted axes).
+  A POSITION_LABELS section is provided below the scene JSON with
+  pre-computed relative positions for each receptacle (e.g.
+  "Container_3: top-right"). Use ONLY these labels to resolve spatial
+  references — do NOT interpret raw xy coordinates yourself.
+  If the user's spatial phrase matches exactly one label, there is NO
+  spatial ambiguity — report it as resolved.
+  Only flag spatial ambiguity when the phrase could plausibly match 2+
+  receptacles based on the labels.
   Examples:
-    • "the container on the right" when two containers have close x-values
-    • "move it next to Part_3" when multiple empty slots are equidistant
-    • "the top kit" when kits are at similar y-coordinates
-  Detection: resolve spatial references against positions_xy / receptacle_xy.
-  If the spatial phrase could plausibly refer to 2+ objects (within a
-  reasonable margin), flag it.
+    • "the container on the right" when two containers are labeled
+      "top-right" and "bottom-right"
+    • "the top kit" when two kits are both labeled "top"
 
 ───────────────────────────────────────────────────────────────
 
@@ -150,10 +155,15 @@ def detect_ambiguity(
     if stripped in trivial or len(stripped) < 3:
         return None
 
-    # Build the analysis prompt
+    # Build the analysis prompt with pre-computed position labels
+    pos_labels = compute_position_labels(scene_json)
+    pos_section = "\n".join(f"  {name}: {label}" for name, label in sorted(pos_labels.items()))
+
     user_content = (
         f"MODE: {mode}\n\n"
         f"SCENE JSON:\n{json.dumps(scene_json, indent=2, ensure_ascii=False)}\n\n"
+        f"POSITION LABELS (pre-computed, authoritative — use these, not raw xy):\n"
+        f"{pos_section}\n\n"
         f"USER MESSAGE:\n{user_message}"
     )
 

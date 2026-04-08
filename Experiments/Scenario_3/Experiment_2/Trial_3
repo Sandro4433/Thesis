@@ -8,19 +8,15 @@ YOU: Put parts in the kits. kit recipe is 1 red and 1 blue per kit. batch size i
   [Ambiguity detected — guiding LLM to ask targeted question]
 
 ASSISTANT:
-Which container do you mean by "the container in the top right": Container_1 or Container_2?
+Just to confirm, should both Kit_1 and Kit_2 be filled, or only one of them?
 
-YOU: neither
-
-ASSISTANT:
-Just to confirm: you want to exclude both Container_1 and Container_2, and only use Container_3 as the input source for kitting. Is that correct?
-
-YOU: no.
+YOU: both of them
+  [Ambiguity detected — guiding LLM to ask targeted question]
 
 ASSISTANT:
-Which container(s) should be used as input for kitting?
+Which two kits do you mean by "both of them"? Please specify their names.
 
-YOU: container 1 and container 2 can be used
+YOU: kit 1 and kit 2
   [Ambiguity detected — guiding LLM to ask targeted question]
   [Tool: check_capacity → result injected]
 
@@ -28,7 +24,6 @@ ASSISTANT:
 ```changes
 {
   "Container_1": {"role": "input"},
-  "Container_2": {"role": "input"},
   "Kit_1": {"role": "output"},
   "Kit_2": {"role": "output"},
   "workspace": {"operation_mode": "kitting", "batch_size": 2},
@@ -49,6 +44,3 @@ YOU: done
 ✅  Changes saved.
 
 ── Configuration complete. ──
-
-
-✅  Sequence written → /home/hv/Master_Thesis_Sandro_Gabl/python/File_Exchange/sequence.json
