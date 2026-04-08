@@ -18,6 +18,67 @@ import json
 from typing import Any, Dict, List, Optional, Set
 
 
+# ── Shared spatial helper ────────────────────────────────────────────────────
+
+def compute_position_labels(scene: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Compute human-readable relative position labels for all receptacles.
+
+    Uses the inverted-axis convention:
+      LARGER X = LEFT,  SMALLER X = RIGHT
+      LARGER Y = LOWER, SMALLER Y = UPPER
+
+    Returns e.g. {"Container_1": "bottom-left", "Kit_2": "top"}.
+    """
+    receptacle_xy = scene.get("receptacle_xy", {})
+    capacity = scene.get("capacity", {})
+    names = sorted(capacity.keys())
+
+    if not names:
+        return {}
+
+    all_xs = [receptacle_xy.get(n, [0, 0])[0] for n in names]
+    all_ys = [receptacle_xy.get(n, [0, 0])[1] for n in names]
+    x_min, x_max = min(all_xs), max(all_xs)
+    y_min, y_max = min(all_ys), max(all_ys)
+    x_range = x_max - x_min
+    y_range = y_max - y_min
+
+    labels: Dict[str, str] = {}
+    for name in names:
+        xy = receptacle_xy.get(name, [0, 0])
+        x, y = xy[0], xy[1]
+
+        # Vertical: smaller Y = upper
+        if y_range < 0.02:
+            v = "center"
+        elif y - y_min < y_range * 0.33:
+            v = "top"
+        elif y - y_min > y_range * 0.66:
+            v = "bottom"
+        else:
+            v = "middle"
+
+        # Horizontal: larger X = left
+        if x_range < 0.02:
+            h = "center"
+        elif x - x_min > x_range * 0.66:
+            h = "left"
+        elif x - x_min < x_range * 0.33:
+            h = "right"
+        else:
+            h = "center"
+
+        if v and h and h != "center":
+            labels[name] = f"{v}-{h}"
+        elif v:
+            labels[name] = v
+        else:
+            labels[name] = h or "center"
+
+    return labels
+
+
 # ── OpenAI function-calling tool schema ──────────────────────────────────────
 
 CAPACITY_TOOL_SCHEMA = {
@@ -219,5 +280,111 @@ def execute_capacity_check(
     else:
         lines.append("RESULT: ALL CHECKS PASSED")
         lines.append("You may proceed with the changes block.")
+
+    return "\n".join(lines)
+
+
+# ── Describe-scene tool ──────────────────────────────────────────────────────
+
+DESCRIBE_SCENE_TOOL_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "describe_scene",
+        "description": (
+            "Generate a human-readable description of the workspace layout. "
+            "Call this ONLY when the user explicitly asks you to describe, "
+            "explain, or summarise what is in the scene (e.g. 'describe the "
+            "scene', 'what does the workspace look like', 'where are the "
+            "containers', 'which container is on the left'). "
+            "NEVER call this on your own initiative."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "include_parts": {
+                    "type": "boolean",
+                    "description": (
+                        "Whether to include per-slot part details. Set true "
+                        "when the user asks about parts/colors, false when "
+                        "they only ask about layout/positions."
+                    ),
+                },
+                "focus": {
+                    "type": "string",
+                    "description": (
+                        "Optional: narrow the description to a specific area. "
+                        "Use a receptacle name (e.g. 'Container_1') or a "
+                        "category ('kits', 'containers'). Leave empty for "
+                        "a full overview."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+
+def execute_describe_scene(
+    args: Dict[str, Any],
+    scene: Dict[str, Any],
+) -> str:
+    """
+    Build a plain-language workspace description from the scene JSON.
+
+    The LLM receives this text and can relay it to the user in natural
+    language.
+    """
+    include_parts = args.get("include_parts", True)
+    focus = (args.get("focus") or "").strip()
+
+    capacity = scene.get("capacity", {})
+    receptacle_xy = scene.get("receptacle_xy", {})
+    pos_labels = compute_position_labels(scene)
+
+    # Determine which receptacles to describe
+    if focus:
+        focus_lower = focus.lower()
+        if focus_lower == "kits":
+            names = sorted(n for n in capacity if n.startswith("Kit_"))
+        elif focus_lower == "containers":
+            names = sorted(n for n in capacity if n.startswith("Container_"))
+        else:
+            names = [n for n in capacity if n.lower() == focus_lower or n == focus]
+            if not names:
+                return f"No receptacle named '{focus}' found in the scene."
+    else:
+        names = sorted(capacity.keys())
+
+    if not names:
+        return "No receptacles found."
+
+    # Sort: upper-left first
+    def _sort_key(name: str):
+        xy = receptacle_xy.get(name, [0, 0])
+        return (xy[1], -xy[0])
+
+    names.sort(key=_sort_key)
+
+    lines: List[str] = []
+    for name in names:
+        cap = capacity.get(name, {})
+        pos = pos_labels.get(name, "")
+        role = cap.get("role")
+        role_str = f", role={role}" if role else ""
+        total = cap.get("total_slots", 0)
+        occupied = cap.get("occupied", 0)
+        empty = cap.get("empty", 0)
+
+        header = f"{name} ({pos}{role_str}): {occupied}/{total} slots occupied, {empty} empty"
+        lines.append(header)
+
+        if include_parts:
+            pbc = cap.get("parts_by_color", {})
+            if pbc:
+                color_str = ", ".join(f"{cnt} {col}" for col, cnt in sorted(pbc.items()))
+                lines.append(f"  Contains: {color_str}")
+            else:
+                lines.append("  Empty")
 
     return "\n".join(lines)

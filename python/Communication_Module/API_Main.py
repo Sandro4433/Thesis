@@ -64,6 +64,8 @@ from Communication_Module.ambiguity_detection import (
 from Communication_Module.capacity_tools import (
     CAPACITY_TOOL_SCHEMA,
     execute_capacity_check,
+    DESCRIBE_SCENE_TOOL_SCHEMA,
+    execute_describe_scene,
 )
 
 
@@ -94,15 +96,18 @@ def chat(
     scene: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    Call the LLM, handling optional tool use for capacity checking.
+    Call the LLM, handling optional tool use.
 
-    If `scene` is provided the capacity-check tool is offered. When the LLM
-    calls it, the tool is executed locally and the result is fed back so the
-    LLM can continue with accurate numbers.  This loop runs at most
+    If `scene` is provided, the capacity-check and describe-scene tools are
+    offered. When the LLM calls one, the tool is executed locally and the
+    result is fed back so the LLM can continue.  This loop runs at most
     MAX_TOOL_ROUNDS times to avoid runaway calls.
     """
     MAX_TOOL_ROUNDS = 3
-    tools = [CAPACITY_TOOL_SCHEMA] if scene is not None else None
+    tools = (
+        [CAPACITY_TOOL_SCHEMA, DESCRIBE_SCENE_TOOL_SCHEMA]
+        if scene is not None else None
+    )
 
     # Copy messages so tool-call bookkeeping doesn't leak into the caller's list
     working_messages = list(messages)
@@ -126,14 +131,17 @@ def chat(
         working_messages.append(choice.message)
 
         for tc in choice.message.tool_calls:
-            if tc.function.name == "check_capacity" and scene is not None:
-                try:
-                    args = json.loads(tc.function.arguments)
-                except json.JSONDecodeError:
-                    args = {}
+            try:
+                args = json.loads(tc.function.arguments)
+            except json.JSONDecodeError:
+                args = {}
 
+            if tc.function.name == "check_capacity" and scene is not None:
                 result = execute_capacity_check(args, scene)
                 print(f"  [Tool: check_capacity → result injected]")
+            elif tc.function.name == "describe_scene" and scene is not None:
+                result = execute_describe_scene(args, scene)
+                print(f"  [Tool: describe_scene → result injected]")
             else:
                 result = f"Unknown tool: {tc.function.name}"
 
