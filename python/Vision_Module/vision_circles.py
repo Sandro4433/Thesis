@@ -104,6 +104,26 @@ def _boost_saturation(bgr: np.ndarray, factor: float) -> np.ndarray:
     return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
 
 
+def _normalize_lighting(bgr: np.ndarray, clip_limit: float = 2.0,
+                         tile_size: int = 8) -> np.ndarray:
+    """
+    Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to even out
+    lighting across the frame.  Works on the L channel in LAB space so hue and
+    saturation are preserved while brightness variations (vignetting, uneven
+    illumination, shadows at frame edges) are corrected.
+
+    This ensures parts at the bottom/edges of the image — which often appear
+    darker due to camera lighting falloff — have similar channel values to
+    parts in the center, making them pass the same BGR tolerance box.
+    """
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_size, tile_size))
+    l_eq = clahe.apply(l)
+    lab_eq = cv2.merge([l_eq, a, b])
+    return cv2.cvtColor(lab_eq, cv2.COLOR_LAB2BGR)
+
+
 def detect_color_cluster_parts_on_board(
     bgr: np.ndarray,
     H_inv: np.ndarray,
@@ -121,6 +141,11 @@ def detect_color_cluster_parts_on_board(
     # parts pass the tolerance box.  The mean BGR classification at the end
     # always uses the original unmodified image so labels stay accurate.
     saturation_boost: float = 1.0,
+    # CLAHE lighting normalization.  Evens out brightness across the frame so
+    # parts in darker areas (edges, bottom) pass the same tolerance box as
+    # parts in the center.  Applied before saturation boost. 
+    # Set to 0.0 to disable, typical value 2.0-3.0.
+    clahe_clip_limit: float = 2.0,
     # Cluster size threshold (px2)
     min_area_px: int = 1500,
     # Circularity test thresholds
@@ -155,8 +180,14 @@ def detect_color_cluster_parts_on_board(
       saturation_boost    -- pre-boost saturation before mask building (e.g. 1.5)
       morph_by_color      -- per-color morph params; falls back to defaults
     """
-    # Build the saturation-boosted image used only for mask building
-    bgr_boosted = _boost_saturation(bgr, saturation_boost)
+    # Build the pre-processed image used only for mask building.
+    # 1. CLAHE normalizes lighting so edge/bottom parts aren't darker.
+    # 2. Saturation boost makes desaturated parts more vivid.
+    # Classification always uses the original image so labels stay accurate.
+    bgr_for_mask = bgr
+    if clahe_clip_limit > 0:
+        bgr_for_mask = _normalize_lighting(bgr_for_mask, clip_limit=clahe_clip_limit)
+    bgr_for_mask = _boost_saturation(bgr_for_mask, saturation_boost)
 
     detections: List[Dict[str, float]] = []
 
@@ -179,9 +210,9 @@ def detect_color_cluster_parts_on_board(
 
       
 
-        # Build mask on the boosted image so desaturated parts pass more easily
+        # Build mask on the pre-processed image (CLAHE + saturation boost)
         mask = _make_color_mask_bgr(
-            bgr_boosted,
+            bgr_for_mask,
             ref_bgr=ref_bgr,
             tol_bgr=tol_bgr,
             morph_kernel=mk,
