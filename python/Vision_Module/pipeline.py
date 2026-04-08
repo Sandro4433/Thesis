@@ -216,7 +216,7 @@ def compute_tag_targets_and_annotate(
         H_inv=H_inv,
         # HSV saturation gate — the single most important threshold.
         # Parts have S ≈ 80+, everything else (black, grey, white) has S < 30.
-        saturation_min=45,
+        saturation_min=130,
         value_min=30,
         # Morphology per color (same as before — these work well)
         morph_by_color={
@@ -227,8 +227,8 @@ def compute_tag_targets_and_annotate(
         min_area_px=900,
         circularity_min=0.30,
         fill_ratio_min=0.30,
-        debug_mask_color="Blue",
-        debug_show_mask=False,
+        debug_mask_color="Red",
+        debug_show_mask=True,
         debug_show_overlay=False,
     )
     

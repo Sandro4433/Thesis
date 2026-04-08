@@ -13,6 +13,12 @@
   },
   "part_compatibility": [
     {
+      "part_color": "green",
+      "allowed_in": [
+        "Container_3"
+      ]
+    },
+    {
       "part_color": "blue",
       "allowed_in": [
         "Container_2"
@@ -22,12 +28,6 @@
       "part_color": "red",
       "allowed_in": [
         "Container_1"
-      ]
-    },
-    {
-      "part_color": "green",
-      "allowed_in": [
-        "Container_3"
       ]
     }
   ],
