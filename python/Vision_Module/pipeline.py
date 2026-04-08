@@ -232,6 +232,10 @@ def compute_tag_targets_and_annotate(
         # 1.0 = no change, 1.5 = moderate boost, 2.0 = strong boost.
         # Classification always uses the original image so labels stay accurate.
         saturation_boost=1.5,
+        # CLAHE lighting normalization — evens out brightness so parts at
+        # darker edges/bottom are detected as reliably as center parts.
+        # 0.0 = disabled, 2.0 = moderate, 3.0 = strong.
+        clahe_clip_limit=2.0,
         morph_by_color={
             "Blue":  {"morph_kernel": 5, "open_iter": 0, "close_iter": 2},
             "Red":   {"morph_kernel": 7, "open_iter": 1, "close_iter": 2},
@@ -240,8 +244,8 @@ def compute_tag_targets_and_annotate(
         min_area_px=900,
         circularity_min=0.30,
         fill_ratio_min=0.30,
-        debug_mask_color="Green",
-        debug_show_mask=False,
+        debug_mask_color="Blue",
+        debug_show_mask=True,
         debug_show_overlay=False,
     )
 
