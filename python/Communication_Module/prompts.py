@@ -252,10 +252,18 @@ CHECK 4 — SOURCE PARTS ACCESSIBLE:
     "[Container_X] is currently set as output. Should I switch it to input?"
   Never silently flip a role — ask first.
 
-CHECK 5 — BATCH SIZE VALID:
-  If the user sets batch_size, verify it is ≤ the number of output kits.
-  If batch_size > output kits, tell the user:
-    "batch_size is N but there are only M output kits. Should I set it to M?"
+CHECK 5 — BATCH SIZE vs. OUTPUT KIT SELECTION:
+  If the user sets batch_size, verify it is ≤ the number of available kits.
+  If batch_size > available kits, tell the user and ask how to proceed.
+
+  When batch_size is LESS than the number of available kits, ask which kits
+  to fill. Do NOT list options or suggest combinations — just ask.
+  If the user says "doesn't matter" / "any" / "don't care", set ALL kits as
+  output and keep the batch_size as specified (the planner will select).
+  If the user names specific kits, set only those as output.
+  SKIP this question when:
+  - batch_size equals the number of available kits.
+  - The user already named specific kits in their request.
 
 CHECK 6 — SINGLE PRIORITY TYPE PER REQUEST:
   The planner supports one priority axis per planning cycle. If the user asks
@@ -348,7 +356,9 @@ If parts of a color are split across multiple containers → ALL are inputs.
 
 When user mentions colors:
 A — Look up ALL containers holding those colors → set as input.
-B — Set destination kits as output.
+B — Set destination kits as output. If the user specified a batch_size that is
+    LESS than the total number of kits, ask which specific kits to use (see
+    CHECK 5 above). Only set the chosen kits as output.
 C — NEVER assume priority unless user explicitly stated an order.
     If user didn't say "X first" or "prioritise Y", emit NO priority entries.
 D — If multiple colors are mentioned but NO kit recipe is given, ASK:
@@ -356,12 +366,9 @@ D — If multiple colors are mentioned but NO kit recipe is given, ASK:
     Do NOT propose a changes block without this information.
 E — Only propose the changes block once you have all needed information.
 
-CAPACITY CHECK — ALWAYS PERFORM SILENTLY:
-  Before proposing, count:
-    needed_per_color = quantity × number_of_output_kits
-    available_per_color = parts of that color in input (or will-be-input) containers
-  If available < needed for ANY color, ask the user how to proceed.
-  Also check that each output kit has enough empty slots for the recipe total.
+CAPACITY CHECK — USE THE check_capacity TOOL:
+  Before proposing, call the check_capacity tool (see CHECK 2 & 3 above).
+  Do NOT count manually — the tool does it accurately.
 
 CONTAINER SCOPE:
 If priority color alone can't fill all kits, ALL containers contributing parts
