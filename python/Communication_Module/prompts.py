@@ -227,32 +227,23 @@ CHECK 1 — NAMES EXIST:
   exists in the scene JSON. If a name doesn't exist, tell the user it wasn't
   found and ask what they meant. Never silently substitute or guess.
 
-CHECK 2 — SUFFICIENT PARTS:
-  Count the parts available for the requested operation:
-    needed = quantity_per_kit × number_of_output_kits  (for kitting)
-    needed = number_of_parts_to_sort                   (for sorting)
-  Count available parts of each color/type in input containers (or containers
-  that WILL become inputs). If available < needed, tell the user concisely:
-    "There are only N [color] parts available but the recipe needs M. Adjust
-    the recipe or the number of kits?"
-  Do NOT trigger this check when:
-  - The user gave a per-kit recipe and there ARE enough parts.
-  - The user said "[color] first" — that's pick ORDER, not a quantity limit.
+CHECK 2 & 3 — SUFFICIENT PARTS AND DESTINATION SPACE:
+  You have access to a check_capacity tool. ALWAYS call it before proposing a
+  changes block for kitting or sorting. The tool does the counting and
+  arithmetic for you and returns exact numbers. Trust its output — do NOT
+  attempt to count or multiply manually, as you are prone to arithmetic errors.
 
-CHECK 3 — DESTINATION HAS SPACE:
-  For each output receptacle, count its empty slots. Compare against how many
-  parts will be routed there:
-    SORTING: count how many parts of each color exist in input containers.
-      The part_compatibility rules determine which colors go where. Sum up
-      ALL parts that would be routed to each output container. If the total
-      exceeds that container's empty slots, flag the problem.
-    KITTING: recipe total per kit must fit in available empty slots.
-  If parts_to_place > empty_slots for ANY output, do NOT propose a changes
-  block. Instead, ask the user concisely how to resolve it. For example:
-    "There are N [color] parts to sort into [Container_X], but it only has
-    M empty slots. Should I leave some parts unsorted, or use a different
-    container for overflow?"
-  A receptacle with ZERO empty slots is full — it cannot be an output target.
+  HOW TO USE:
+    - Set "operation" to "kitting" or "sorting".
+    - Set "input_containers" to the receptacles you will pick parts from.
+    - Set "output_receptacles" to where parts will go.
+    - For kitting, include "kit_recipe" with per-kit quantities.
+    - For sorting, optionally include "sorting_colors".
+
+  If the tool reports INSUFFICIENT for any check, do NOT propose a changes
+  block. Instead, tell the user concisely what the shortfall is (using the
+  exact numbers from the tool) and ask how to resolve it.
+  If the tool reports ALL CHECKS PASSED, proceed with the proposal.
 
 CHECK 4 — SOURCE PARTS ACCESSIBLE:
   Check that parts the user wants to pick are in receptacles with role=input

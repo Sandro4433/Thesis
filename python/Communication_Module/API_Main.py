@@ -61,6 +61,10 @@ from Communication_Module.ambiguity_detection import (
     detect_ambiguity,
     format_ambiguity_hint,
 )
+from Communication_Module.capacity_tools import (
+    CAPACITY_TOOL_SCHEMA,
+    execute_capacity_check,
+)
 
 
 # ── File I/O ─────────────────────────────────────────────────────────────────
@@ -83,11 +87,64 @@ def save_changes(changes: Dict[str, Any]) -> Path:
 
 # ── LLM helpers ──────────────────────────────────────────────────────────────
 
-def chat(client: OpenAI, messages: List[Dict[str, str]], temperature: float = 0.2) -> str:
-    resp = client.chat.completions.create(
-        model=MODEL, messages=messages, temperature=temperature
-    )
-    return (resp.choices[0].message.content or "").strip()
+def chat(
+    client: OpenAI,
+    messages: List[Dict[str, str]],
+    temperature: float = 0.2,
+    scene: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Call the LLM, handling optional tool use for capacity checking.
+
+    If `scene` is provided the capacity-check tool is offered. When the LLM
+    calls it, the tool is executed locally and the result is fed back so the
+    LLM can continue with accurate numbers.  This loop runs at most
+    MAX_TOOL_ROUNDS times to avoid runaway calls.
+    """
+    MAX_TOOL_ROUNDS = 3
+    tools = [CAPACITY_TOOL_SCHEMA] if scene is not None else None
+
+    # Copy messages so tool-call bookkeeping doesn't leak into the caller's list
+    working_messages = list(messages)
+
+    for _ in range(MAX_TOOL_ROUNDS + 1):
+        kwargs: Dict[str, Any] = dict(
+            model=MODEL, messages=working_messages, temperature=temperature
+        )
+        if tools:
+            kwargs["tools"] = tools
+
+        resp = client.chat.completions.create(**kwargs)
+        choice = resp.choices[0]
+
+        # If the LLM produced a normal text response, we're done
+        if choice.finish_reason != "tool_calls" or not choice.message.tool_calls:
+            return (choice.message.content or "").strip()
+
+        # ── Handle tool calls ────────────────────────────────────────
+        # Append the assistant message with tool calls to the working history
+        working_messages.append(choice.message)
+
+        for tc in choice.message.tool_calls:
+            if tc.function.name == "check_capacity" and scene is not None:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    args = {}
+
+                result = execute_capacity_check(args, scene)
+                print(f"  [Tool: check_capacity → result injected]")
+            else:
+                result = f"Unknown tool: {tc.function.name}"
+
+            working_messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": result,
+            })
+
+    # Fallback: if we exhausted tool rounds, return whatever text we have
+    return (choice.message.content or "").strip()
 
 
 def _contains_word(text: str, words) -> bool:
@@ -735,7 +792,7 @@ def run_session(client: OpenAI, mode: str) -> None:
 
     while True:
         # ── Get LLM response ─────────────────────────────────────────────
-        assistant_text = chat(client, messages)
+        assistant_text = chat(client, messages, scene=scene)
         print(f"\nASSISTANT:\n{assistant_text}\n")
         messages.append({"role": "assistant", "content": assistant_text})
 
