@@ -1,26 +1,18 @@
 [
   [
-    "Part_3",
-    "Container_2_Pos_1"
-  ],
-  [
-    "Part_4",
-    "Container_2_Pos_2"
-  ],
-  [
-    "Part_1",
-    "Container_1_Pos_1"
+    "Part_11",
+    "Kit_1_Pos_2"
   ],
   [
     "Part_2",
-    "Container_1_Pos_2"
+    "Kit_1_Pos_1"
   ],
   [
-    "Part_5",
-    "Container_1_Pos_3"
+    "Part_1",
+    "Kit_2_Pos_1"
   ],
   [
-    "Part_6",
-    "Container_1_Pos_4"
+    "Part_12",
+    "Kit_2_Pos_2"
   ]
 ]
