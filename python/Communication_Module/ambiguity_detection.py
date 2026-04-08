@@ -33,9 +33,20 @@ You are an ambiguity detector for a robot workspace configurator.
 You will receive:
   1. A SCENE JSON describing the current workspace (receptacles, parts, slots,
      colors, roles, positions, etc.)
-  2. A USER MESSAGE — an instruction the operator just typed.
-  3. The current MODE: "reconfig" (changing workspace attributes) or "motion"
+  2. RECENT CONVERSATION HISTORY — the last few turns between user and assistant.
+  3. A USER MESSAGE — the latest instruction the operator just typed.
+  4. The current MODE: "reconfig" (changing workspace attributes) or "motion"
      (planning pick-and-place sequences).
+
+CRITICAL — CONVERSATION CONTEXT:
+  The user message does NOT exist in isolation. You MUST read the conversation
+  history to understand what has already been discussed, decided, or clarified.
+  If the user's message is a direct answer to a question the assistant asked,
+  it is NOT ambiguous — the context makes it clear.
+  If information appears missing from the current message but was provided in
+  an earlier turn, it is NOT an omission.
+  Only flag ambiguity when the FULL conversation context still leaves something
+  genuinely unclear.
 
 Your job is to check whether the user message contains any of the following
 ambiguity types when evaluated against the scene:
@@ -136,6 +147,7 @@ def detect_ambiguity(
     user_message: str,
     scene_json: dict,
     mode: str,
+    conversation_history: Optional[List[Dict[str, str]]] = None,
     temperature: float = 0.0,
 ) -> Optional[Dict[str, Any]]:
     """
@@ -159,12 +171,36 @@ def detect_ambiguity(
     pos_labels = compute_position_labels(scene_json)
     pos_section = "\n".join(f"  {name}: {label}" for name, label in sorted(pos_labels.items()))
 
+    # Include recent conversation history (last N user/assistant turns)
+    history_section = ""
+    if conversation_history:
+        # Take the last 10 messages (skip system prompts and scene JSON)
+        recent = [
+            m for m in conversation_history
+            if m.get("role") in ("user", "assistant")
+        ][-10:]
+        if recent:
+            history_lines = []
+            for m in recent:
+                role = "USER" if m["role"] == "user" else "ASSISTANT"
+                # Truncate very long messages (e.g. scene JSON dumps)
+                content = m.get("content", "")
+                if len(content) > 300:
+                    content = content[:300] + "..."
+                history_lines.append(f"  {role}: {content}")
+            history_section = (
+                "RECENT CONVERSATION:\n"
+                + "\n".join(history_lines)
+                + "\n\n"
+            )
+
     user_content = (
         f"MODE: {mode}\n\n"
         f"SCENE JSON:\n{json.dumps(scene_json, indent=2, ensure_ascii=False)}\n\n"
         f"POSITION LABELS (pre-computed, authoritative — use these, not raw xy):\n"
         f"{pos_section}\n\n"
-        f"USER MESSAGE:\n{user_message}"
+        f"{history_section}"
+        f"USER MESSAGE (latest, evaluate this for ambiguity):\n{user_message}"
     )
 
     try:

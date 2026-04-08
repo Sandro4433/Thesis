@@ -892,6 +892,7 @@ def run_session(client: OpenAI, mode: str) -> None:
                 # Run ambiguity detection on the follow-up instruction too
                 ambiguity_result = detect_ambiguity(
                     client, MODEL, user_input, scene, mode,
+                    conversation_history=messages,
                 )
                 if ambiguity_result:
                     hint = format_ambiguity_hint(ambiguity_result)
@@ -915,6 +916,7 @@ def run_session(client: OpenAI, mode: str) -> None:
         # Run background ambiguity detection against the scene
         ambiguity_result = detect_ambiguity(
             client, MODEL, user_input, scene, mode,
+            conversation_history=messages,
         )
         if ambiguity_result:
             hint = format_ambiguity_hint(ambiguity_result)

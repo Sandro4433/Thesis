@@ -1,0 +1,77 @@
+ASSISTANT:
+What would you like to change?
+
+YOU: do kitting. kit recipe is 2 blue and 2 red per kit
+  [Ambiguity detected — guiding LLM to ask targeted question]
+
+ASSISTANT:
+Each kit only has 3 slots, but your recipe needs 4 parts per kit. Should I reduce the recipe, or do you want to use more than one kit for each set?
+
+YOU: forget it
+
+ASSISTANT:
+What would you like to change?
+
+YOU: do kitting with batch size = 4
+  [Ambiguity detected — guiding LLM to ask targeted question]
+
+ASSISTANT:
+What should each kit contain? Please specify the colors and quantities for the kit recipe.
+
+YOU: 1 blue and 1 red part per kit
+  [Tool: check_capacity → result injected]
+
+ASSISTANT:
+There are only 3 kits available, but your batch size is 4. Should I proceed with all 3 kits, or do you want to adjust the batch size?
+
+YOU: forget it
+
+ASSISTANT:
+What would you like to change?
+
+YOU: do kitting with 3 green parts per kit. batch size is 3.
+  [Tool: check_capacity → result injected]
+
+ASSISTANT:
+There aren’t enough green parts for this recipe—9 are needed, but only 5 are available. Would you like to reduce the number of green parts per kit, lower the batch size, or use a different color?
+
+YOU: forget it
+
+ASSISTANT:
+What would you like to change?
+
+YOU: done
+
+── Configuration complete. ──
+
+
+How do you want to load the scene?
+  [1] New Configuration — Capture new image and configure from scratch
+  [2] Update Configuration — Update configuration with new vision data
+  [3] Edit Configuration — Edit current configuration (no new image)
+
+Starting vision module …
+Vision complete.
+
+Loaded fresh scene from vision.
+
+── Mode: Reconfiguration ──
+
+
+ASSISTANT:
+What would you like to change?
+
+YOU: do kitting with 1 green part per kit. batch size = 3. do not use container 3
+  [Tool: check_capacity → result injected]
+
+ASSISTANT:
+There aren’t any green parts in Container_1, so it’s not possible to kit 1 green part per kit without using Container_3. Would you like to use green parts from Container_3, or change the color or source?
+
+YOU: forget it
+
+ASSISTANT:
+No changes needed. Anything else?
+
+YOU: done
+
+── Configuration complete. ──
