@@ -57,6 +57,10 @@ from Communication_Module.change_management import (
 )
 from Communication_Module.scene_helpers import slim_scene
 from Communication_Module.prompts import build_system_prompt
+from Communication_Module.ambiguity_detection import (
+    detect_ambiguity,
+    format_ambiguity_hint,
+)
 
 
 # ── File I/O ─────────────────────────────────────────────────────────────────
@@ -820,6 +824,15 @@ def run_session(client: OpenAI, mode: str) -> None:
                 print("\n── Configuration complete. ──\n")
                 return
             if user_input:
+                # Run ambiguity detection on the follow-up instruction too
+                ambiguity_result = detect_ambiguity(
+                    client, MODEL, user_input, scene, mode,
+                )
+                if ambiguity_result:
+                    hint = format_ambiguity_hint(ambiguity_result)
+                    if hint:
+                        messages.append({"role": "system", "content": hint})
+                        print("  [Ambiguity detected — guiding LLM to ask targeted question]")
                 messages.append({"role": "user", "content": user_input})
             continue
 
@@ -834,6 +847,18 @@ def run_session(client: OpenAI, mode: str) -> None:
             continue
 
         # ── Regular user message ─────────────────────────────────────────
+        # Run background ambiguity detection against the scene
+        ambiguity_result = detect_ambiguity(
+            client, MODEL, user_input, scene, mode,
+        )
+        if ambiguity_result:
+            hint = format_ambiguity_hint(ambiguity_result)
+            if hint:
+                # Inject as a hidden system-level message so the LLM asks
+                # sharper questions. The user never sees this message.
+                messages.append({"role": "system", "content": hint})
+                print("  [Ambiguity detected — guiding LLM to ask targeted question]")
+
         messages.append({"role": "user", "content": user_input})
 
 
