@@ -209,33 +209,16 @@ def compute_tag_targets_and_annotate(
             )
 
     # ----------------------------
-    # Color-cluster part detection (RAW only), circularity-validated, then draw on VIS
+    # Color part detection (RAW only) — HSV saturation gate + hue bins
     # ----------------------------
-    ref_rgb = {
-        "Blue":  (40,  80,  130),
-        "Red":   (130, 40,  40),
-        "Green": (35,  100, 45),
-    }
-
     part_dets = detect_color_cluster_parts_on_board(
         bgr=img_raw,
         H_inv=H_inv,
-        ref_rgb=ref_rgb,
-        tol_rgb=(45, 45, 45),
-        tol_rgb_by_color={
-            "Blue":  (45, 45, 45),
-            "Red":   (45, 45, 45),
-            "Green": (45, 45, 45),
-        },
-        # Boost saturation before mask building so desaturated/grey-tinted
-        # parts pass the tolerance box more reliably.
-        # 1.0 = no change, 1.5 = moderate boost, 2.0 = strong boost.
-        # Classification always uses the original image so labels stay accurate.
-        saturation_boost=1.5,
-        # CLAHE lighting normalization — evens out brightness so parts at
-        # darker edges/bottom are detected as reliably as center parts.
-        # 0.0 = disabled, 2.0 = moderate, 3.0 = strong.
-        clahe_clip_limit=2.0,
+        # HSV saturation gate — the single most important threshold.
+        # Parts have S ≈ 80+, everything else (black, grey, white) has S < 30.
+        saturation_min=45,
+        value_min=30,
+        # Morphology per color (same as before — these work well)
         morph_by_color={
             "Blue":  {"morph_kernel": 5, "open_iter": 0, "close_iter": 2},
             "Red":   {"morph_kernel": 7, "open_iter": 1, "close_iter": 2},
@@ -245,10 +228,10 @@ def compute_tag_targets_and_annotate(
         circularity_min=0.30,
         fill_ratio_min=0.30,
         debug_mask_color="Blue",
-        debug_show_mask=True,
+        debug_show_mask=False,
         debug_show_overlay=False,
     )
-
+    
     part_counter: int = 0
 
     for d in part_dets:
