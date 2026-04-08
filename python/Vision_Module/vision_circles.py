@@ -85,7 +85,7 @@ def detect_color_cluster_parts_on_board(
     # Minimum S value (0-255) for a pixel to be considered "colored".
     # Black surfaces: S ≈ 0-30.  Grey metal: S ≈ 0-20.
     # Colored parts: S ≈ 80+.   Safe default: 40-50.
-    saturation_min: int = 45,
+    saturation_min: int = 50,
     # Minimum V value to reject very dark pixels with noisy hue.
     value_min: int = 30,
     # ── Hue bins ─────────────────────────────────────────────────────

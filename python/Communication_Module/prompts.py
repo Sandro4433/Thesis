@@ -375,7 +375,7 @@ CAPACITY CHECK — USE THE check_capacity TOOL:
   Do NOT count manually — the tool does it accurately.
 
 CONTAINER SCOPE:
-If priority color alone can't fill all kits, ALL containers contributing parts
+If priority color alone can't fill all kits, A container contributing parts
 must be set as role="input".
 
 COLOR PRIORITY + MULTI-COLOR RECIPE AMBIGUITY:
