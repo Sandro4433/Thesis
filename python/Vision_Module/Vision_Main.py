@@ -151,6 +151,26 @@ def main() -> None:
         print(f"Using test image: {TEST_IMAGE_NAME}")
         img_raw = load_test_image(TEST_IMAGE_NAME)
 
+    # ------------------------------------------------------------------
+    # ROI crop — remove non-workspace edges (walls, cables, robot arm)
+    # Crop is applied once here so every downstream stage (Charuco,
+    # AprilTags, part detection, display) operates on the clean frame.
+    # Set any value to 0 to disable that side.
+    # ------------------------------------------------------------------
+    ROI_CROP_LEFT   = 230
+    ROI_CROP_RIGHT  = 80
+    ROI_CROP_TOP    = 0
+    ROI_CROP_BOTTOM = 0
+
+    h_full, w_full = img_raw.shape[:2]
+    x0 = ROI_CROP_LEFT
+    x1 = w_full - ROI_CROP_RIGHT
+    y0 = ROI_CROP_TOP
+    y1 = h_full - ROI_CROP_BOTTOM
+    img_raw = img_raw[y0:y1, x0:x1].copy()
+    print(f"ROI crop: {w_full}x{h_full} → {img_raw.shape[1]}x{img_raw.shape[0]}  "
+          f"(L={ROI_CROP_LEFT} R={ROI_CROP_RIGHT} T={ROI_CROP_TOP} B={ROI_CROP_BOTTOM})")
+
     img_vis = img_raw.copy()
     # Force a contiguous C-layout array before passing to any native library.
     # cv2.cvtColor does not guarantee contiguous output, and pupil_apriltags
