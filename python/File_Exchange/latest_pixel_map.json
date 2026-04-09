@@ -1,58 +1,79 @@
 [
   {
     "name": "Part_1",
-    "cx_px": 858,
-    "cy_px": 604,
+    "cx_px": 357,
+    "cy_px": 270,
     "color": "Blue",
-    "diameter_mm": 46.84978723526001
+    "diameter_mm": 53.492724895477295
   },
   {
     "name": "Part_2",
-    "cx_px": 861,
-    "cy_px": 473,
+    "cx_px": 643,
+    "cy_px": 377,
     "color": "Blue",
-    "diameter_mm": 48.50992560386658
+    "diameter_mm": 50.58097839355469
   },
   {
     "name": "Part_3",
-    "cx_px": 972,
-    "cy_px": 670,
+    "cx_px": 776,
+    "cy_px": 602,
     "color": "Blue",
-    "diameter_mm": 46.333134174346924
+    "diameter_mm": 47.99468815326691
   },
   {
     "name": "Part_4",
-    "cx_px": 974,
-    "cy_px": 410,
+    "cx_px": 915,
+    "cy_px": 473,
     "color": "Blue",
-    "diameter_mm": 47.921955585479736
+    "diameter_mm": 49.93851110339165
   },
   {
     "name": "Part_5",
-    "cx_px": 374,
-    "cy_px": 605,
-    "color": "Red",
-    "diameter_mm": 52.719831466674805
+    "cx_px": 630,
+    "cy_px": 760,
+    "color": "Green",
+    "diameter_mm": 38.72528672218323
   },
   {
     "name": "Part_6",
-    "cx_px": 380,
-    "cy_px": 476,
-    "color": "Red",
-    "diameter_mm": 50.97675323486328
+    "cx_px": 736,
+    "cy_px": 490,
+    "color": "Green",
+    "diameter_mm": 41.597068309783936
   },
   {
     "name": "Part_7",
-    "cx_px": 488,
-    "cy_px": 673,
-    "color": "Red",
-    "diameter_mm": 52.95157432556152
+    "cx_px": 844,
+    "cy_px": 147,
+    "color": "Green",
+    "diameter_mm": 48.09917509555817
   },
   {
     "name": "Part_8",
-    "cx_px": 497,
-    "cy_px": 413,
+    "cx_px": 470,
+    "cy_px": 451,
     "color": "Red",
-    "diameter_mm": 52.02728509902954
+    "diameter_mm": 49.6525764465332
+  },
+  {
+    "name": "Part_9",
+    "cx_px": 640,
+    "cy_px": 562,
+    "color": "Red",
+    "diameter_mm": 48.21944236755371
+  },
+  {
+    "name": "Part_10",
+    "cx_px": 953,
+    "cy_px": 636,
+    "color": "Red",
+    "diameter_mm": 46.542150899767876
+  },
+  {
+    "name": "Part_11",
+    "cx_px": 976,
+    "cy_px": 378,
+    "color": "Red",
+    "diameter_mm": 50.621211528778076
   }
 ]
