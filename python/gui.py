@@ -124,6 +124,7 @@ class RobotGUI:
         # scene-routing state
         self._config_from_memory   = False   # show placeholder instead of image
         self._in_configure_mode    = False   # only Done in button bar
+        self._in_update_mode       = False   # True during "Update Config" (enables Recapture)
         self._first_menu_shown     = False   # greeting shown exactly once
         self._current_mode: str    = ""      # "reconfig" | "motion" | "execute"
         self._reconfig_sub: str    = ""      # pre-selected reconfig sub-option
@@ -745,6 +746,7 @@ class RobotGUI:
         self._clear_bar()
         self._set_input(False)
         self._in_configure_mode = False
+        self._in_update_mode = False
 
         # Show greeting the very first time
         if not self._first_menu_shown:
@@ -771,6 +773,33 @@ class RobotGUI:
             self._btn_bar, "Done", C["bg_accent"],
             self._cancel_configure,
         ).pack(side=tk.LEFT, padx=5)
+
+    def _show_update_bar(self) -> None:
+        """Show Recapture + Done buttons during Update Config mode."""
+        self._clear_bar()
+        self._btn(
+            self._btn_bar, "Recapture Image", C["bg_orange"],
+            self._request_recapture,
+        ).pack(side=tk.LEFT, padx=5)
+        self._btn(
+            self._btn_bar, "Done", C["bg_accent"],
+            self._cancel_configure,
+        ).pack(side=tk.LEFT, padx=5)
+
+    def _request_recapture(self) -> None:
+        """Send the recapture sentinel through the input queue so the
+        backend re-runs vision while keeping the original old config."""
+        self._set_input(False)
+        self._append("Recapturing image …\n", "info")
+        self._set_status("Recapturing...", C["fg_warn"])
+        # Reset the new-scan label to show "waiting" while vision runs
+        self._split_lbl_new.configure(
+            image="", text="Recapturing …",
+            fg=C["fg_muted"], font=(FONT, 10, "italic"))
+        self._split_photo_new = None
+        self._last_render_size = (0, 0)
+        # Send sentinel — the backend worker thread is blocked on input()
+        self._in_resp_q.put("__RECAPTURE__")
 
     def _show_execute_bar(self) -> None:
         """Show Cancel + Log buttons during robot execution."""
@@ -811,6 +840,7 @@ class RobotGUI:
         backend's select_reconfig_source() is bypassed entirely."""
         self._reconfig_sub = sub
         self._config_from_memory = False
+        self._in_update_mode = (sub == "reconfig_update")
         if sub == "reconfig_update":
             self._enter_split_view()
         self._run("reconfig")
@@ -833,7 +863,10 @@ class RobotGUI:
 
     def _show_text_input(self) -> None:
         if self._in_configure_mode:
-            self._show_cancel_bar()
+            if self._in_update_mode:
+                self._show_update_bar()
+            else:
+                self._show_cancel_bar()
         else:
             self._clear_bar()
         self._set_input(True)

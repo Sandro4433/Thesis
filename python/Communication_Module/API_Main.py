@@ -601,8 +601,11 @@ def run_update_dialogue(
 
     Returns
     -------
-    mapping : dict of user-confirmed overrides, or None if cancelled.
+    mapping : dict of user-confirmed overrides, None if cancelled,
+              or the string "__RECAPTURE__" if the user wants a new scan.
     """
+    from session_handler import RECAPTURE_SENTINEL
+
     prompt_text = _build_update_prompt(old_state, fresh_state, image_rename_map)
     messages: List[Dict[str, str]] = [
         {
@@ -701,6 +704,9 @@ def run_update_dialogue(
             else:
                 print("\n  No overrides — accepting auto-matches only.")
             return mapping
+        if user == RECAPTURE_SENTINEL:
+            print("\n  Recapture requested — restarting vision …\n")
+            return RECAPTURE_SENTINEL
         if is_no(user):
             messages.append({"role": "user", "content": "Rejected. Ask me again."})
             continue

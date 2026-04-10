@@ -233,6 +233,10 @@ def load_scene(client: OpenAI, mode: str) -> Optional[dict]:
 # Update Scene pipeline  (vision → auto-match → LLM dialogue → merge → save)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Sentinel returned by run_update_dialogue when the user requests a recapture
+RECAPTURE_SENTINEL = "__RECAPTURE__"
+
+
 def run_update_pipeline(client: OpenAI) -> None:
     """
     Full update-scene pipeline:
@@ -240,15 +244,19 @@ def run_update_pipeline(client: OpenAI) -> None:
       2. Auto-match parts and re-annotate image
       3. Hand off to the LLM for user dialogue (API_Main)
       4. Apply confirmed mapping and save
+
+    If the user requests a recapture during the dialogue, steps 1-3 are
+    repeated with a fresh vision scan while keeping the original old_state.
     """
     from Configuration_Module.Update_Scene import (
         prepare_update,
+        prepare_recapture,
         apply_update_mapping,
         redraw_image_with_auto_matches,
     )
     from Communication_Module.API_Main import run_update_dialogue
 
-    # ── Step 1: vision + state capture ──────────────────────────────────────
+    # ── Step 1: initial vision + state capture ─────────────────────────────
     try:
         old_state, fresh_state = prepare_update()
     except RuntimeError as e:
@@ -259,20 +267,33 @@ def run_update_pipeline(client: OpenAI) -> None:
         print("⚠  Update aborted (missing state files).")
         return
 
-    # ── Step 2: auto-match + image re-annotation ───────────────────────────
-    image_rename_map = redraw_image_with_auto_matches(old_state, fresh_state)
+    # ── Recapture loop ─────────────────────────────────────────────────────
+    while True:
+        # ── Step 2: auto-match + image re-annotation ───────────────────
+        image_rename_map = redraw_image_with_auto_matches(old_state, fresh_state)
 
-    # ── Step 3: LLM dialogue — returns the user-confirmed mapping ──────────
-    mapping = run_update_dialogue(
-        client, old_state, fresh_state, image_rename_map,
-    )
+        # ── Step 3: LLM dialogue ───────────────────────────────────────
+        mapping = run_update_dialogue(
+            client, old_state, fresh_state, image_rename_map,
+        )
 
-    # ── Step 4: apply mapping and save ─────────────────────────────────────
-    if mapping is not None:
-        apply_update_mapping(old_state, fresh_state, mapping, image_rename_map)
-        print("✅  Update complete.\n")
-    else:
-        print("⚠  Update dialogue was cancelled.\n")
+        # ── Recapture requested? ───────────────────────────────────────
+        if mapping == RECAPTURE_SENTINEL:
+            print("\n── Recapturing image … ──\n")
+            try:
+                fresh_state = prepare_recapture(old_state)
+            except RuntimeError as e:
+                print(f"\n❌  Recapture failed: {e}\n")
+                print("Continuing with previous scan.\n")
+            continue  # loop back to step 2
+
+        # ── Step 4: apply mapping and save ─────────────────────────────
+        if mapping is not None:
+            apply_update_mapping(old_state, fresh_state, mapping, image_rename_map)
+            print("✅  Update complete.\n")
+        else:
+            print("⚠  Update dialogue was cancelled.\n")
+        break
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
