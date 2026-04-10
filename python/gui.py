@@ -497,13 +497,13 @@ class RobotGUI:
 
     def _patch_pick_from_list(self) -> None:
         """
-        Replace _pick_from_list in API_Main.
+        Replace _pick_from_list in session_handler.
         In configure mode the numbered options are printed to the chat as plain
         text and the user types the number — no option buttons are shown.
         Typing "done" / "cancel" at a menu prompt cancels the session cleanly.
         """
         try:
-            import Communication_Module.API_Main as api  # type: ignore
+            import session_handler as sh  # type: ignore
             gui = self
 
             def _patched(prompt: str, options: List[str]) -> int:
@@ -518,9 +518,9 @@ class RobotGUI:
                     raise SystemExit(0)
                 return int(raw) - 1
 
-            api._pick_from_list = _patched
+            sh._pick_from_list = _patched
         except Exception as exc:
-            print(f"[GUI] Could not patch API_Main: {exc}")
+            print(f"[GUI] Could not patch session_handler: {exc}")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Scene description panel helpers
@@ -544,10 +544,10 @@ class RobotGUI:
         attributes, displaying 'none' for those not yet configured."""
         try:
             import json
-            import Communication_Module.API_Main as api  # type: ignore
-            if not api.CONFIGURATION_PATH.exists():
+            import session_handler as sh  # type: ignore
+            if not sh.CONFIGURATION_PATH.exists():
                 return
-            state = json.loads(api.CONFIGURATION_PATH.read_text(encoding="utf-8"))
+            state = json.loads(sh.CONFIGURATION_PATH.read_text(encoding="utf-8"))
             preds = state.get("predicates", {})
             lines = []
 
@@ -879,10 +879,10 @@ class RobotGUI:
                 # After execution, take a fresh picture and update the config
                 # with actual part positions.  The config is truth for identity.
                 try:
-                    import Communication_Module.API_Main as api  # type: ignore
-                    if api.CONFIGURATION_PATH.exists():
+                    import session_handler as sh  # type: ignore
+                    if sh.CONFIGURATION_PATH.exists():
                         import json as _json
-                        config = _json.loads(api.CONFIGURATION_PATH.read_text(encoding="utf-8"))
+                        config = _json.loads(sh.CONFIGURATION_PATH.read_text(encoding="utf-8"))
                         from Configuration_Module.Update_Scene import run_post_execution_rescan  # type: ignore
                         run_post_execution_rescan(config)
                 except Exception as exc:
@@ -891,13 +891,13 @@ class RobotGUI:
 
             self._patch_pick_from_list()
 
-            import Communication_Module.API_Main as api  # type: ignore
+            import session_handler as sh  # type: ignore
 
             # If a reconfig sub-option was pre-selected via the GUI buttons,
             # bypass the interactive select_reconfig_source() call entirely.
             if mode == "reconfig" and self._reconfig_sub:
                 _pre = self._reconfig_sub
-                api.select_reconfig_source = lambda: _pre
+                sh.select_reconfig_source = lambda: _pre
 
             client = None
             try:
@@ -911,7 +911,7 @@ class RobotGUI:
                     print(f"\n[ERR] Could not create OpenAI client: {exc}\n")
                     return
 
-            api.run_session(client, mode)
+            sh.run_session(client, mode)
 
         except SystemExit:
             pass
