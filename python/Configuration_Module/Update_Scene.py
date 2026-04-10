@@ -409,6 +409,41 @@ def prepare_update() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     return memory_state, fresh_state
 
 
+def prepare_recapture(old_state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Re-run the vision module and return only the new fresh state.
+
+    Unlike prepare_update(), this does NOT re-read the old config from disk —
+    the caller already has it in memory.  The old config is saved to disk
+    before vision runs (since Vision_Main overwrites configuration.json) and
+    restored immediately after.
+
+    Parameters
+    ----------
+    old_state : the original previous configuration (kept from the first scan)
+
+    Returns
+    -------
+    fresh_state : the newly captured vision state
+    """
+    # Save old config so it survives the vision overwrite
+    _save_atomic(CONFIGURATION_PATH, old_state)
+
+    try:
+        _run_vision()
+    except Exception as exc:
+        print(f"\n❌  Vision failed: {exc}\n")
+        _save_atomic(CONFIGURATION_PATH, old_state)
+        raise
+
+    fresh_state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
+
+    # Restore old config on disk
+    _save_atomic(CONFIGURATION_PATH, old_state)
+
+    return fresh_state
+
+
 def build_update_context(
     old_state: Dict[str, Any],
     fresh_state: Dict[str, Any],
