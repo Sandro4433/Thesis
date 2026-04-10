@@ -150,4 +150,7 @@ def slim_scene(state: dict) -> dict:
         "capacity": capacity,
         "slots": slots_view,
         "parts": parts_view,
+        "priority": preds.get("priority", []),
+        "kit_recipe": preds.get("kit_recipe", []),
+        "part_compatibility": preds.get("part_compatibility", []),
     }
