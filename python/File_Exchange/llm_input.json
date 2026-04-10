@@ -20,11 +20,6 @@
       "Part_11",
       "Part_12",
       "Part_13",
-      "Part_14",
-      "Part_15",
-      "Part_16",
-      "Part_17",
-      "Part_18",
       "Part_2",
       "Part_3",
       "Part_4",
@@ -96,79 +91,64 @@
   "predicates": {
     "at": [
       {
-        "part": "Part_10",
+        "part": "Part_12",
         "slot": "Container_1_Pos_1"
       },
       {
-        "part": "Part_8",
+        "part": "Part_10",
         "slot": "Container_1_Pos_2"
       },
       {
-        "part": "Part_7",
+        "part": "Part_11",
         "slot": "Container_1_Pos_3"
       },
       {
-        "part": "Part_9",
+        "part": "Part_13",
         "slot": "Container_1_Pos_4"
       },
       {
-        "part": "Part_11",
-        "slot": "Container_1_Pos_5"
-      },
-      {
-        "part": "Part_12",
-        "slot": "Container_1_Pos_6"
-      },
-      {
-        "part": "Part_15",
+        "part": "Part_4",
         "slot": "Container_2_Pos_1"
       },
       {
-        "part": "Part_13",
+        "part": "Part_2",
         "slot": "Container_2_Pos_2"
       },
       {
-        "part": "Part_14",
+        "part": "Part_1",
         "slot": "Container_2_Pos_3"
       },
       {
-        "part": "Part_16",
+        "part": "Part_3",
         "slot": "Container_2_Pos_4"
       },
       {
-        "part": "Part_18",
-        "slot": "Container_2_Pos_5"
-      },
-      {
-        "part": "Part_17",
-        "slot": "Container_2_Pos_6"
-      },
-      {
-        "part": "Part_3",
+        "part": "Part_7",
         "slot": "Container_3_Pos_1"
       },
       {
-        "part": "Part_1",
+        "part": "Part_5",
         "slot": "Container_3_Pos_2"
       },
       {
-        "part": "Part_2",
+        "part": "Part_6",
         "slot": "Container_3_Pos_3"
       },
       {
-        "part": "Part_4",
+        "part": "Part_8",
         "slot": "Container_3_Pos_4"
       },
       {
-        "part": "Part_6",
-        "slot": "Container_3_Pos_5"
-      },
-      {
-        "part": "Part_5",
+        "part": "Part_9",
         "slot": "Container_3_Pos_6"
       }
     ],
     "slot_empty": [
+      "Container_1_Pos_5",
+      "Container_1_Pos_6",
+      "Container_2_Pos_5",
+      "Container_2_Pos_6",
+      "Container_3_Pos_5",
       "Kit_1_Pos_1",
       "Kit_1_Pos_2",
       "Kit_1_Pos_3",
@@ -207,31 +187,15 @@
     ],
     "color": [
       {
+        "part": "Part_12",
+        "color": "red"
+      },
+      {
         "part": "Part_10",
-        "color": "green"
-      },
-      {
-        "part": "Part_8",
-        "color": "green"
-      },
-      {
-        "part": "Part_7",
-        "color": "green"
-      },
-      {
-        "part": "Part_9",
-        "color": "green"
+        "color": "red"
       },
       {
         "part": "Part_11",
-        "color": "green"
-      },
-      {
-        "part": "Part_12",
-        "color": "green"
-      },
-      {
-        "part": "Part_15",
         "color": "red"
       },
       {
@@ -239,27 +203,7 @@
         "color": "red"
       },
       {
-        "part": "Part_14",
-        "color": "red"
-      },
-      {
-        "part": "Part_16",
-        "color": "red"
-      },
-      {
-        "part": "Part_18",
-        "color": "red"
-      },
-      {
-        "part": "Part_17",
-        "color": "red"
-      },
-      {
-        "part": "Part_3",
-        "color": "blue"
-      },
-      {
-        "part": "Part_1",
+        "part": "Part_4",
         "color": "blue"
       },
       {
@@ -267,16 +211,32 @@
         "color": "blue"
       },
       {
-        "part": "Part_4",
+        "part": "Part_1",
         "color": "blue"
       },
       {
-        "part": "Part_6",
+        "part": "Part_3",
         "color": "blue"
+      },
+      {
+        "part": "Part_7",
+        "color": "green"
       },
       {
         "part": "Part_5",
-        "color": "blue"
+        "color": "green"
+      },
+      {
+        "part": "Part_6",
+        "color": "green"
+      },
+      {
+        "part": "Part_8",
+        "color": "green"
+      },
+      {
+        "part": "Part_9",
+        "color": "green"
       }
     ],
     "priority": [],
@@ -286,184 +246,164 @@
   },
   "positions_xy": {
     "Container_1_Pos_1": [
-      0.4885,
-      0.3155
+      0.5015,
+      0.3161
     ],
     "Container_1_Pos_2": [
-      0.5438,
-      0.345
+      0.5551,
+      0.3486
     ],
     "Container_1_Pos_3": [
-      0.5444,
-      0.415
-    ],
-    "Container_1_Pos_4": [
-      0.4897,
-      0.4455
-    ],
-    "Container_1_Pos_5": [
-      0.4344,
-      0.416
-    ],
-    "Container_1_Pos_6": [
-      0.4338,
-      0.346
-    ],
-    "Container_2_Pos_1": [
-      0.2706,
-      0.3158
-    ],
-    "Container_2_Pos_2": [
-      0.3255,
-      0.346
-    ],
-    "Container_2_Pos_3": [
-      0.3252,
-      0.416
-    ],
-    "Container_2_Pos_4": [
-      0.2701,
-      0.4458
-    ],
-    "Container_2_Pos_5": [
-      0.2152,
-      0.4156
-    ],
-    "Container_2_Pos_6": [
-      0.2155,
-      0.3456
-    ],
-    "Container_3_Pos_1": [
-      0.0489,
-      0.3226
-    ],
-    "Container_3_Pos_2": [
-      0.1034,
-      0.3535
-    ],
-    "Container_3_Pos_3": [
-      0.1021,
-      0.4235
-    ],
-    "Container_3_Pos_4": [
-      0.0466,
-      0.4526
-    ],
-    "Container_3_Pos_5": [
-      -0.0079,
-      0.4216
-    ],
-    "Container_3_Pos_6": [
-      -0.0066,
-      0.3516
-    ],
-    "Kit_1_Pos_1": [
-      0.6398,
-      0.2234
-    ],
-    "Kit_1_Pos_2": [
-      0.5933,
-      0.1855
-    ],
-    "Kit_1_Pos_3": [
-      0.6513,
-      0.1618
-    ],
-    "Kit_2_Pos_1": [
-      0.4996,
-      0.2132
-    ],
-    "Kit_2_Pos_2": [
-      0.4548,
-      0.1732
-    ],
-    "Kit_2_Pos_3": [
-      0.5138,
-      0.1522
-    ],
-    "Kit_3_Pos_1": [
-      0.358,
-      0.2091
-    ],
-    "Kit_3_Pos_2": [
-      0.3118,
-      0.1707
-    ],
-    "Kit_3_Pos_3": [
-      0.37,
-      0.1476
-    ],
-    "Part_1": [
-      0.1016,
-      0.3549
-    ],
-    "Part_10": [
-      0.4942,
-      0.3126
-    ],
-    "Part_11": [
-      0.4363,
-      0.4151
-    ],
-    "Part_12": [
-      0.4345,
-      0.3471
-    ],
-    "Part_13": [
-      0.3281,
-      0.3464
-    ],
-    "Part_14": [
-      0.3275,
-      0.4146
-    ],
-    "Part_15": [
-      0.2695,
-      0.3138
-    ],
-    "Part_16": [
-      0.2688,
-      0.4483
-    ],
-    "Part_17": [
-      0.2125,
-      0.3468
-    ],
-    "Part_18": [
-      0.2116,
-      0.4135
-    ],
-    "Part_2": [
-      0.0998,
-      0.4224
-    ],
-    "Part_3": [
-      0.0425,
-      0.3211
-    ],
-    "Part_4": [
-      0.0409,
-      0.4536
-    ],
-    "Part_5": [
-      -0.0148,
-      0.3531
-    ],
-    "Part_6": [
-      -0.0167,
+      0.5519,
       0.4185
     ],
+    "Container_1_Pos_4": [
+      0.4956,
+      0.4459
+    ],
+    "Container_1_Pos_5": [
+      0.442,
+      0.4135
+    ],
+    "Container_1_Pos_6": [
+      0.4452,
+      0.3435
+    ],
+    "Container_2_Pos_1": [
+      0.2636,
+      0.3154
+    ],
+    "Container_2_Pos_2": [
+      0.3194,
+      0.3439
+    ],
+    "Container_2_Pos_3": [
+      0.3214,
+      0.4138
+    ],
+    "Container_2_Pos_4": [
+      0.2673,
+      0.4454
+    ],
+    "Container_2_Pos_5": [
+      0.2114,
+      0.417
+    ],
+    "Container_2_Pos_6": [
+      0.2095,
+      0.347
+    ],
+    "Container_3_Pos_1": [
+      0.0271,
+      0.3167
+    ],
+    "Container_3_Pos_2": [
+      0.081,
+      0.3487
+    ],
+    "Container_3_Pos_3": [
+      0.0785,
+      0.4186
+    ],
+    "Container_3_Pos_4": [
+      0.0225,
+      0.4467
+    ],
+    "Container_3_Pos_5": [
+      -0.0314,
+      0.4147
+    ],
+    "Container_3_Pos_6": [
+      -0.0289,
+      0.3448
+    ],
+    "Kit_1_Pos_1": [
+      0.5518,
+      0.2149
+    ],
+    "Kit_1_Pos_2": [
+      0.5085,
+      0.1733
+    ],
+    "Kit_1_Pos_3": [
+      0.5683,
+      0.1544
+    ],
+    "Kit_2_Pos_1": [
+      0.4058,
+      0.2099
+    ],
+    "Kit_2_Pos_2": [
+      0.3619,
+      0.1689
+    ],
+    "Kit_2_Pos_3": [
+      0.4214,
+      0.1492
+    ],
+    "Kit_3_Pos_1": [
+      0.2525,
+      0.2093
+    ],
+    "Kit_3_Pos_2": [
+      0.2092,
+      0.1678
+    ],
+    "Kit_3_Pos_3": [
+      0.269,
+      0.1489
+    ],
+    "Part_1": [
+      0.3239,
+      0.4116
+    ],
+    "Part_10": [
+      0.565,
+      0.3506
+    ],
+    "Part_11": [
+      0.5615,
+      0.4166
+    ],
+    "Part_12": [
+      0.5068,
+      0.3138
+    ],
+    "Part_13": [
+      0.5015,
+      0.4487
+    ],
+    "Part_2": [
+      0.3218,
+      0.3445
+    ],
+    "Part_3": [
+      0.2662,
+      0.4469
+    ],
+    "Part_4": [
+      0.263,
+      0.3133
+    ],
+    "Part_5": [
+      0.0779,
+      0.3505
+    ],
+    "Part_6": [
+      0.0762,
+      0.4171
+    ],
     "Part_7": [
-      0.5513,
-      0.4131
+      0.0216,
+      0.3162
     ],
     "Part_8": [
-      0.551,
-      0.3464
+      0.0172,
+      0.4479
     ],
     "Part_9": [
-      0.4945,
-      0.4465
+      -0.0371,
+      0.3462
     ]
   }
 }
