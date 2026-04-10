@@ -1,40 +1,30 @@
 {
-  "Container_1": {
-    "role": "output"
-  },
   "Container_2": {
-    "role": "output"
+    "role": "input"
   },
   "Container_3": {
+    "role": "input"
+  },
+  "Kit_1": {
+    "role": "output"
+  },
+  "Kit_2": {
+    "role": "output"
+  },
+  "Kit_3": {
     "role": "output"
   },
   "workspace": {
-    "operation_mode": "sorting"
+    "operation_mode": "kitting"
   },
-  "part_compatibility": [
+  "kit_recipe": [
     {
-      "part_color": "green",
-      "allowed_in": [
-        "Container_3"
-      ]
+      "color": "red",
+      "quantity": 2
     },
-    {
-      "part_color": "blue",
-      "allowed_in": [
-        "Container_2"
-      ]
-    },
-    {
-      "part_color": "red",
-      "allowed_in": [
-        "Container_1"
-      ]
-    }
-  ],
-  "priority": [
     {
       "color": "blue",
-      "order": 2
+      "quantity": 1
     }
   ]
 }

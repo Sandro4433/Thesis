@@ -13,10 +13,9 @@ def _ensure_project_on_syspath() -> None:
 def main() -> None:
     _ensure_project_on_syspath()
 
-    # API_Main handles mode selection, vision (if needed), LLM session,
-    # changes application, and config saving — all in one entry point.
-    from Communication_Module.API_Main import main as api_main
-    api_main()
+    # session_handler orchestrates the pipeline (vision, config, LLM, execution).
+    from session_handler import main as session_main
+    session_main()
 
    
 
