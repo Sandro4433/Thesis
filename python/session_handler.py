@@ -105,7 +105,7 @@ def run_vision() -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
-    """Apply accumulated LLM changes to configuration.json and redraw image."""
+    """Apply accumulated LLM changes to configuration.json, save to Memory, and redraw image."""
     from Configuration_Module.Apply_Config_Changes import apply_changes
     import io, contextlib
 
@@ -124,7 +124,93 @@ def apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
     Path(tmp).replace(CONFIGURATION_PATH)
     print("✅  Configuration updated.")
 
+    # Save timestamped copy to Memory/
+    save_config_to_memory(updated)
+
     refresh_annotated_image(updated)
+
+
+def save_config_to_memory(state: Dict[str, Any]) -> Path:
+    """Save a timestamped configuration to Memory/ using the naming convention
+    configuration_DDMMYYYY_HHMM.json.  Returns the path it was saved to."""
+    from datetime import datetime as _dt
+
+    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    ts = _dt.now().strftime("%d%m%Y_%H%M")
+    name = f"configuration_{ts}.json"
+    dest = MEMORY_DIR / name
+    tmp = str(dest) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2, ensure_ascii=False)
+    Path(tmp).replace(dest)
+    print(f"✅  State archived → {dest.name}")
+    return dest
+
+
+def list_memory_configs() -> List[Dict[str, str]]:
+    """List all configuration files in Memory/, sorted newest first.
+
+    Returns a list of dicts with keys: name, path, date, time.
+    Date and time are extracted from the filename convention
+    configuration_DDMMYYYY_HHMM.json.
+    """
+    import re as _re
+
+    if not MEMORY_DIR.exists():
+        return []
+
+    pattern = _re.compile(
+        r"^configuration_(\d{2})(\d{2})(\d{4})_(\d{2})(\d{2})\.json$"
+    )
+    configs = []
+    for f in sorted(MEMORY_DIR.iterdir(), reverse=True):
+        if not f.is_file() or not f.name.endswith(".json"):
+            continue
+        m = pattern.match(f.name)
+        if m:
+            dd, mm, yyyy, hh, mi = m.groups()
+            configs.append({
+                "name": f.name,
+                "path": str(f),
+                "date": f"{dd}.{mm}.{yyyy}",
+                "time": f"{hh}:{mi}",
+                "sort_key": f"{yyyy}{mm}{dd}{hh}{mi}",
+            })
+        else:
+            # Include non-standard config files too (old naming, etc.)
+            mtime = f.stat().st_mtime
+            from datetime import datetime as _dt
+            dt = _dt.fromtimestamp(mtime)
+            configs.append({
+                "name": f.name,
+                "path": str(f),
+                "date": dt.strftime("%d.%m.%Y"),
+                "time": dt.strftime("%H:%M"),
+                "sort_key": dt.strftime("%Y%m%d%H%M"),
+            })
+
+    configs.sort(key=lambda x: x["sort_key"], reverse=True)
+    return configs
+
+
+def load_config_from_memory(path: str) -> bool:
+    """Load a configuration from Memory/ into the active configuration.json.
+    Returns True on success."""
+    src = Path(path)
+    if not src.exists():
+        print(f"⚠  File not found: {src}")
+        return False
+    try:
+        state = json.loads(src.read_text(encoding="utf-8"))
+        tmp = str(CONFIGURATION_PATH) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+        Path(tmp).replace(CONFIGURATION_PATH)
+        print(f"✅  Loaded configuration from {src.name}")
+        return True
+    except Exception as exc:
+        print(f"⚠  Failed to load config: {exc}")
+        return False
 
 
 def refresh_annotated_image(state: Dict[str, Any]) -> None:
