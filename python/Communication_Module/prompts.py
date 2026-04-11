@@ -135,11 +135,34 @@ Rules use AND logic for part selectors. Each rule can have:
     "allowed_in_role": "output" | "input"
     "not_allowed_in": ["Kit_1"]
 
+DELETING ENTRIES:
+When the user asks to DELETE or REMOVE specific entries from priority,
+kit_recipe, part_compatibility, or fragility:
+- Output the FULL remaining list WITHOUT the deleted entries.
+- If ALL entries are deleted, output an EMPTY LIST [].
+- NEVER use null for list-type keys — always use [].
+
+Examples:
+  Current priority: [{"color": "blue", "order": 2}, {"color": "red", "order": 1}]
+  User: "remove the blue priority"
+  → "priority": [{"color": "red", "order": 1}]
+
+  Current priority: [{"color": "blue", "order": 2}]
+  User: "remove all priorities"
+  → "priority": []
+
+  Current part_compatibility has 3 rules, user says "remove the red rule":
+  → "part_compatibility": [<remaining 2 rules>]
+
+  User: "delete all compatibility rules"
+  → "part_compatibility": []
+
 CRITICAL FORMAT RULES:
 - Use RECEPTACLE names (Container_1, Kit_1) for role changes, NOT slot names.
 - Use PART names (Part_1) for color/fragility changes.
 - Never invent names. Use verbatim names from the INPUT JSON.
-- null means reset to default.
+- null means reset to default (for scalar values like role). 
+- For list-type keys (priority, kit_recipe, part_compatibility), NEVER use null — use [] instead.
 - Do NOT include xy coordinates in output blocks.
 - Do NOT use "child_part" — not a valid attribute.
 """

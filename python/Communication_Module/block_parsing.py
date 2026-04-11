@@ -90,6 +90,10 @@ def extract_changes_block(text: str) -> Dict[str, Any]:
             raise ValueError(f"Object name must be a non-empty string, got: {obj_name!r}")
 
         if obj_name in SPECIAL_KEYS:
+            # Allow empty lists [] for deletion of all entries.
+            # Also allow null (None) — will be normalized to [] downstream.
+            if attrs is None or (isinstance(attrs, list) and len(attrs) == 0):
+                continue
             continue
 
         if not isinstance(attrs, dict) or not attrs:

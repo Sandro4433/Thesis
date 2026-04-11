@@ -92,20 +92,29 @@ def apply_changes(
             continue
 
         # ── list-type predicate replacements ─────────────────────────────────
-        if key == "priority" and isinstance(value, list):
-            preds["priority"] = value
-            print(f"  priority: {value}")
-            continue
+        if key == "priority":
+            if value is None:
+                value = []
+            if isinstance(value, list):
+                preds["priority"] = value
+                print(f"  priority: {value}")
+                continue
 
-        if key == "kit_recipe" and isinstance(value, list):
-            preds["kit_recipe"] = value
-            print(f"  kit_recipe: {value}")
-            continue
+        if key == "kit_recipe":
+            if value is None:
+                value = []
+            if isinstance(value, list):
+                preds["kit_recipe"] = value
+                print(f"  kit_recipe: {value}")
+                continue
 
-        if key == "part_compatibility" and isinstance(value, list):
-            preds["part_compatibility"] = value
-            print(f"  part_compatibility: {value}")
-            continue
+        if key == "part_compatibility":
+            if value is None:
+                value = []
+            if isinstance(value, list):
+                preds["part_compatibility"] = value
+                print(f"  part_compatibility: {value}")
+                continue
 
         if not isinstance(value, dict):
             print(f"  WARNING: unrecognised change entry '{key}': {value!r} — skipped.")
