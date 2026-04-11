@@ -151,30 +151,46 @@ def list_memory_configs() -> List[Dict[str, str]]:
     """List all configuration files in Memory/, sorted newest first.
 
     Returns a list of dicts with keys: name, path, date, time.
-    Date and time are extracted from the filename convention
-    configuration_DDMMYYYY_HHMM.json.
+    Recognises multiple naming conventions:
+      - configuration_DDMMYYYY_HHMM.json          (session_handler saves)
+      - configuration_{label}_YYYYMMDD_HHMMSS.json (post_exec / update saves)
     """
     import re as _re
 
     if not MEMORY_DIR.exists():
         return []
 
-    pattern = _re.compile(
+    # Old convention:  configuration_DDMMYYYY_HHMM.json
+    pat_old = _re.compile(
         r"^configuration_(\d{2})(\d{2})(\d{4})_(\d{2})(\d{2})\.json$"
+    )
+    # New convention:  configuration_{label}_YYYYMMDD_HHMMSS.json
+    pat_new = _re.compile(
+        r"^configuration_[a-z_]+_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.json$"
     )
     configs = []
     for f in sorted(MEMORY_DIR.iterdir(), reverse=True):
         if not f.is_file() or not f.name.endswith(".json"):
             continue
-        m = pattern.match(f.name)
-        if m:
-            dd, mm, yyyy, hh, mi = m.groups()
+        m_old = pat_old.match(f.name)
+        m_new = pat_new.match(f.name)
+        if m_old:
+            dd, mm, yyyy, hh, mi = m_old.groups()
             configs.append({
                 "name": f.name,
                 "path": str(f),
                 "date": f"{dd}.{mm}.{yyyy}",
                 "time": f"{hh}:{mi}",
-                "sort_key": f"{yyyy}{mm}{dd}{hh}{mi}",
+                "sort_key": f"{yyyy}{mm}{dd}{hh}{mi}00",
+            })
+        elif m_new:
+            yyyy, mm, dd, hh, mi, ss = m_new.groups()
+            configs.append({
+                "name": f.name,
+                "path": str(f),
+                "date": f"{dd}.{mm}.{yyyy}",
+                "time": f"{hh}:{mi}:{ss}",
+                "sort_key": f"{yyyy}{mm}{dd}{hh}{mi}{ss}",
             })
         else:
             # Include non-standard config files too (old naming, etc.)
@@ -186,7 +202,7 @@ def list_memory_configs() -> List[Dict[str, str]]:
                 "path": str(f),
                 "date": dt.strftime("%d.%m.%Y"),
                 "time": dt.strftime("%H:%M"),
-                "sort_key": dt.strftime("%Y%m%d%H%M"),
+                "sort_key": dt.strftime("%Y%m%d%H%M%S"),
             })
 
     configs.sort(key=lambda x: x["sort_key"], reverse=True)
@@ -206,7 +222,6 @@ def load_config_from_memory(path: str) -> bool:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2, ensure_ascii=False)
         Path(tmp).replace(CONFIGURATION_PATH)
-        print(f"✅  Loaded configuration from {src.name}")
         return True
     except Exception as exc:
         print(f"⚠  Failed to load config: {exc}")
@@ -307,7 +322,6 @@ def load_scene(client: OpenAI, mode: str) -> Optional[dict]:
             if not CONFIGURATION_PATH.exists():
                 print(f"ERROR: configuration.json not found at {CONFIGURATION_PATH.resolve()}")
                 return None
-            print(f"Loaded scene from: {CONFIGURATION_PATH}")
 
         state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
         return slim_scene(state)

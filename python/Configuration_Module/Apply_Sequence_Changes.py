@@ -132,7 +132,7 @@ def save_to_memory(state: Dict[str, Any], label: str = "post_exec") -> Path:
     """
     MEMORY_DIR.mkdir(parents=True, exist_ok=True)
     ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
-    name = f"positions_{label}_{ts}.json"
+    name = f"configuration_{label}_{ts}.json"
     dest = MEMORY_DIR / name
     _save_atomic(dest, state)
     return dest

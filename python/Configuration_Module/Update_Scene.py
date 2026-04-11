@@ -806,12 +806,12 @@ def apply_update_mapping(
 
     try:
         from Configuration_Module.Apply_Sequence_Changes import save_to_memory  # type: ignore
-        mem_path = save_to_memory(merged, label="scene_update")
+        mem_path = save_to_memory(merged, label="update")
         print("✅  State archived.")
     except ImportError:
         MEMORY_DIR.mkdir(parents=True, exist_ok=True)
         ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
-        arc_path = MEMORY_DIR / f"configuration_scene_update_{ts}.json"
+        arc_path = MEMORY_DIR / f"configuration_update_{ts}.json"
         _save_atomic(arc_path, merged)
         print("✅  State archived.")
 
