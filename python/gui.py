@@ -147,6 +147,11 @@ class RobotGUI:
         # time and still show the full history of the current session.
         self._log_buffer: List[tuple] = []
 
+        # config browser overlay (Edit Config)
+        self._browser_overlay: Optional[tk.Frame] = None
+        self._browser_selected_path: Optional[str] = None
+        self._browser_rows: List[tuple] = []
+
         # ── window ────────────────────────────────────────────────────────────
         self.root = tk.Tk()
         self.root.title("Robot Configuration System")
@@ -304,6 +309,7 @@ class RobotGUI:
     def _build_right_panel(self, parent: tk.PanedWindow) -> None:
         """Right half: scene description (top) + vision image (bottom)."""
         right = tk.Frame(parent, bg=C["bg_main"])
+        self._right_panel = right   # keep reference for overlay
         parent.add(right, stretch="always", minsize=320)
 
         # vertical PanedWindow inside right half
@@ -843,7 +849,296 @@ class RobotGUI:
         self._in_update_mode = (sub == "reconfig_update")
         if sub == "reconfig_update":
             self._enter_split_view()
+        if sub == "reconfig_memory":
+            self._show_config_browser()
+            return
         self._run("reconfig")
+
+    def _show_config_browser(self) -> None:
+        """Show a config file browser as an overlay covering the entire right
+        panel (scene description + image).  The underlying widgets are untouched
+        and reappear when the overlay is destroyed."""
+        import session_handler as sh
+
+        configs = sh.list_memory_configs()
+
+        # Determine which config is the "current" one (matches configuration.json)
+        current_path = None
+        try:
+            import json as _json
+            if sh.CONFIGURATION_PATH.exists():
+                current_data = sh.CONFIGURATION_PATH.read_text(encoding="utf-8")
+                current_hash = hash(current_data)
+                for cfg in configs:
+                    try:
+                        with open(cfg["path"], "r", encoding="utf-8") as f:
+                            if hash(f.read()) == current_hash:
+                                current_path = cfg["path"]
+                                break
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # If no hash match, just treat the newest as current (if it exists)
+        if current_path is None and configs:
+            current_path = configs[0]["path"]
+
+        # ── create overlay frame on top of the right panel ────────────────
+        overlay = tk.Frame(self._right_panel, bg=C["bg_main"])
+        overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+        overlay.lift()
+        self._browser_overlay = overlay
+
+        # ── header ────────────────────────────────────────────────────────
+        hdr = tk.Frame(overlay, bg=C["bg_main"])
+        hdr.pack(fill=tk.X, padx=10, pady=(10, 4))
+
+        tk.Label(
+            hdr, text="SELECT CONFIGURATION",
+            bg=C["bg_main"], fg=C["fg_white"],
+            font=(FONT, 11, "bold"),
+        ).pack(anchor=tk.W)
+
+        tk.Label(
+            hdr, text="Choose a saved configuration to load, or cancel to keep the current one.",
+            bg=C["bg_main"], fg=C["fg_muted"],
+            font=(FONT, 9),
+        ).pack(anchor=tk.W, pady=(2, 0))
+
+        # ── column headers ────────────────────────────────────────────────
+        col_hdr = tk.Frame(overlay, bg="#3b3d44")
+        col_hdr.pack(fill=tk.X, padx=10, pady=(10, 0))
+
+        tk.Label(
+            col_hdr, text="",
+            bg="#3b3d44", fg=C["fg_muted"],
+            font=(FONT, 8, "bold"), width=3,
+        ).pack(side=tk.LEFT, padx=(4, 0), pady=4)
+        tk.Label(
+            col_hdr, text="Configuration File",
+            bg="#3b3d44", fg=C["fg_muted"],
+            font=(FONT, 8, "bold"), anchor=tk.W,
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0), pady=4)
+        tk.Label(
+            col_hdr, text="Date",
+            bg="#3b3d44", fg=C["fg_muted"],
+            font=(FONT, 8, "bold"), width=12, anchor=tk.W,
+        ).pack(side=tk.LEFT, padx=4, pady=4)
+        tk.Label(
+            col_hdr, text="Time",
+            bg="#3b3d44", fg=C["fg_muted"],
+            font=(FONT, 8, "bold"), width=8, anchor=tk.W,
+        ).pack(side=tk.LEFT, padx=(4, 8), pady=4)
+
+        # ── scrollable list ───────────────────────────────────────────────
+        list_frame_outer = tk.Frame(overlay, bg=C["bg_chat"])
+        list_frame_outer.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 4))
+
+        canvas = tk.Canvas(
+            list_frame_outer, bg=C["bg_chat"],
+            highlightthickness=0, bd=0,
+        )
+        scrollbar = tk.Scrollbar(
+            list_frame_outer, orient=tk.VERTICAL, command=canvas.yview,
+            bg=C["bg_chat"], troughcolor=C["bg_chat"],
+            activebackground=C["bg_btn"],
+        )
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        inner = tk.Frame(canvas, bg=C["bg_chat"])
+        canvas_window = canvas.create_window((0, 0), window=inner, anchor=tk.NW)
+
+        # Track selection
+        self._browser_selected_path = None
+        self._browser_rows = []
+
+        row_bg_normal  = C["bg_chat"]
+        row_bg_hover   = "#3b3d44"
+        row_bg_sel     = C["bg_accent"]
+        row_bg_current = "#2d4a2d"      # subtle green tint for current config
+
+        def _select_row(idx, path):
+            self._browser_selected_path = path
+            for i, (row_frame, rpath, is_cur) in enumerate(self._browser_rows):
+                if i == idx:
+                    bg = row_bg_sel
+                elif is_cur:
+                    bg = row_bg_current
+                else:
+                    bg = row_bg_normal
+                row_frame.configure(bg=bg)
+                for child in row_frame.winfo_children():
+                    child.configure(bg=bg)
+
+        def _get_row_bg(idx):
+            """Return the resting background for a row (selected > current > normal)."""
+            _, rpath, is_cur = self._browser_rows[idx]
+            if self._browser_selected_path == rpath:
+                return row_bg_sel
+            if is_cur:
+                return row_bg_current
+            return row_bg_normal
+
+        if not configs:
+            tk.Label(
+                inner, text="No saved configurations found in Memory/.",
+                bg=C["bg_chat"], fg=C["fg_muted"],
+                font=(FONT, 10, "italic"),
+            ).pack(padx=20, pady=40)
+        else:
+            for idx, cfg in enumerate(configs):
+                is_current = (cfg["path"] == current_path)
+                base_bg = row_bg_current if is_current else row_bg_normal
+
+                row = tk.Frame(inner, bg=base_bg, cursor="hand2")
+                row.pack(fill=tk.X, padx=2, pady=1)
+
+                # Current indicator
+                indicator_text = "▶" if is_current else ""
+                ind_lbl = tk.Label(
+                    row, text=indicator_text,
+                    bg=base_bg, fg=C["fg_success"],
+                    font=(FONT, 8), width=3,
+                )
+                ind_lbl.pack(side=tk.LEFT, padx=(4, 0), pady=5)
+
+                # Strip .json extension for display
+                display_name = cfg["name"]
+                if display_name.endswith(".json"):
+                    display_name = display_name[:-5]
+                if is_current:
+                    display_name += "  (current)"
+
+                name_lbl = tk.Label(
+                    row, text=display_name,
+                    bg=base_bg,
+                    fg=C["fg_success"] if is_current else C["fg_robot"],
+                    font=(MONO, 9, "bold") if is_current else (MONO, 9),
+                    anchor=tk.W,
+                )
+                name_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 0), pady=5)
+
+                date_lbl = tk.Label(
+                    row, text=cfg["date"],
+                    bg=base_bg, fg=C["fg_muted"],
+                    font=(MONO, 9), width=12, anchor=tk.W,
+                )
+                date_lbl.pack(side=tk.LEFT, padx=4, pady=5)
+
+                time_lbl = tk.Label(
+                    row, text=cfg["time"],
+                    bg=base_bg, fg=C["fg_muted"],
+                    font=(MONO, 9), width=8, anchor=tk.W,
+                )
+                time_lbl.pack(side=tk.LEFT, padx=(4, 8), pady=5)
+
+                self._browser_rows.append((row, cfg["path"], is_current))
+
+                path = cfg["path"]
+                _idx = idx
+                for widget in (row, ind_lbl, name_lbl, date_lbl, time_lbl):
+                    widget.bind("<Button-1>",
+                                lambda e, i=_idx, p=path: _select_row(i, p))
+                    widget.bind("<Enter>",
+                                lambda e, r=row: (
+                                    r.configure(bg=row_bg_hover),
+                                    [c.configure(bg=row_bg_hover) for c in r.winfo_children()]
+                                ))
+                    widget.bind("<Leave>",
+                                lambda e, i=_idx: (
+                                    lambda bg: (
+                                        self._browser_rows[i][0].configure(bg=bg),
+                                        [c.configure(bg=bg) for c in self._browser_rows[i][0].winfo_children()]
+                                    )
+                                )(_get_row_bg(i)))
+
+        # Update scroll region when inner frame changes size
+        def _on_inner_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            canvas.itemconfigure(canvas_window, width=event.width)
+
+        inner.bind("<Configure>", _on_inner_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        # Mouse wheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(-1 * (event.delta // 120 or (
+                -1 if event.num == 4 else 1)), "units")
+
+        for w in (canvas, inner):
+            w.bind("<MouseWheel>", _on_mousewheel)
+            w.bind("<Button-4>", _on_mousewheel)
+            w.bind("<Button-5>", _on_mousewheel)
+
+        # ── buttons at bottom ─────────────────────────────────────────────
+        btn_frame = tk.Frame(overlay, bg=C["bg_main"])
+        btn_frame.pack(fill=tk.X, padx=10, pady=(4, 10))
+
+        self._btn(btn_frame, "Use Selected", C["bg_green"],
+                  self._browser_use_selected).pack(side=tk.LEFT, padx=(0, 6))
+        self._btn(btn_frame, "Cancel", C["bg_btn"],
+                  self._browser_cancel).pack(side=tk.LEFT)
+
+        # Update button bar (hide main menu buttons while browsing)
+        self._clear_bar()
+
+    def _close_config_browser(self) -> None:
+        """Destroy the browser overlay.  The right panel widgets underneath
+        are untouched and immediately visible again."""
+        if hasattr(self, "_browser_overlay") and self._browser_overlay is not None:
+            self._browser_overlay.destroy()
+            self._browser_overlay = None
+        self._browser_rows = []
+        self._browser_selected_path = None
+
+    def _browser_use_selected(self) -> None:
+        """Load the selected config from Memory/ and start the LLM session."""
+        if not self._browser_selected_path:
+            return  # no selection — do nothing
+
+        import session_handler as sh
+
+        # Check if the selected config is the current one (no reload needed)
+        is_current = False
+        try:
+            if sh.CONFIGURATION_PATH.exists():
+                current_data = sh.CONFIGURATION_PATH.read_text(encoding="utf-8")
+                with open(self._browser_selected_path, "r", encoding="utf-8") as f:
+                    is_current = (hash(f.read()) == hash(current_data))
+        except Exception:
+            pass
+
+        if is_current:
+            # Already the active config — just proceed
+            self._close_config_browser()
+            self._run("reconfig")
+            return
+
+        # Loading a different (old) config — image is no longer valid
+        success = sh.load_config_from_memory(self._browser_selected_path)
+        if not success:
+            self._append("⚠  Failed to load selected configuration.\n", "error")
+            return
+
+        self._append("Loaded configuration from Memory.\n", "success")
+        self._config_from_memory = True     # triggers "no image" placeholder
+        self._image_ready = False
+        self._photo_ref = None
+        self._close_config_browser()
+        self._refresh_scene_from_config()
+        self._load_image()                  # show placeholder
+        self._run("reconfig")
+
+    def _browser_cancel(self) -> None:
+        """Cancel and return to the main menu."""
+        self._close_config_browser()
+        self._show_main_menu()
 
     def _cancel_configure(self) -> None:
         """Send 'done' to the worker, as if the user typed it."""
