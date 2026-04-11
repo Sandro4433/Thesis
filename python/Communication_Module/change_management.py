@@ -32,11 +32,20 @@ def merge_changes(
     }
 
     for key, value in new_block.items():
+        # Normalize None to [] for list-type predicate keys
+        if key in ("priority", "kit_recipe", "part_compatibility") and value is None:
+            value = []
+
         if key == "part_compatibility" and isinstance(value, list):
-            existing = merged.get(key, [])
-            if not isinstance(existing, list):
-                existing = []
-            merged[key] = existing + value
+            # Empty list = explicit deletion (replace with [])
+            # Non-empty list = accumulate (append new rules to existing)
+            if len(value) == 0:
+                merged[key] = []
+            else:
+                existing = merged.get(key, [])
+                if not isinstance(existing, list):
+                    existing = []
+                merged[key] = existing + value
 
         elif key in ("priority", "kit_recipe") and isinstance(value, list):
             merged[key] = list(value)
