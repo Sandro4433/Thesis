@@ -77,6 +77,7 @@ C = {
     "fg_muted":   "#6b6d75",
     "fg_robot":   "#b0b2b8",
     "fg_user":    "#9db4ff",
+    "fg_assist":  "#e8922a",
     "fg_system":  "#4a4c54",
     "fg_success": "#69db7c",
     "fg_error":   "#ff6b6b",
@@ -192,25 +193,6 @@ class RobotGUI:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        # ── thin status strip at the top ──────────────────────────────────
-        self._status_bar = tk.Frame(self.root, bg=C["bg_main"], height=28)
-        self._status_bar.pack(fill=tk.X, padx=8, pady=(6, 0))
-        self._status_bar.pack_propagate(False)
-
-        self._status_dot = tk.Label(
-            self._status_bar, text="●",
-            bg=C["bg_main"], fg=C["fg_success"],
-            font=(FONT, 8),
-        )
-        self._status_dot.pack(side=tk.LEFT, padx=(4, 3))
-
-        self._status_label = tk.Label(
-            self._status_bar, text="Ready",
-            bg=C["bg_main"], fg=C["fg_success"],
-            font=(FONT, 9),
-        )
-        self._status_label.pack(side=tk.LEFT)
-
         self.root.title("Robot Configuration System")
 
         # ── main content: horizontal PanedWindow (left | right) ───────────
@@ -228,6 +210,21 @@ class RobotGUI:
         self._build_chat_panel(self._hpane)
         self._build_right_panel(self._hpane)
 
+        # ── Place Send button in the right panel's button row ─────────
+        # (created in _build_chat_panel, reparented here)
+        self._send.destroy()  # remove from left panel
+        self._send = tk.Button(
+            self._send_target, text="Send",
+            bg=C["fg_success"], fg=C["bg_main"],
+            font=(FONT, 10, "bold"),
+            relief=tk.FLAT, bd=0, padx=16, pady=9,
+            highlightthickness=0,
+            activebackground="#5bc870", activeforeground=C["bg_main"],
+            state=tk.DISABLED,
+            command=self._submit_text,
+        )
+        self._send.pack(side=tk.RIGHT, padx=(4, 0))
+
     def _build_chat_panel(self, parent: tk.PanedWindow) -> None:
         left = tk.Frame(parent, bg=C["bg_main"])
         parent.add(left, stretch="always", minsize=320)
@@ -241,7 +238,64 @@ class RobotGUI:
         # chat display — borderless box
         chat_wrap = tk.Frame(left, bg=C["bg_chat"], bd=0, highlightthickness=0)
         chat_wrap.pack(fill=tk.BOTH, expand=True)
+        self._chat_wrap = chat_wrap
 
+        # input area — sits at the bottom of the chat box, visually merged
+        # Pack BOTTOM first so the chat text fills the remaining space above
+        input_wrap = tk.Frame(chat_wrap, bg=C["bg_chat"], bd=0, highlightthickness=0)
+        input_wrap.pack(fill=tk.X, side=tk.BOTTOM)
+        self._input_row = input_wrap
+        self._chat_left = left
+
+        self._input_sep = tk.Frame(chat_wrap, bg="#2a2a32", height=1)
+        self._input_sep.pack(fill=tk.X, side=tk.BOTTOM, padx=8)
+
+        self._input_text = tk.Text(
+            input_wrap,
+            bg=C["bg_chat"], fg=C["fg_white"],
+            font=(MONO, 11),
+            insertbackground=C["fg_white"],
+            relief=tk.FLAT, bd=0,
+            highlightthickness=0,
+            wrap=tk.WORD,
+            height=1,
+            padx=12, pady=9,
+            state=tk.DISABLED,
+            undo=True,
+        )
+        self._input_sb = tk.Scrollbar(
+            input_wrap, command=self._input_text.yview,
+            width=4, bd=0, highlightthickness=0,
+            bg="#2a2a32", troughcolor=C["bg_chat"],
+            activebackground="#3a3a44", relief=tk.FLAT,
+        )
+        self._input_text.configure(yscrollcommand=self._input_sb.set)
+        self._input_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Auto-resize on content change
+        def _on_input_modified(event=None):
+            self._input_text.edit_modified(False)
+            self._resize_input()
+
+        self._input_text.bind("<<Modified>>", _on_input_modified)
+        self._input_text.bind("<Return>", self._on_input_return)
+        self._input_text.bind("<Shift-Return>", lambda e: None)
+
+        # Send button placeholder — will be reparented in _build_ui after right panel
+        self._send = tk.Button(
+            left, text="Send",
+            bg=C["fg_success"], fg=C["bg_main"],
+            font=(FONT, 10, "bold"),
+            relief=tk.FLAT, bd=0, padx=16, pady=9,
+            highlightthickness=0,
+            activebackground="#5bc870", activeforeground=C["bg_main"],
+            state=tk.DISABLED,
+            command=self._submit_text,
+        )
+
+        self._input_var = None
+
+        # Now pack the chat text area (fills remaining space above the input)
         self._chat = tk.Text(
             chat_wrap,
             bg=C["bg_chat"], fg=C["fg_robot"],
@@ -275,73 +329,18 @@ class RobotGUI:
         self._chat.configure(cursor="xterm")
 
         # text tags
-        self._chat.tag_configure("user",    foreground=C["fg_user"],    font=(MONO, 10, "bold"))
-        self._chat.tag_configure("robot",   foreground=C["fg_robot"])
-        self._chat.tag_configure("success", foreground=C["fg_success"])
-        self._chat.tag_configure("error",   foreground=C["fg_error"])
-        self._chat.tag_configure("warn",    foreground=C["fg_warn"])
-        self._chat.tag_configure("system",  foreground=C["fg_system"],  font=(MONO, 9))
-        self._chat.tag_configure("divider", foreground="#333338",       font=(MONO, 9))
-        self._chat.tag_configure("info",    foreground=C["fg_info"])
+        self._chat.tag_configure("user",      foreground=C["fg_user"],    font=(MONO, 10, "bold"))
+        self._chat.tag_configure("robot",     foreground=C["fg_robot"])
+        self._chat.tag_configure("assistant", foreground=C["fg_assist"],  font=(MONO, 10, "bold"))
+        self._chat.tag_configure("success",   foreground=C["fg_success"])
+        self._chat.tag_configure("error",     foreground=C["fg_error"])
+        self._chat.tag_configure("warn",      foreground=C["fg_warn"])
+        self._chat.tag_configure("system",    foreground=C["fg_system"],  font=(MONO, 9))
+        self._chat.tag_configure("divider",   foreground="#333338",       font=(MONO, 9))
+        self._chat.tag_configure("info",      foreground=C["fg_info"])
         self._chat.tag_configure("greeting",
                                  foreground=C["fg_white"],
                                  font=(MONO, 11, "bold"))
-
-        # input row — expandable text area that grows upward
-        row = tk.Frame(left, bg=C["bg_main"], pady=6)
-        row.pack(fill=tk.X, side=tk.BOTTOM)
-        self._input_row = row
-        self._chat_left = left  # keep ref for height calculation
-
-        input_wrap = tk.Frame(row, bg=C["bg_chat"], bd=0, highlightthickness=0)
-        input_wrap.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        self._input_text = tk.Text(
-            input_wrap,
-            bg=C["bg_chat"], fg=C["fg_white"],
-            font=(MONO, 11),
-            insertbackground=C["fg_white"],
-            relief=tk.FLAT, bd=0,
-            highlightthickness=0,
-            wrap=tk.WORD,
-            height=1,
-            padx=12, pady=9,
-            state=tk.DISABLED,
-            undo=True,
-        )
-        self._input_sb = tk.Scrollbar(
-            input_wrap, command=self._input_text.yview,
-            width=4, bd=0, highlightthickness=0,
-            bg="#2a2a32", troughcolor=C["bg_chat"],
-            activebackground="#3a3a44", relief=tk.FLAT,
-        )
-        self._input_text.configure(yscrollcommand=self._input_sb.set)
-        # Scrollbar hidden by default, shown when input grows large
-        self._input_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        # Auto-resize on content change
-        def _on_input_modified(event=None):
-            self._input_text.edit_modified(False)
-            self._resize_input()
-
-        self._input_text.bind("<<Modified>>", _on_input_modified)
-        self._input_text.bind("<Return>", self._on_input_return)
-        self._input_text.bind("<Shift-Return>", lambda e: None)  # allow Shift+Enter for newline
-
-        self._send = tk.Button(
-            row, text="Send",
-            bg=C["btn_send"], fg=C["fg_white"],
-            font=(FONT, 10, "bold"),
-            relief=tk.FLAT, bd=0, padx=16, pady=9,
-            highlightthickness=0,
-            activebackground="#6e5ec6", activeforeground=C["fg_white"],
-            state=tk.DISABLED,
-            command=self._submit_text,
-        )
-        self._send.pack(side=tk.LEFT, padx=(6, 0), anchor=tk.S)
-
-        # backward compat
-        self._input_var = None  # no longer used directly
 
     def _build_right_panel(self, parent: tk.PanedWindow) -> None:
         """Right half: scene description (top) + vision image (bottom) + button row."""
@@ -374,31 +373,42 @@ class RobotGUI:
         scene_wrap = tk.Frame(scene_outer, bg=C["bg_chat"], bd=0, highlightthickness=0)
         scene_wrap.pack(fill=tk.BOTH, expand=True)
 
-        self._scene_text = tk.Text(
-            scene_wrap,
-            bg=C["bg_chat"], fg=C["fg_robot"],
-            font=(MONO, 10),
-            wrap=tk.WORD, state=tk.DISABLED,
-            bd=0, padx=14, pady=10,
-            spacing1=1, spacing3=3,
-            highlightthickness=0,
-            selectbackground="#3a3a44",
-            selectforeground=C["fg_white"],
+        # Scrollable canvas for the scene table
+        self._scene_canvas = tk.Canvas(
+            scene_wrap, bg=C["bg_chat"],
+            highlightthickness=0, bd=0,
         )
-        scene_sb = tk.Scrollbar(scene_wrap, command=self._scene_text.yview,
+        scene_sb = tk.Scrollbar(scene_wrap, orient=tk.VERTICAL,
+                                command=self._scene_canvas.yview,
                                 width=6, bd=0, highlightthickness=0,
                                 bg="#2a2a32", troughcolor=C["bg_chat"],
                                 activebackground="#3a3a44", relief=tk.FLAT)
-        self._scene_text.configure(yscrollcommand=scene_sb.set)
+        self._scene_canvas.configure(yscrollcommand=scene_sb.set)
         scene_sb.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 2), pady=4)
-        self._scene_text.pack(fill=tk.BOTH, expand=True)
+        self._scene_canvas.pack(fill=tk.BOTH, expand=True)
 
-        self._scene_text.tag_configure("scene_text", foreground=C["fg_robot"])
-        self._scene_text.tag_configure("placeholder",
-                                       foreground=C["fg_muted"],
-                                       font=(MONO, 10, "italic"),
-                                       justify=tk.CENTER)
+        # Inner frame that holds table rows
+        self._scene_inner = tk.Frame(self._scene_canvas, bg=C["bg_chat"])
+        self._scene_canvas_win = self._scene_canvas.create_window(
+            (0, 0), window=self._scene_inner, anchor=tk.NW)
 
+        def _on_scene_inner_cfg(event):
+            self._scene_canvas.configure(scrollregion=self._scene_canvas.bbox("all"))
+        def _on_scene_canvas_cfg(event):
+            self._scene_canvas.itemconfigure(self._scene_canvas_win, width=event.width)
+        self._scene_inner.bind("<Configure>", _on_scene_inner_cfg)
+        self._scene_canvas.bind("<Configure>", _on_scene_canvas_cfg)
+
+        # Mouse wheel scrolling
+        def _scene_mousewheel(event):
+            self._scene_canvas.yview_scroll(
+                -1 * (event.delta // 120 or (-1 if event.num == 4 else 1)), "units")
+        for _w in (self._scene_canvas, self._scene_inner):
+            _w.bind("<MouseWheel>", _scene_mousewheel)
+            _w.bind("<Button-4>", _scene_mousewheel)
+            _w.bind("<Button-5>", _scene_mousewheel)
+
+        self._scene_placeholder_active = False
         self._set_scene_placeholder("No scene loaded yet.\nRun Reconfigure to populate.")
 
         # ── bottom: vision image ──────────────────────────────────────────────
@@ -490,8 +500,30 @@ class RobotGUI:
         self._img_outer.bind("<Configure>", _on_img_resize)
 
         # ── button bar (centered below image, same level as input row) ────
-        self._btn_bar = tk.Frame(right, bg=C["bg_main"], pady=6)
-        self._btn_bar.pack(fill=tk.X)
+        btn_row = tk.Frame(right, bg=C["bg_main"], pady=6)
+        btn_row.pack(fill=tk.X)
+        self._send_target = btn_row  # Send button will be placed here
+
+        self._btn_bar = tk.Frame(btn_row, bg=C["bg_main"])
+        self._btn_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # ── status indicator (bottom-right, same row as buttons) ──────
+        self._status_frame = tk.Frame(btn_row, bg=C["bg_main"])
+        self._status_frame.pack(side=tk.RIGHT, padx=(0, 8))
+
+        self._status_dot = tk.Label(
+            self._status_frame, text="●",
+            bg=C["bg_main"], fg=C["fg_success"],
+            font=(FONT, 8),
+        )
+        self._status_dot.pack(side=tk.LEFT, padx=(4, 3))
+
+        self._status_label = tk.Label(
+            self._status_frame, text="Ready",
+            bg=C["bg_main"], fg=C["fg_success"],
+            font=(FONT, 9),
+        )
+        self._status_label.pack(side=tk.LEFT)
 
     def _init_sash_positions(self) -> None:
         """Set the two PanedWindows to equal 50/50 splits."""
@@ -559,46 +591,63 @@ class RobotGUI:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _set_scene_placeholder(self, msg: str) -> None:
-        self._scene_text.configure(state=tk.NORMAL)
-        self._scene_text.delete("1.0", tk.END)
-        self._scene_text.tag_configure("placeholder",
-                                       foreground=C["fg_muted"],
-                                       font=(MONO, 10, "italic"),
-                                       justify=tk.CENTER)
-        self._scene_text.insert(tk.END, msg, "placeholder")
-        self._scene_text.configure(state=tk.DISABLED)
-        # Vertically center by adjusting top padding after layout
+        """Show a centered placeholder in the scene panel."""
+        self._clear_scene_table()
         self._scene_placeholder_active = True
-        def _vcenter(event=None):
-            if not self._scene_placeholder_active:
-                return
-            try:
-                widget_h = self._scene_text.winfo_height()
-                # Estimate text height (line count * line height)
-                lines = msg.count("\n") + 1
-                line_h = 20  # approximate
-                text_h = lines * line_h
-                pad = max(0, (widget_h - text_h) // 2 - 10)
-                self._scene_text.configure(state=tk.NORMAL)
-                self._scene_text.delete("1.0", tk.END)
-                self._scene_text.insert("1.0", "\n" * (pad // line_h) + msg, "placeholder")
-                self._scene_text.configure(state=tk.DISABLED)
-            except Exception:
-                pass
-        self._scene_text.bind("<Configure>", _vcenter, add="+")
-        self.root.after(200, _vcenter)
+        lbl = tk.Label(
+            self._scene_inner, text=msg,
+            bg=C["bg_chat"], fg=C["fg_muted"],
+            font=(MONO, 10, "italic"),
+            justify=tk.CENTER,
+        )
+        lbl.pack(expand=True, fill=tk.BOTH, padx=20, pady=40)
+
+    def _clear_scene_table(self) -> None:
+        """Remove all widgets from the scene inner frame."""
+        for w in self._scene_inner.winfo_children():
+            w.destroy()
 
     def _set_scene_content(self, text: str) -> None:
+        """Unused — kept for backward compat. Use _refresh_scene_from_config."""
         self._scene_placeholder_active = False
-        self._scene_text.configure(state=tk.NORMAL)
-        self._scene_text.delete("1.0", tk.END)
-        self._scene_text.insert(tk.END, text.strip(), "scene_text")
-        self._scene_text.see("1.0")
-        self._scene_text.configure(state=tk.DISABLED)
+        self._clear_scene_table()
+        lbl = tk.Label(
+            self._scene_inner, text=text.strip(),
+            bg=C["bg_chat"], fg=C["fg_robot"],
+            font=(MONO, 10), anchor=tk.NW, justify=tk.LEFT,
+        )
+        lbl.pack(fill=tk.BOTH, padx=14, pady=10)
+
+    def _add_scene_row(self, parent: tk.Frame, label: str, value: str,
+                       row_idx: int, is_separator: bool = False) -> None:
+        """Add a single row to the scene table grid."""
+        if is_separator:
+            sep = tk.Frame(parent, bg="#2a2a32", height=1)
+            sep.grid(row=row_idx, column=0, columnspan=2,
+                     sticky="ew", padx=8, pady=4)
+            return
+
+        row_bg = "#1e1e24" if row_idx % 2 == 0 else C["bg_chat"]
+
+        lbl_w = tk.Label(
+            parent, text=label,
+            bg=row_bg, fg=C["fg_muted"],
+            font=(MONO, 9, "bold"), anchor=tk.NW,
+            padx=12, pady=5,
+        )
+        lbl_w.grid(row=row_idx, column=0, sticky="nw")
+
+        val_w = tk.Label(
+            parent, text=value,
+            bg=row_bg, fg=C["fg_robot"],
+            font=(MONO, 9), anchor=tk.NW,
+            padx=8, pady=5, justify=tk.LEFT,
+            wraplength=300,
+        )
+        val_w.grid(row=row_idx, column=1, sticky="nwe")
 
     def _refresh_scene_from_config(self) -> None:
-        """Build scene summary from config file. Always shows ALL high-level
-        attributes, displaying 'none' for those not yet configured."""
+        """Build scene summary as a clean table from config file."""
         try:
             import json
             import session_handler as sh  # type: ignore
@@ -606,57 +655,67 @@ class RobotGUI:
                 return
             state = json.loads(sh.CONFIGURATION_PATH.read_text(encoding="utf-8"))
             preds = state.get("predicates", {})
-            lines = []
+
+            self._scene_placeholder_active = False
+            self._clear_scene_table()
+
+            table = tk.Frame(self._scene_inner, bg=C["bg_chat"])
+            table.pack(fill=tk.BOTH, expand=True, padx=4, pady=6)
+            table.columnconfigure(1, weight=1)
+
+            row = 0
 
             # Mode
             ws = state.get("workspace", {})
             mode = ws.get("operation_mode") or "not set"
-            lines.append(f"Mode: {mode}")
+            self._add_scene_row(table, "Mode", mode, row); row += 1
 
             # Batch Size
             batch = ws.get("batch_size")
             batch_str = str(batch) if batch else "not set"
-            lines.append(f"Batch Size: {batch_str}")
+            self._add_scene_row(table, "Batch Size", batch_str, row); row += 1
+
+            # Separator
+            self._add_scene_row(table, "", "", row, is_separator=True); row += 1
 
             # Roles
             roles = preds.get("role", [])
             assigned = [e for e in roles if e.get("role")]
-            lines.append("")
             if assigned:
-                lines.append("Roles:")
-                for e in sorted(assigned, key=lambda x: x["object"]):
-                    lines.append(f"  {e['object']} = {e['role']}")
+                val = "\n".join(
+                    f"{e['object']} = {e['role']}"
+                    for e in sorted(assigned, key=lambda x: x["object"])
+                )
             else:
-                lines.append("Roles: none")
+                val = "none"
+            self._add_scene_row(table, "Roles", val, row); row += 1
 
-            # Part Fragility
+            # Fragility
             frag = [e["part"] for e in preds.get("fragility", [])
                     if e.get("fragility") == "fragile"]
-            lines.append("")
-            if frag:
-                lines.append(f"Part Fragility: {', '.join(sorted(frag))}")
-            else:
-                lines.append("Part Fragility: none")
+            self._add_scene_row(table, "Fragility",
+                                ", ".join(sorted(frag)) if frag else "none",
+                                row); row += 1
 
             # Priority
             prio = preds.get("priority", [])
-            lines.append("")
             if prio:
                 prio_str = ", ".join(
                     f"{e.get('color')} (#{e.get('order')})"
                     for e in sorted(prio, key=lambda x: x.get("order", 0))
                 )
-                lines.append(f"Priority: {prio_str}")
             else:
-                lines.append("Priority: none")
+                prio_str = "none"
+            self._add_scene_row(table, "Priority", prio_str, row); row += 1
+
+            # Separator
+            self._add_scene_row(table, "", "", row, is_separator=True); row += 1
 
             # Kit recipe
             recipe = preds.get("kit_recipe", [])
-            lines.append("")
             if recipe:
-                lines.append("Kit Recipe:")
-                # Group by color+quantity+size (ignore kit field for display)
                 seen = set()
+                parts = []
                 for e in recipe:
                     color = e.get("color", "")
                     qty = e.get("quantity", 0)
@@ -666,17 +725,17 @@ class RobotGUI:
                         continue
                     seen.add(key)
                     size_str = f" ({size})" if size else ""
-                    lines.append(f"  {qty}x {color}{size_str}")
+                    parts.append(f"{qty}x {color}{size_str}")
+                recipe_str = "\n".join(parts)
             else:
-                lines.append("Kit Recipe: none")
+                recipe_str = "none"
+            self._add_scene_row(table, "Kit Recipe", recipe_str, row); row += 1
 
-            # Part compatibility
+            # Compatibility
             compat = preds.get("part_compatibility", [])
-            lines.append("")
             if compat:
-                lines.append("Compatibility:")
+                rules = []
                 for rule in compat:
-                    # Build part selector description
                     part_selectors = []
                     if rule.get("part_name"):
                         part_selectors.append(rule["part_name"])
@@ -684,26 +743,20 @@ class RobotGUI:
                         part_selectors.append(f"{rule['part_color']} parts")
                     if rule.get("part_fragility"):
                         part_selectors.append(f"{rule['part_fragility']} parts")
-                    
                     part_desc = " + ".join(part_selectors) if part_selectors else "all parts"
-                    
-                    # Build receptacle selector description
                     if rule.get("allowed_in"):
                         rec_desc = ", ".join(rule["allowed_in"])
                     elif rule.get("allowed_in_role"):
                         rec_desc = f"all {rule['allowed_in_role']}s"
                     else:
                         rec_desc = "all"
-                    
-                    # Add exclusions
                     if rule.get("not_allowed_in"):
                         rec_desc += f" (except {', '.join(rule['not_allowed_in'])})"
-                    
-                    lines.append(f"  {part_desc} → {rec_desc}")
+                    rules.append(f"{part_desc} → {rec_desc}")
+                compat_str = "\n".join(rules)
             else:
-                lines.append("Compatibility: none")
-
-            self._set_scene_content("\n".join(lines))
+                compat_str = "none"
+            self._add_scene_row(table, "Compatibility", compat_str, row); row += 1
 
         except Exception as exc:
             self._set_scene_placeholder("Could not load scene:\n" + str(exc))
@@ -719,12 +772,6 @@ class RobotGUI:
             self._log_win.title("Output Log")
             self._log_win.geometry("900x600")
             self._log_win.configure(bg=C["bg_main"])
-
-            tk.Label(
-                self._log_win, text="FULL OUTPUT LOG",
-                bg=C["bg_main"], fg=C["fg_muted"],
-                font=(FONT, 8, "bold"),
-            ).pack(anchor=tk.W, padx=10, pady=(8, 2))
 
             wrap = tk.Frame(self._log_win, bg=C["bg_chat"])
             wrap.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
@@ -750,13 +797,14 @@ class RobotGUI:
 
             # Same colour tags as chat, plus all keys allowed (fully copyable)
             for tag, cfg in [
-                ("user",    {"foreground": C["fg_user"],    "font": (MONO, 10, "bold")}),
-                ("robot",   {"foreground": C["fg_robot"]}),
-                ("success", {"foreground": C["fg_success"]}),
-                ("error",   {"foreground": C["fg_error"]}),
-                ("warn",    {"foreground": C["fg_warn"]}),
-                ("system",  {"foreground": C["fg_system"],  "font": (MONO, 9)}),
-                ("divider", {"foreground": "#333338",        "font": (MONO, 9)}),
+                ("user",      {"foreground": C["fg_user"],    "font": (MONO, 10, "bold")}),
+                ("robot",     {"foreground": C["fg_robot"]}),
+                ("assistant", {"foreground": C["fg_assist"],   "font": (MONO, 10, "bold")}),
+                ("success",   {"foreground": C["fg_success"]}),
+                ("error",     {"foreground": C["fg_error"]}),
+                ("warn",      {"foreground": C["fg_warn"]}),
+                ("system",    {"foreground": C["fg_system"],  "font": (MONO, 9)}),
+                ("divider",   {"foreground": "#333338",        "font": (MONO, 9)}),
             ]:
                 self._log_text.tag_configure(tag, **cfg)
 
@@ -960,15 +1008,9 @@ class RobotGUI:
 
         tk.Label(
             hdr, text="SELECT CONFIGURATION",
-            bg=C["bg_main"], fg=C["fg_white"],
-            font=(FONT, 11, "bold"),
-        ).pack(anchor=tk.CENTER)
-
-        tk.Label(
-            hdr, text="Choose a saved configuration to load, or cancel to keep the current one.",
             bg=C["bg_main"], fg=C["fg_muted"],
-            font=(FONT, 9),
-        ).pack(anchor=tk.CENTER, pady=(2, 0))
+            font=(FONT, 8, "bold"),
+        ).pack(anchor=tk.CENTER)
 
         # ── column headers ────────────────────────────────────────────────
         col_hdr_bg = "#1f1f25"
@@ -1147,9 +1189,7 @@ class RobotGUI:
         btn_frame.pack(fill=tk.X, padx=10, pady=(4, 10))
 
         self._btn(btn_frame, "Use Selected", C["btn_1"],
-                  self._browser_use_selected).pack(side=tk.LEFT, padx=(0, 6))
-        self._btn(btn_frame, "Cancel", C["btn_2"],
-                  self._browser_cancel).pack(side=tk.LEFT)
+                  self._browser_use_selected).pack(anchor=tk.CENTER)
 
         # Update button bar (hide main menu buttons while browsing)
         self._clear_bar()
@@ -1237,10 +1277,16 @@ class RobotGUI:
         s = tk.NORMAL if enabled else tk.DISABLED
         self._input_text.configure(state=s)
         self._send.configure(state=s)
-        if not enabled:
-            # Reset height and hide scrollbar when disabled
+        if enabled:
+            # Show input row and separator (pack bottom-up: input first, sep above)
+            self._input_row.pack(fill=tk.X, side=tk.BOTTOM)
+            self._input_sep.pack(fill=tk.X, side=tk.BOTTOM, padx=8)
+        else:
+            # Reset height and hide scrollbar, separator, input row
             self._input_text.configure(height=1)
             self._input_sb.pack_forget()
+            self._input_sep.pack_forget()
+            self._input_row.pack_forget()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Backend worker
@@ -1765,6 +1811,36 @@ class RobotGUI:
         if "── Mode:" in stripped:
             self._refresh_scene_from_config()
 
+        # ── suppress unwanted messages ────────────────────────────────────────
+        if stripped.startswith("✅  Loaded configuration from ") and stripped != "✅  Loaded configuration from Memory.":
+            return
+        if stripped.startswith("Loaded scene from:"):
+            return
+
+        # ── detect update-dialogue acceptance → exit split view ───────────────
+        if stripped.startswith(("No overrides", "Applying mapping")):
+            if self._split_mode:
+                self._exit_split_view()
+            self._in_update_mode = False
+
+        # ── handle ASSISTANT: prefix → orange label on own line + body below ──
+        if tag == "robot" and stripped.startswith("ASSISTANT:"):
+            body = stripped[len("ASSISTANT:"):].strip()
+
+            self._log_append(text, tag)
+
+            if self._current_mode == "motion":
+                return
+            if self._current_mode == "execute":
+                return
+
+            # Blank line before, then "ASSISTANT:" label, newline, body
+            self._ensure_blank_line()
+            self._chat.insert(tk.END, "ASSISTANT:\n", "assistant")
+            self._chat.insert(tk.END, body + "\n", tag)
+            self._chat.see(tk.END)
+            return
+
         # ── normal chat append ────────────────────────────────────────────────
         if tag == "robot":
             if stripped.startswith("YOU:"):
@@ -1785,7 +1861,6 @@ class RobotGUI:
         self._log_append(text, tag)
 
         # During motion/planning mode only show success, error and dividers.
-        # During execute mode show nothing — all detail goes to the log only.
         if self._current_mode == "motion" and tag not in (
             "success", "error", "user", "divider",
         ):
@@ -1795,8 +1870,50 @@ class RobotGUI:
         ):
             return
 
-        self._chat.insert(tk.END, text, tag)
+        if not stripped:
+            return  # skip empty lines entirely; we control spacing ourselves
+
+        # Decide spacing: group related messages tightly, separate blocks
+        needs_gap = self._should_insert_gap(stripped, tag)
+        if needs_gap:
+            self._ensure_blank_line()
+        self._chat.insert(tk.END, stripped + "\n", tag)
         self._chat.see(tk.END)
+
+    def _should_insert_gap(self, stripped: str, tag: str) -> bool:
+        """Decide whether a blank line should precede this message.
+        Related messages (success chains, menu items, etc.) are kept tight."""
+        # Always gap before user messages and mode headers
+        if tag == "user":
+            return True
+        if "── Mode:" in stripped or stripped.startswith("How do you want"):
+            return True
+        if stripped.startswith("Let's configure"):
+            return True
+        # Gap before section headers
+        if stripped.startswith("──"):
+            return True
+        # Keep success/system messages tight (no gap between consecutive ✅ lines)
+        content = self._chat.get("end-3l", "end-1c").strip()
+        if tag == "success" and content.startswith("✅"):
+            return False
+        if tag == "success":
+            return True
+        # Menu items (lines starting with [ ) stay tight to their header
+        if stripped.startswith("[") or stripped.startswith("  ["):
+            return False
+        # Default: small gap
+        return True
+
+    def _ensure_blank_line(self) -> None:
+        """Ensure exactly one blank line before the next insert."""
+        content = self._chat.get("1.0", tk.END)
+        tail = content.rstrip("\n ")
+        if not tail:
+            return
+        after = len(content.rstrip(" ")) - len(tail)
+        if after < 2:
+            self._chat.insert(tk.END, "\n" * (2 - after))
 
     # ─────────────────────────────────────────────────────────────────────────
     # Status bar & lifecycle

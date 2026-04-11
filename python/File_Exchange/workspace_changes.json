@@ -1,21 +1,5 @@
 {
-  "Part_20": {
-    "fragility": "fragile"
-  },
-  "Part_18": {
-    "fragility": "fragile"
-  },
-  "Part_17": {
-    "fragility": "fragile"
-  },
-  "Part_12": {
-    "fragility": "fragile"
-  },
-  "Part_19": {
-    "fragility": "fragile"
-  },
-  "Part_21": {
-    "fragility": "fragile"
-  },
-  "part_compatibility": []
+  "Container_2": {
+    "role": "output"
+  }
 }
