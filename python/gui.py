@@ -210,21 +210,6 @@ class RobotGUI:
         self._build_chat_panel(self._hpane)
         self._build_right_panel(self._hpane)
 
-        # ── Place Send button in the right panel's button row ─────────
-        # (created in _build_chat_panel, reparented here)
-        self._send.destroy()  # remove from left panel
-        self._send = tk.Button(
-            self._send_target, text="Send",
-            bg=C["fg_success"], fg=C["bg_main"],
-            font=(FONT, 10, "bold"),
-            relief=tk.FLAT, bd=0, padx=16, pady=9,
-            highlightthickness=0,
-            activebackground="#5bc870", activeforeground=C["bg_main"],
-            state=tk.DISABLED,
-            command=self._submit_text,
-        )
-        self._send.pack(side=tk.RIGHT, padx=(4, 0))
-
     def _build_chat_panel(self, parent: tk.PanedWindow) -> None:
         left = tk.Frame(parent, bg=C["bg_main"])
         parent.add(left, stretch="always", minsize=320)
@@ -278,20 +263,22 @@ class RobotGUI:
             self._resize_input()
 
         self._input_text.bind("<<Modified>>", _on_input_modified)
+        self._input_text.bind("<KeyRelease>", lambda e: self._resize_input())
         self._input_text.bind("<Return>", self._on_input_return)
         self._input_text.bind("<Shift-Return>", lambda e: None)
 
-        # Send button placeholder — will be reparented in _build_ui after right panel
+        # Send button — orange, sits to the right of the input text
         self._send = tk.Button(
-            left, text="Send",
-            bg=C["fg_success"], fg=C["bg_main"],
+            input_wrap, text="Send",
+            bg=C["fg_assist"], fg=C["bg_main"],
             font=(FONT, 10, "bold"),
             relief=tk.FLAT, bd=0, padx=16, pady=9,
             highlightthickness=0,
-            activebackground="#5bc870", activeforeground=C["bg_main"],
+            activebackground="#d4821f", activeforeground=C["bg_main"],
             state=tk.DISABLED,
             command=self._submit_text,
         )
+        self._send.pack(side=tk.RIGHT, padx=(4, 6), pady=2)
 
         self._input_var = None
 
@@ -330,6 +317,7 @@ class RobotGUI:
 
         # text tags
         self._chat.tag_configure("user",      foreground=C["fg_user"],    font=(MONO, 10, "bold"))
+        self._chat.tag_configure("user_body", foreground=C["fg_user"],    font=(MONO, 10))
         self._chat.tag_configure("robot",     foreground=C["fg_robot"])
         self._chat.tag_configure("assistant", foreground=C["fg_assist"],  font=(MONO, 10, "bold"))
         self._chat.tag_configure("success",   foreground=C["fg_success"])
@@ -396,6 +384,15 @@ class RobotGUI:
             self._scene_canvas.configure(scrollregion=self._scene_canvas.bbox("all"))
         def _on_scene_canvas_cfg(event):
             self._scene_canvas.itemconfigure(self._scene_canvas_win, width=event.width)
+            # When placeholder is active, stretch inner frame to full canvas height
+            # so the label can be vertically centered
+            if self._scene_placeholder_active:
+                self._scene_canvas.itemconfigure(
+                    self._scene_canvas_win, height=event.height)
+            else:
+                # Reset to natural height for scrollable table content
+                self._scene_canvas.itemconfigure(
+                    self._scene_canvas_win, height=0)
         self._scene_inner.bind("<Configure>", _on_scene_inner_cfg)
         self._scene_canvas.bind("<Configure>", _on_scene_canvas_cfg)
 
@@ -502,7 +499,6 @@ class RobotGUI:
         # ── button bar (centered below image, same level as input row) ────
         btn_row = tk.Frame(right, bg=C["bg_main"], pady=6)
         btn_row.pack(fill=tk.X)
-        self._send_target = btn_row  # Send button will be placed here
 
         self._btn_bar = tk.Frame(btn_row, bg=C["bg_main"])
         self._btn_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -594,6 +590,14 @@ class RobotGUI:
         """Show a centered placeholder in the scene panel."""
         self._clear_scene_table()
         self._scene_placeholder_active = True
+        # Force inner frame to fill canvas height for vertical centering
+        try:
+            ch = self._scene_canvas.winfo_height()
+            if ch > 10:
+                self._scene_canvas.itemconfigure(
+                    self._scene_canvas_win, height=ch)
+        except Exception:
+            pass
         lbl = tk.Label(
             self._scene_inner, text=msg,
             bg=C["bg_chat"], fg=C["fg_muted"],
@@ -658,6 +662,12 @@ class RobotGUI:
 
             self._scene_placeholder_active = False
             self._clear_scene_table()
+            # Reset inner frame height to natural (scrollable)
+            try:
+                self._scene_canvas.itemconfigure(
+                    self._scene_canvas_win, height=0)
+            except Exception:
+                pass
 
             table = tk.Frame(self._scene_inner, bg=C["bg_chat"])
             table.pack(fill=tk.BOTH, expand=True, padx=4, pady=6)
@@ -798,6 +808,7 @@ class RobotGUI:
             # Same colour tags as chat, plus all keys allowed (fully copyable)
             for tag, cfg in [
                 ("user",      {"foreground": C["fg_user"],    "font": (MONO, 10, "bold")}),
+                ("user_body", {"foreground": C["fg_user"],    "font": (MONO, 10)}),
                 ("robot",     {"foreground": C["fg_robot"]}),
                 ("assistant", {"foreground": C["fg_assist"],   "font": (MONO, 10, "bold")}),
                 ("success",   {"foreground": C["fg_success"]}),
@@ -1305,7 +1316,7 @@ class RobotGUI:
         except Exception:
             pass
 
-        self._set_status("Running...", C["fg_muted"])
+        self._set_status("Running...", C["fg_assist"])
         if mode == "execute":
             self._show_execute_bar()
         else:
@@ -1419,28 +1430,31 @@ class RobotGUI:
         return "break"
 
     def _resize_input(self) -> None:
-        """Resize the input Text widget to fit content, up to half the panel."""
-        content = self._input_text.get("1.0", tk.END)
-        line_count = content.count("\n")
-        # Also account for wrapped lines
-        self._input_text.update_idletasks()
+        """Resize the input Text widget to fit content, up to 10 rows.
+        Grows and shrinks dynamically. Beyond 10 rows, scrollbar appears."""
+        MAX_ROWS = 10
+
         try:
-            # Calculate max lines as roughly half the chat panel height
-            panel_h = self._chat_left.winfo_height()
-            line_h = max(self._input_text.winfo_reqheight() // max(
-                int(self._input_text.cget("height")), 1), 18)
-            max_lines = max(3, (panel_h // 2) // line_h)
+            # Get actual display line count from the Text widget
+            # This accounts for word-wrapped lines too
+            content = self._input_text.get("1.0", "end-1c")
+            newline_count = content.count("\n") + 1  # number of actual lines
+
+            new_h = max(1, min(newline_count, MAX_ROWS))
+            current_h = int(self._input_text.cget("height"))
+
+            if new_h != current_h:
+                self._input_text.configure(height=new_h)
+                # Force geometry recalculation
+                self._input_text.update_idletasks()
+
+            # Show scrollbar only when content exceeds max
+            if newline_count > MAX_ROWS:
+                self._input_sb.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 2), pady=2)
+            else:
+                self._input_sb.pack_forget()
         except Exception:
-            max_lines = 12
-
-        new_h = max(1, min(line_count + 1, max_lines))
-        self._input_text.configure(height=new_h)
-
-        # Show scrollbar only when content exceeds visible area
-        if new_h >= max_lines and line_count + 1 > max_lines:
-            self._input_sb.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 2), pady=2)
-        else:
-            self._input_sb.pack_forget()
+            pass
 
     # ─────────────────────────────────────────────────────────────────────────
     # Polling loops  (always called from main thread via after())
@@ -1834,18 +1848,35 @@ class RobotGUI:
             if self._current_mode == "execute":
                 return
 
-            # Blank line before, then "ASSISTANT:" label, newline, body
             self._ensure_blank_line()
             self._chat.insert(tk.END, "ASSISTANT:\n", "assistant")
-            self._chat.insert(tk.END, body + "\n", tag)
+            self._chat.insert(tk.END, body + "\n\n", tag)
+            self._chat.see(tk.END)
+            return
+
+        # ── handle YOU: prefix → bold blue label on own line, body below in normal color
+        if tag == "robot" and stripped.startswith("YOU:"):
+            body = stripped[len("YOU:"):].strip()
+            tag = "user"
+
+            self._log_append(text, tag)
+
+            if self._current_mode in ("motion", "execute"):
+                # still show user messages in filtered modes
+                pass
+
+            self._ensure_blank_line()
+            self._chat.insert(tk.END, "YOU:\n", "user")
+            if body:
+                self._chat.insert(tk.END, body + "\n\n", "user_body")
+            else:
+                self._chat.insert(tk.END, "\n", "user_body")
             self._chat.see(tk.END)
             return
 
         # ── normal chat append ────────────────────────────────────────────────
         if tag == "robot":
-            if stripped.startswith("YOU:"):
-                tag = "user"
-            elif stripped.startswith(("[OK]", "Changes saved", "Sequence",
+            if stripped.startswith(("[OK]", "Changes saved", "Sequence",
                                       "State archived", "configuration.json",
                                       "✅")):
                 tag = "success"
@@ -1871,9 +1902,9 @@ class RobotGUI:
             return
 
         if not stripped:
-            return  # skip empty lines entirely; we control spacing ourselves
+            return  # skip empty lines; we control spacing ourselves
 
-        # Decide spacing: group related messages tightly, separate blocks
+        # Decide spacing
         needs_gap = self._should_insert_gap(stripped, tag)
         if needs_gap:
             self._ensure_blank_line()
@@ -1881,28 +1912,24 @@ class RobotGUI:
         self._chat.see(tk.END)
 
     def _should_insert_gap(self, stripped: str, tag: str) -> bool:
-        """Decide whether a blank line should precede this message.
-        Related messages (success chains, menu items, etc.) are kept tight."""
-        # Always gap before user messages and mode headers
-        if tag == "user":
-            return True
+        """Decide whether a blank line should precede this message."""
+        # Always gap before section headers and mode lines
         if "── Mode:" in stripped or stripped.startswith("How do you want"):
             return True
         if stripped.startswith("Let's configure"):
             return True
-        # Gap before section headers
         if stripped.startswith("──"):
             return True
-        # Keep success/system messages tight (no gap between consecutive ✅ lines)
+        # Keep success messages tight when consecutive
         content = self._chat.get("end-3l", "end-1c").strip()
         if tag == "success" and content.startswith("✅"):
             return False
         if tag == "success":
             return True
-        # Menu items (lines starting with [ ) stay tight to their header
+        # Menu items stay tight to their header
         if stripped.startswith("[") or stripped.startswith("  ["):
             return False
-        # Default: small gap
+        # Default: gap
         return True
 
     def _ensure_blank_line(self) -> None:

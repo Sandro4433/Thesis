@@ -176,7 +176,7 @@
     "role": [
       {
         "object": "Container_1",
-        "role": null
+        "role": "output"
       },
       {
         "object": "Container_2",
