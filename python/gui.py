@@ -317,7 +317,7 @@ class RobotGUI:
 
         # text tags
         self._chat.tag_configure("user",      foreground=C["fg_user"],    font=(MONO, 10, "bold"))
-        self._chat.tag_configure("user_body", foreground=C["fg_user"],    font=(MONO, 10))
+        self._chat.tag_configure("user_body", foreground=C["fg_robot"],    font=(MONO, 10))
         self._chat.tag_configure("robot",     foreground=C["fg_robot"])
         self._chat.tag_configure("assistant", foreground=C["fg_assist"],  font=(MONO, 10, "bold"))
         self._chat.tag_configure("success",   foreground=C["fg_success"])
@@ -915,7 +915,7 @@ class RobotGUI:
         """Send the recapture sentinel through the input queue so the
         backend re-runs vision while keeping the original old config."""
         self._set_input(False)
-        self._append("Recapturing image …\n", "info")
+        self._append("YOU: Recapture image\n", "robot")
         self._set_status("Recapturing...", C["fg_warn"])
         # Reset the new-scan label to show "waiting" while vision runs
         self._split_lbl_new.configure(
@@ -1259,7 +1259,7 @@ class RobotGUI:
 
     def _cancel_configure(self) -> None:
         """Send 'done' to the worker, as if the user typed it."""
-        self._append("YOU: done\n", "user")
+        self._append("YOU: done\n", "robot")
         self._in_resp_q.put("done")
 
     def _cancel_execution(self) -> None:
@@ -1409,7 +1409,7 @@ class RobotGUI:
 
     def _respond(self, value: str) -> None:
         """Echo the user's choice to chat and send to worker thread."""
-        self._append("YOU: " + value + "\n", "user")
+        self._append("YOU: " + value + "\n", "robot")
         self._in_resp_q.put(value)
 
     def _submit_text(self) -> None:
@@ -1830,6 +1830,19 @@ class RobotGUI:
             return
         if stripped.startswith("Loaded scene from:"):
             return
+        if stripped == "✅  Changes saved.":
+            return
+        if stripped == "✅  Update complete.":
+            return
+        if stripped.startswith("[Ambiguity detected"):
+            self._log_append(text, tag)
+            return
+        if stripped.startswith("[Tool: check_capacity"):
+            self._log_append(text, tag)
+            return
+        if stripped.startswith("[Capacity check"):
+            self._log_append(text, tag)
+            return
 
         # ── detect update-dialogue acceptance → exit split view ───────────────
         if stripped.startswith(("No overrides", "Applying mapping")):
@@ -1909,6 +1922,11 @@ class RobotGUI:
         if needs_gap:
             self._ensure_blank_line()
         self._chat.insert(tk.END, stripped + "\n", tag)
+        # Add trailing blank line after greeting, ── section headers, and divider messages
+        if (tag == "divider" or tag == "greeting"
+                or stripped.startswith("──")
+                or stripped.startswith("  [3]")):
+            self._chat.insert(tk.END, "\n")
         self._chat.see(tk.END)
 
     def _should_insert_gap(self, stripped: str, tag: str) -> bool:
@@ -1938,9 +1956,11 @@ class RobotGUI:
         tail = content.rstrip("\n ")
         if not tail:
             return
+        # tkinter Text.get() always appends an extra \n, so we need 3
+        # trailing newlines (2 real + 1 phantom) to have a visible blank line.
         after = len(content.rstrip(" ")) - len(tail)
-        if after < 2:
-            self._chat.insert(tk.END, "\n" * (2 - after))
+        if after < 3:
+            self._chat.insert(tk.END, "\n" * (3 - after))
 
     # ─────────────────────────────────────────────────────────────────────────
     # Status bar & lifecycle

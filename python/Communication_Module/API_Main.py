@@ -461,7 +461,6 @@ def _finalize_session(
     if accumulated:
         sh.save_changes(accumulated)
         sh.apply_and_save_config(accumulated)
-        print("✅  Changes saved.")
 
     print("\n── Configuration complete. ──\n")
 
@@ -834,12 +833,12 @@ def run_conversation(
             pending_sequence = None
             pending_changes = None
 
-            user_input = input("Anything else? If not, type or press 'done'.\nYOU: ").strip()
+            print("ASSISTANT:\nAnything else? If not, type or press 'done'.\n")
+            user_input = input("YOU: ").strip()
             if is_finish(user_input):
                 if accumulated_changes:
                     sh.save_changes(accumulated_changes)
                     sh.apply_and_save_config(accumulated_changes)
-                    print("✅  Changes saved.")
                 print("\n── Configuration complete. ──\n")
                 return
             if user_input:

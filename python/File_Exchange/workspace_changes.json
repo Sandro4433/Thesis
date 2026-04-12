@@ -1,5 +1,20 @@
 {
-  "Container_1": {
-    "role": "output"
+  "Part_1": {
+    "fragility": "fragile"
+  },
+  "Part_2": {
+    "fragility": "fragile"
+  },
+  "Part_3": {
+    "fragility": "fragile"
+  },
+  "Part_4": {
+    "fragility": "fragile"
+  },
+  "Part_5": {
+    "fragility": "fragile"
+  },
+  "Part_6": {
+    "fragility": "fragile"
   }
 }
