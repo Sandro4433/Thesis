@@ -488,9 +488,16 @@ def _build_update_prompt(
         "(auto-matches are applied automatically).",
         "Use the part names as they appear in the image.",
         "Mapping entries:",
-        "- To reassign: {\"<name_in_image>\": \"<desired_old_name>\"}",
-        "- For new parts: {\"<name_in_image>\": \"new\"}",
-        "- No overrides needed: {}",
+        "- To reassign to existing identity: {\"<name_in_image>\": \"<old_Part_N>\"}",
+        "  (key = what image shows, value = true identity from old config)",
+        "- For new part with auto-assigned ID: {\"<name_in_image>\": \"new\"}",
+        "- For new part with specific ID:      {\"<name_in_image>\": \"Part_8\"}",
+        "  (use any Part_N not already taken — the system validates this)",
+        "- No overrides to propose right now: {}",
+        "",
+        "When proposing a mapping, include the overrides in the tool call.",
+        "Confirmed mappings are accumulated — the user can add more changes",
+        "before saying 'done' to apply everything.",
         "",
         "No duplicate IDs allowed — if a reassignment conflicts with an auto-match,",
         "flag it and ask which part should keep the identity.",
@@ -508,8 +515,13 @@ _SUBMIT_MAPPING_TOOL = {
         "description": (
             "Submit the part identity mapping overrides. Keys are the part "
             "names visible in the image (e.g. 'Part_6'), values are either "
-            "an old part name (e.g. 'Part_1') or the literal string 'new'. "
-            "Submit an empty object {} when no overrides are needed yet."
+            "an existing old part name (e.g. 'Part_1') for reassignment, "
+            "the literal string 'new' for auto-assigned ID, or a specific "
+            "Part_N (e.g. 'Part_8') for a custom new ID. "
+            "When proposing overrides for user confirmation, include them "
+            "here — confirmed mappings are accumulated by the system. "
+            "Submit {} when you have no overrides to propose (e.g. first "
+            "message, after confirmation, or while asking clarifications)."
         ),
         "parameters": {
             "type": "object",
@@ -526,7 +538,8 @@ _SUBMIT_MAPPING_TOOL = {
                     "description": (
                         "The mapping overrides. Each key is a Part_* name "
                         "from the image, each value is either an old Part_* "
-                        "name or 'new'."
+                        "name (reassignment), a new Part_N not in old config "
+                        "(custom new ID), or 'new' (auto-assign)."
                     ),
                     "additionalProperties": {"type": "string"},
                 },
@@ -548,6 +561,10 @@ def _chat_update(
     Returns (message_text, mapping_dict).
     The LLM is forced to call submit_mapping via tool_choice, so we always
     get structured output — no regex parsing needed.
+
+    Defensive fallback: if the LLM puts a mapping in its message text but
+    leaves the mapping field empty (a common compliance failure), we extract
+    the mapping from the message text.
     """
     resp = client.chat.completions.create(
         model=MODEL,
@@ -573,11 +590,165 @@ def _chat_update(
         for k, v in mapping.items():
             if isinstance(k, str) and isinstance(v, str):
                 clean[k] = v
+
+        # ── Defensive fallback ───────────────────────────────────────
+        # If the mapping field is empty but the message text contains
+        # a JSON object with Part_* keys (the LLM described a mapping
+        # in text but forgot to put it in the tool field), extract it.
+        if not clean and msg_text:
+            fallback = _extract_mapping_from_text(msg_text)
+            if fallback:
+                print("  [Note: mapping extracted from message text (tool field was empty)]")
+                clean = fallback
+
         return msg_text, clean
 
     # Fallback: if the model returned plain text instead of a tool call
     text = (choice.message.content or "").strip()
     return text, {}
+
+
+def _extract_mapping_from_text(text: str) -> Dict[str, str]:
+    """
+    Try to extract a Part_* mapping from the LLM's message text.
+
+    Looks for JSON-like patterns such as:
+      {"Part_5": "Part_3"}
+      {"Part_7": "new", "Part_4": "Part_5"}
+
+    Returns a validated mapping dict, or {} if nothing found.
+    """
+    import re
+    # Find JSON objects in the text that contain Part_ keys
+    pattern = r'\{[^{}]*"Part_\d+"[^{}]*\}'
+    matches = re.findall(pattern, text)
+    for match in matches:
+        try:
+            candidate = json.loads(match)
+            if isinstance(candidate, dict):
+                clean: Dict[str, str] = {}
+                for k, v in candidate.items():
+                    if (isinstance(k, str) and isinstance(v, str)
+                            and k.startswith("Part_")):
+                        clean[k] = v
+                if clean:
+                    return clean
+        except json.JSONDecodeError:
+            continue
+    return {}
+
+
+def _validate_mapping_proposal(
+    proposal: Dict[str, str],
+    accumulated: Dict[str, str],
+    old_state: Dict[str, Any],
+    fresh_state: Dict[str, Any],
+    image_rename_map: Dict[str, str],
+) -> List[str]:
+    """
+    Validate a proposed mapping batch against the current scene state and
+    any previously accumulated overrides.
+
+    Checks performed:
+      1. Format: values must be "new", or match Part_N.
+      2. Displacement: if the target ID is currently held by another part
+         (via auto-match or accumulated mapping) and this proposal doesn't
+         also reassign that displaced part, flag it.
+      3. Duplicate targets: two entries in the same proposal (or across
+         accumulated + proposal) mapping to the same target ID.
+      4. Custom new ID collision: a Part_N that isn't in the old config
+         but IS already assigned as a target elsewhere.
+
+    Returns a list of human-readable issue strings.  Empty list = all OK.
+    """
+    from Configuration_Module.Update_Scene import _match_parts_by_position
+
+    issues: List[str] = []
+    old_parts = set(old_state.get("objects", {}).get("parts", []))
+
+    # Build the current ID assignment picture:
+    # image_label → assigned_identity
+    # Start with auto-matches (image shows old name → identity is old name)
+    auto_matched, _new, _missing = _match_parts_by_position(old_state, fresh_state)
+    # image_rename_map: {fresh_vision_name: image_label}
+    # auto_matched: [(old_name, fresh_name), ...]
+
+    # current_assignments: {image_label: identity}
+    # For auto-matched parts, the image label IS the old name (identity).
+    current_assignments: Dict[str, str] = {}
+    for old_name, fresh_name in auto_matched:
+        img_label = image_rename_map.get(fresh_name, old_name)
+        current_assignments[img_label] = old_name
+
+    # Layer accumulated overrides on top
+    for img_key, target in accumulated.items():
+        current_assignments[img_key] = target
+
+    # Build reverse: identity → image_label (who currently holds each ID)
+    identity_holders: Dict[str, str] = {}
+    for img_label, identity in current_assignments.items():
+        if identity != "new":
+            identity_holders[identity] = img_label
+
+    # ── Check each entry in the proposal ────────────────────────────────
+    # Collect all targets in this proposal for duplicate detection
+    proposal_targets: Dict[str, List[str]] = {}  # target → [keys]
+
+    for img_key, target in proposal.items():
+        # 1. Format check
+        if target != "new" and not re.match(r'^Part_\d+$', target):
+            issues.append(
+                f"'{img_key}' → '{target}': invalid format "
+                f"(must be Part_N or 'new')."
+            )
+            continue
+
+        if target == "new":
+            continue
+
+        # Track for duplicate detection
+        proposal_targets.setdefault(target, []).append(img_key)
+
+        # 2. Displacement check: is this target ID currently held by a
+        #    DIFFERENT image-label that is NOT also being reassigned in
+        #    this proposal?
+        if target in identity_holders:
+            current_holder = identity_holders[target]
+            if current_holder != img_key:
+                # Someone else holds this ID. Is that someone being
+                # reassigned in this same proposal?
+                if current_holder not in proposal:
+                    issues.append(
+                        f"'{img_key}' → '{target}': ID '{target}' is "
+                        f"currently assigned to '{current_holder}'. "
+                        f"What should happen to '{current_holder}'? "
+                        f"(reassign it to a different ID, or mark it "
+                        f"as 'new'?)"
+                    )
+
+        # 4. Custom new ID collision with accumulated targets
+        if target not in old_parts:
+            acc_targets = set(accumulated.values()) - {"new"}
+            if target in acc_targets:
+                # Find who already claimed it
+                claimer = next(
+                    (k for k, v in accumulated.items() if v == target), "?"
+                )
+                issues.append(
+                    f"'{img_key}' → '{target}': ID '{target}' was "
+                    f"already assigned to '{claimer}' in a previous "
+                    f"mapping."
+                )
+
+    # 3. Duplicate targets within this proposal
+    for target, keys in proposal_targets.items():
+        if len(keys) > 1:
+            issues.append(
+                f"Duplicate target: {', '.join(keys)} all map to "
+                f"'{target}'. Each part needs a unique ID."
+            )
+
+    return issues
 
 
 def run_update_dialogue(
@@ -591,6 +762,14 @@ def run_update_dialogue(
 
     Called by session_handler.run_update_pipeline() AFTER vision and
     auto-matching are already done.
+
+    The dialogue follows an accumulate-then-apply pattern:
+      1. LLM asks if auto-matches are correct.
+      2. User describes a change → LLM proposes mapping → user confirms
+         → mapping is accumulated (not yet applied).
+      3. LLM asks "Any more changes?"
+      4. User describes more → repeat from 2, or says "done" → all
+         accumulated mappings are applied at once.
 
     Parameters
     ----------
@@ -616,13 +795,46 @@ def run_update_dialogue(
                 "where. The user has a GUI and can see the scene. Just ask "
                 "your questions and provide the mapping. One or two sentences "
                 "max in the message field.\n\n"
-                "FIRST MESSAGE: Your very first message must simply ask the "
-                "user whether the auto-matched part identities look correct, "
-                "and if not, to explain what changed. Do NOT guess what might "
-                "be wrong, do NOT ask about specific parts or possible moves. "
-                "Example: 'Do the auto-matched part IDs look correct? If not, "
-                "tell me what changed.' Submit an empty mapping {} while "
-                "waiting for the user's answer.\n\n"
+                "CONVERSATION FLOW — HARDCODED STRUCTURE:\n"
+                "1. FIRST MESSAGE: Ask whether the auto-matched part IDs look "
+                "correct. If not, ask the user to explain what changed. "
+                "Submit an empty mapping {}. Example: 'Do the auto-matched "
+                "part IDs look correct? If not, tell me what changed.'\n"
+                "2. When the user describes a change, ask any needed "
+                "clarification questions (one per turn, submit mapping {}).\n"
+                "3. Once you understand the change, propose the mapping and "
+                "ask 'Confirm?'. You MUST include the proposed overrides in "
+                "the mapping field — the system reads the mapping field, NOT "
+                "your message text. If the mapping field is empty, NOTHING "
+                "gets saved regardless of what your message says.\n"
+                "4. If the user confirms, respond ONLY with: "
+                "'Saved. Any more changes? (say \"done\" to finish)' "
+                "and submit an empty mapping {}.\n"
+                "5. If the user rejects, respond ONLY with: "
+                "'What should I change?' and submit an empty mapping {}.\n"
+                "6. If the user describes another change, repeat from step 2.\n"
+                "7. The user will say 'done' when finished — you will NOT see "
+                "that message (the system handles it). Do NOT ask the user to "
+                "say done yourself after step 4 — the prompt already tells "
+                "them.\n\n"
+                "EXAMPLES OF CORRECT TOOL CALLS AT STEP 3:\n"
+                "User says 'Part_5 was replaced with Part_3':\n"
+                "  message: 'Part_5 in the image is actually Part_3. "
+                "Mapping: {\"Part_5\": \"Part_3\"}. Confirm?'\n"
+                "  mapping: {\"Part_5\": \"Part_3\"}\n\n"
+                "User says 'Part_7 is new and Part_4 is actually Part_5':\n"
+                "  message: 'Part_7 is a new part and Part_4 should be "
+                "Part_5. Confirm?'\n"
+                "  mapping: {\"Part_7\": \"new\", \"Part_4\": \"Part_5\"}\n\n"
+                "User says 'Part_7 is a new part, call it Part_8':\n"
+                "  message: 'Part_7 will be assigned as Part_8. Confirm?'\n"
+                "  mapping: {\"Part_7\": \"Part_8\"}\n\n"
+                "User says 'Part_2 and Part_6 were swapped':\n"
+                "  message: 'Cross-reassigning Part_2 and Part_6. Confirm?'\n"
+                "  mapping: {\"Part_2\": \"Part_6\", \"Part_6\": \"Part_2\"}\n\n"
+                "⚠ WRONG (mapping field empty while proposing):\n"
+                "  message: 'Mapping: {\"Part_5\": \"Part_3\"}. Confirm?'\n"
+                "  mapping: {}     ← THIS SAVES NOTHING. NEVER DO THIS.\n\n"
                 "ALWAYS call the submit_mapping tool. Put your conversational "
                 "text in the 'message' field and the mapping overrides in the "
                 "'mapping' field.\n\n"
@@ -643,20 +855,41 @@ def run_update_dialogue(
                 "- User says nothing was added, but the current scan has more "
                 "parts than before.\n"
                 "When you spot a discrepancy, ask a short clarifying question "
-                "that states the concrete numbers. For example: 'We had 3 red "
-                "parts and now see 2. If you removed 2 red parts, that would "
-                "mean a new red part was also added — is that right, or did "
-                "you mean you removed just 1?' Do NOT silently accept claims "
-                "that conflict with the physical evidence. Do NOT block the "
-                "user — if they confirm after your question, proceed with "
-                "their answer.\n\n"
-                "CONSTRAINT: Every part must have a unique ID. If a user "
-                "override would create a duplicate, point out the conflict in "
-                "one sentence and ask how to resolve it.\n\n"
+                "that states the concrete numbers. Do NOT silently accept "
+                "claims that conflict with the physical evidence. Do NOT "
+                "block the user — if they confirm after your question, "
+                "proceed with their answer.\n\n"
+                "CONSTRAINT — UNIQUE IDs AND DISPLACEMENT:\n"
+                "Every part must have a unique ID. The system validates your "
+                "proposed mapping before accepting it. It will reject the "
+                "proposal if:\n"
+                "- An ID is already held by another part and your proposal "
+                "doesn't also reassign that displaced part.\n"
+                "- Two entries map to the same target ID.\n"
+                "- A value doesn't match Part_N format.\n"
+                "When the system rejects a proposal, it tells you exactly "
+                "what the conflict is. Ask the user how to resolve it. "
+                "For example: 'Part_5 is currently assigned to the part in "
+                "Container_2_Pos_3. If you want this part to be Part_5, what "
+                "should happen to the current Part_5?' Then re-propose with "
+                "BOTH reassignments in one mapping.\n\n"
                 "IMAGE NAMES: The image shows auto-matched parts with their "
                 "old-config names and new detections with fresh vision names. "
                 "The mapping uses these image-visible names as keys. "
                 "Use the names exactly as they appear in the analysis.\n\n"
+                "MAPPING DIRECTION — KEY RULE:\n"
+                "The mapping key is the name shown in the image, the value "
+                "is the identity you want that physical part to have. "
+                "Three cases:\n"
+                "  {\"Part_5\": \"Part_3\"} — reassign: image's Part_5 is "
+                "really Part_3 (must exist in old config)\n"
+                "  {\"Part_7\": \"new\"} — auto-assign: system picks next "
+                "available Part_N\n"
+                "  {\"Part_7\": \"Part_8\"} — custom new ID: Part_8 must not "
+                "already exist and must follow Part_N format\n"
+                "If the user asks for a specific ID (e.g. 'call it Part_8'), "
+                "use the custom new ID form. If they just say 'it's new', "
+                "use 'new'. Never reverse key and value.\n\n"
                 "UNDERSTANDING SWAPS AND MOVES:\n"
                 "- 'Part_X was swapped with Part_Y' or 'X and Y switched "
                 "places' means BOTH parts moved to each other's old location. "
@@ -672,8 +905,9 @@ def run_update_dialogue(
                 "were NOT removed and NOT newly added — never mark moved "
                 "parts as \"new\".\n\n"
                 "NEW DETECTIONS: Parts listed under NEW DETECTIONS are "
-                "genuinely new. Include them as {\"<n>\": \"new\"} in your "
-                "mapping.\n\n"
+                "genuinely new. Include them as {\"<n>\": \"new\"} for auto-"
+                "assigned ID, or {\"<n>\": \"Part_8\"} if the user requests "
+                "a specific ID.\n\n"
                 "HANDLING SPATIAL REFERENCES: If the user refers to positions "
                 "(left, right, top, bottom), consult the SLOT-BY-SLOT "
                 "COMPARISON table to identify which part they mean. Remember "
@@ -685,34 +919,89 @@ def run_update_dialogue(
 
     print("\n── Update Scene Dialogue ──\n")
 
-    mapping: Dict[str, str] = {}
+    # Accumulated mapping: all confirmed overrides collected across turns.
+    # Only applied once the user says "done".
+    accumulated_mapping: Dict[str, str] = {}
 
     while True:
-        msg_text, mapping = _chat_update(client, messages)
+        msg_text, turn_mapping = _chat_update(client, messages)
         print(f"ASSISTANT:\n{msg_text}\n")
-        if mapping:
-            print(f"  [Mapping: {json.dumps(mapping)}]")
+        if turn_mapping:
+            print(f"  [Proposed mapping: {json.dumps(turn_mapping)}]")
 
         # Record the assistant turn in conversation history.
         messages.append({"role": "assistant", "content": msg_text})
 
         user = input("YOU: ").strip()
-        if not user or is_yes(user) or user.lower() in ("done", "skip"):
-            if mapping:
-                print(f"\n  Applying mapping: {json.dumps(mapping)}")
+
+        # ── "done" / empty → apply all accumulated overrides and exit ────
+        if not user or user.lower() in ("done", "skip"):
+            if accumulated_mapping:
+                print(f"\n  Applying mapping: {json.dumps(accumulated_mapping)}")
             else:
                 print("\n  No overrides — accepting auto-matches only.")
-            return mapping
+            return accumulated_mapping
+
+        # ── Recapture request ────────────────────────────────────────────
         if user == RECAPTURE_SENTINEL:
             print("\n  Recapture requested — restarting vision …\n")
             return RECAPTURE_SENTINEL
+
+        # ── "yes" → validate, accumulate, and let the LLM ask about more.
+        if is_yes(user):
+            if turn_mapping:
+                validation_issues = _validate_mapping_proposal(
+                    turn_mapping, accumulated_mapping,
+                    old_state, fresh_state, image_rename_map,
+                )
+                if validation_issues:
+                    # Bounce back to the LLM to resolve with the user
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "The system detected issues with the proposed "
+                            "mapping:\n"
+                            + "\n".join(f"- {i}" for i in validation_issues)
+                            + "\nPlease resolve these with me before "
+                            "re-proposing."
+                        ),
+                    })
+                    continue
+
+                # No issues — accumulate
+                conflicts = []
+                for k, v in turn_mapping.items():
+                    if k in accumulated_mapping and accumulated_mapping[k] != v:
+                        conflicts.append(
+                            f"  '{k}' was previously mapped to "
+                            f"'{accumulated_mapping[k]}', now to '{v}'"
+                        )
+                if conflicts:
+                    print("  ⚠  Override conflict (using latest):")
+                    for c in conflicts:
+                        print(c)
+                accumulated_mapping.update(turn_mapping)
+                print(f"  [Accumulated mapping: {json.dumps(accumulated_mapping)}]")
+            # Tell the LLM the user confirmed — it should ask about more changes.
+            messages.append({
+                "role": "user",
+                "content": (
+                    "Confirmed. (The mapping has been saved. "
+                    "Ask if there are more changes.)"
+                ),
+            })
+            continue
+
+        # ── "no" → reject the proposed mapping ──────────────────────────
         if is_no(user):
             messages.append({"role": "user", "content": "Rejected. Ask me again."})
             continue
+
+        # ── anything else → pass through to the LLM ─────────────────────
         messages.append({"role": "user", "content": user})
 
     # Should not be reached, but for safety
-    return mapping
+    return accumulated_mapping
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
