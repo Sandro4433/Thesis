@@ -1,7 +1,7 @@
 {
   "workspace": {
     "operation_mode": "kitting",
-    "batch_size": 2
+    "batch_size": null
   },
   "objects": {
     "kits": [
@@ -190,7 +190,7 @@
       },
       {
         "object": "Container_3",
-        "role": null
+        "role": "input"
       },
       {
         "object": "Kit_1",
@@ -198,7 +198,7 @@
       },
       {
         "object": "Kit_2",
-        "role": null
+        "role": "output"
       },
       {
         "object": "Kit_3",
@@ -282,41 +282,20 @@
     "priority": [],
     "kit_recipe": [
       {
+        "color": "green",
+        "quantity": 1
+      },
+      {
         "color": "red",
         "quantity": 1
       },
       {
-        "color": "green",
+        "color": "blue",
         "quantity": 1
       }
     ],
     "part_compatibility": [],
-    "fragility": [
-      {
-        "part": "Part_1",
-        "fragility": "fragile"
-      },
-      {
-        "part": "Part_2",
-        "fragility": "fragile"
-      },
-      {
-        "part": "Part_3",
-        "fragility": "fragile"
-      },
-      {
-        "part": "Part_4",
-        "fragility": "fragile"
-      },
-      {
-        "part": "Part_5",
-        "fragility": "fragile"
-      },
-      {
-        "part": "Part_6",
-        "fragility": "fragile"
-      }
-    ]
+    "fragility": []
   },
   "metric": {
     "Container_1_Pos_1": {
