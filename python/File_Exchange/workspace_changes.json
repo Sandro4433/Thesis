@@ -1,41 +1,8 @@
 {
-  "Container_2": {
-    "role": "output"
-  },
   "Container_3": {
     "role": "output"
   },
   "workspace": {
     "operation_mode": "sorting"
-  },
-  "part_compatibility": [
-    {
-      "part_color": "green",
-      "allowed_in": [
-        "Container_3"
-      ]
-    },
-    {
-      "part_color": "red",
-      "allowed_in": [
-        "Container_2"
-      ]
-    },
-    {
-      "part_color": "blue",
-      "allowed_in": [
-        "Container_2"
-      ]
-    }
-  ],
-  "priority": [
-    {
-      "destination": "Container_3",
-      "order": 1
-    },
-    {
-      "destination": "Container_2",
-      "order": 2
-    }
-  ]
+  }
 }
