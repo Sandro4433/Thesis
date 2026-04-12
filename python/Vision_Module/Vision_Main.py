@@ -87,6 +87,9 @@ def _capture_via_subprocess() -> "np.ndarray":
     capture one frame and write it to a temp file.  This avoids the
     heap-corruption crash caused by pyrealsense2 + libapriltag sharing a
     process.
+
+    The worker also saves factory intrinsics alongside the image.
+    If available, the frame is undistorted before returning.
     """
     import subprocess
     import tempfile
@@ -122,6 +125,27 @@ def _capture_via_subprocess() -> "np.ndarray":
         raise RuntimeError(f"cv2.imread could not load temp frame: {tmp_path}")
 
     print(f"Captured frame via subprocess: {img.shape[1]}x{img.shape[0]}")
+
+    # ── Undistort using factory intrinsics (if worker saved them) ─────────
+    intr_path = tmp_path.rsplit(".", 1)[0] + "_intrinsics.npz"
+    intr_file = Path(intr_path)
+    if intr_file.exists():
+        try:
+            data = np.load(str(intr_file))
+            camera_matrix = data["camera_matrix"]
+            dist_coeffs   = data["dist_coeffs"]
+
+            h, w = img.shape[:2]
+            new_matrix, _roi = cv2.getOptimalNewCameraMatrix(
+                camera_matrix, dist_coeffs, (w, h), alpha=0, newImgSize=(w, h),
+            )
+            img = cv2.undistort(img, camera_matrix, dist_coeffs, None, new_matrix)
+            print(f"Applied factory lens undistortion.")
+        except Exception as e:
+            print(f"Warning: undistortion failed, using raw frame: {e}")
+        finally:
+            intr_file.unlink(missing_ok=True)
+
     return img
 
 

@@ -57,6 +57,28 @@ def main() -> None:
         sys.exit(2)
 
     img = np.asanyarray(color_frame.get_data()).copy()
+
+    # ── Read factory intrinsics and save alongside the image ──────────────
+    try:
+        profile = pipeline.get_active_profile()
+        color_profile = profile.get_stream(rs.stream.color)
+        intr = color_profile.as_video_stream_profile().get_intrinsics()
+
+        camera_matrix = np.array([
+            [intr.fx, 0,       intr.ppx],
+            [0,       intr.fy, intr.ppy],
+            [0,       0,       1.0     ],
+        ], dtype=np.float64)
+        dist_coeffs = np.array(intr.coeffs[:5], dtype=np.float64)
+
+        # Save next to the image: /tmp/xyz.png → /tmp/xyz_intrinsics.npz
+        intr_path = out_path.rsplit(".", 1)[0] + "_intrinsics.npz"
+        np.savez(intr_path,
+                 camera_matrix=camera_matrix,
+                 dist_coeffs=dist_coeffs)
+    except Exception as e:
+        print(f"Warning: could not save intrinsics: {e}", file=sys.stderr)
+
     pipeline.stop()
 
     ok = cv2.imwrite(out_path, img)
