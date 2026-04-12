@@ -153,6 +153,14 @@ def is_finish(text: str) -> bool:
         return True
 
     if _contains_word(t, ["finished"]):
+        # "finished" alone = session end. "finished" inside a longer
+        # sentence (e.g. "green should be finished first") = task instruction.
+        m = re.search(r"\b(finished)\b", t)
+        if m:
+            before = t[:m.start()].strip()
+            after  = t[m.end():].strip().lstrip(".,!?").strip()
+            if before or after:
+                return False  # part of a longer instruction
         return True
 
     finish_phrases = [
