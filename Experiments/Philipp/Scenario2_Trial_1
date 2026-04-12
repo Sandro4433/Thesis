@@ -1,0 +1,182 @@
+Let's configure, what would you like to do?
+
+How do you want to load the scene?
+  [1] New Configuration — Capture new image and configure from scratch
+  [2] Update Configuration — Update configuration with new vision data
+  [3] Edit Configuration — Load existing configuration from memory
+
+Starting vision module …
+
+Vision complete.
+
+Loaded fresh scene from vision.
+
+── Mode: Reconfiguration ──
+
+ASSISTANT:
+What would you like to change?
+
+YOU:
+part 3 is fragile
+
+ASSISTANT:
+```changes
+{
+  "Part_3": {"fragility": "fragile"}
+}
+```
+Confirm?
+
+YOU:
+yes
+
+✅  Changes noted.
+
+ASSISTANT:
+Anything else? If not, type or press 'done'.
+
+YOU:
+done
+
+✅  Configuration updated.
+✅  State archived → configuration_12042026_1527.json
+✅  Image updated.
+
+── Configuration complete. ──
+
+How do you want to load the scene?
+  [1] New Configuration — Capture new image and configure from scratch
+  [2] Update Configuration — Update configuration with new vision data
+  [3] Edit Configuration — Load existing configuration from memory
+
+Starting vision module …
+
+Vision complete.
+
+✅  Image updated.
+
+── Update Scene Dialogue ──
+
+ASSISTANT:
+Do the auto-matched part IDs look correct? If not, tell me what changed.
+
+YOU:
+part 5 was replaced with part 3
+
+ASSISTANT:
+Just to confirm: you said Part_5 was replaced with Part_3. That would mean Part_3 (green, fragile) is now in Container_3_Pos_6, and Part_5 is gone. Is that correct? If so, I'll assign Part_5 to Part_3 and mark Part_3 as missing. Please confirm.
+
+YOU:
+yes
+
+No overrides — accepting auto-matches only.
+
+── Final Scene Summary ──
+
++ Part_7  [new part]
+
+- Part_3  [removed]
+
+✅  Configuration updated.
+✅  State archived.
+✅  Image updated.
+
+── Mode: Reconfiguration ──
+
+ASSISTANT:
+What would you like to change?
+
+YOU:
+done
+
+── Configuration complete. ──
+
+How do you want to load the scene?
+  [1] New Configuration — Capture new image and configure from scratch
+  [2] Update Configuration — Update configuration with new vision data
+  [3] Edit Configuration — Load existing configuration from memory
+
+Starting vision module …
+
+Vision complete.
+
+✅  Image updated.
+
+── Update Scene Dialogue ──
+
+ASSISTANT:
+Do the auto-matched part IDs look correct? If not, tell me what changed.
+
+YOU:
+you made a mistake. part 3 was not removed, instead it was part 5 and part 3 is now in pos 6
+
+ASSISTANT:
+Just to clarify: Part_5 (green) is currently in pos 6 according to the scan. If Part_3 is now in pos 6, what happened to Part_5? Did you mean Part_5 was removed and Part_3 took its place in pos 6? Please confirm so I can update the mapping correctly.
+
+YOU:
+yes
+
+No overrides — accepting auto-matches only.
+
+── Final Scene Summary ──
+
+(no structural changes — positions refreshed)
+
+✅  Configuration updated.
+✅  State archived.
+✅  Image updated.
+
+── Mode: Reconfiguration ──
+
+ASSISTANT:
+What would you like to change?
+
+YOU:
+do you know part 3 currently is it fagile or not, is it even in your memory?
+
+ASSISTANT:
+There is no part named "Part_3" in the workspace. The available parts are Part_1, Part_2, Part_4, Part_5, Part_6, and Part_7. Could you clarify which part you are referring to?
+
+YOU:
+ok, so part 5 was replaced with part 3 which had been fragile
+
+ASSISTANT:
+Understood. Part_5 is currently in the workspace and is not marked as fragile. Would you like to change Part_5’s fragility to "fragile," or is there something else you want to adjust?
+
+YOU:
+no create a new part 3 which is fragile and replace part 5
+
+ASSISTANT:
+What color should the new Part_3 be?
+
+YOU:
+green
+
+ASSISTANT:
+```changes
+{
+  "Part_5": {"color": "green", "fragility": "fragile"}
+}
+```
+Confirm?
+
+YOU:
+partly, but the name is part 3
+
+ASSISTANT:
+```changes
+{
+  "Part_5": {"color": "green", "fragility": "fragile", "name": "Part_3"}
+}
+```
+Confirm?
+
+[WARNING: changes block parse error — 'Part_5': unknown attribute 'name'. Allowed: role, color, fragility.]
+
+ASSISTANT:
+Renaming parts isn’t supported directly. Would you like to remove Part_5 and add a new fragile green Part_3 in its place, or just update Part_5’s fragility and color?
+
+YOU:
+done
+
+── Configuration complete. ──

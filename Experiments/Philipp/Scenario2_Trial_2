@@ -1,0 +1,133 @@
+Let's configure, what would you like to do?
+
+How do you want to load the scene?
+  [1] New Configuration — Capture new image and configure from scratch
+  [2] Update Configuration — Update configuration with new vision data
+  [3] Edit Configuration — Load existing configuration from memory
+
+Starting vision module …
+
+Vision complete.
+
+Loaded fresh scene from vision.
+
+── Mode: Reconfiguration ──
+
+ASSISTANT:
+What would you like to change?
+
+YOU:
+part 3 is fragile
+
+ASSISTANT:
+Do you want to update Part_3's fragility to "fragile" in the system?
+
+YOU:
+yes
+
+ASSISTANT:
+```changes
+{
+  "Part_3": {"fragility": "fragile"}
+}
+```
+Confirm?
+
+YOU:
+yes
+
+✅  Changes noted.
+
+ASSISTANT:
+Anything else? If not, type or press 'done'.
+
+YOU:
+don
+
+ASSISTANT:
+No changes needed. Anything else?
+
+YOU:
+done
+
+✅  Configuration updated.
+✅  State archived → configuration_12042026_1537.json
+✅  Image updated.
+
+── Configuration complete. ──
+
+How do you want to load the scene?
+  [1] New Configuration — Capture new image and configure from scratch
+  [2] Update Configuration — Update configuration with new vision data
+  [3] Edit Configuration — Load existing configuration from memory
+
+Starting vision module …
+
+Vision complete.
+
+✅  Image updated.
+
+── Update Scene Dialogue ──
+
+ASSISTANT:
+Do the auto-matched part IDs look correct? If not, tell me what changed.
+
+YOU:
+no, part 5 was replaced with part 3
+
+ASSISTANT:
+Just to confirm: you said Part_5 was replaced with Part_3, but Part_3 is green and Part_5 is also green. The inventory shows we now have one less green part (old=3, current=2), so if Part_3 replaced Part_5, that would mean Part_5 was removed and Part_3 stayed. Is that correct, or did you mean Part_3 replaced Part_5 and Part_5 was removed? Please clarify.
+
+YOU:
+both yes,
+
+No overrides — accepting auto-matches only.
+
+── Final Scene Summary ──
+
++ Part_7  [new part]
+
+- Part_3  [removed]
+
+✅  Configuration updated.
+✅  State archived.
+✅  Image updated.
+
+── Mode: Reconfiguration ──
+
+ASSISTANT:
+What would you like to change?
+
+YOU:
+you made a mistake and removed part 3 instead of 5. So let's give part 5 nwo the properties of part 3 and make it fragile. Give me a check which changes ypou wil make befor you make them for real
+
+ASSISTANT:
+There is no Part_3 in the current scene. Can you clarify which properties you want to copy to Part_5? If you remember the color or other details of Part_3, please specify.
+
+YOU:
+simply make part 5 fragile
+
+ASSISTANT:
+```changes
+{
+  "Part_5": {"fragility": "fragile"}
+}
+```
+Confirm?
+
+YOU:
+yes
+
+✅  Changes noted.
+
+ASSISTANT:
+Anything else? If not, type or press 'done'.
+
+YOU:
+done
+
+✅  Configuration updated.
+✅  State archived → configuration_12042026_1542.json
+✅  Image updated.
+
+── Configuration complete. ──

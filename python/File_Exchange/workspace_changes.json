@@ -1,8 +1,5 @@
 {
-  "Container_3": {
-    "role": "output"
-  },
-  "workspace": {
-    "operation_mode": "sorting"
+  "Part_3": {
+    "fragility": "fragile"
   }
 }

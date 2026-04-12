@@ -697,6 +697,13 @@ def apply_update_mapping(
             except ValueError:
                 pass
 
+    # ── categorise mapping targets ────────────────────────────────────────────
+    # A mapping target can be:
+    #   1. An existing old part name → reassignment (identity transfer)
+    #   2. "new" → auto-assign the next available Part_N
+    #   3. A Part_N that does NOT exist in old state → custom new ID
+    old_parts_set = set(old_state.get("objects", {}).get("parts", []))
+
     # ── build full rename map: auto-matches first, then user overrides ───────
     rename_map: Dict[str, str] = {}
 
@@ -708,7 +715,7 @@ def apply_update_mapping(
     # First, find which old_names the user is claiming for different fresh parts
     user_claimed_old: Dict[str, str] = {}  # old_name → fresh_name (from user)
     for fresh_name, target in mapping.items():
-        if target != "new":
+        if target != "new" and target in old_parts_set:
             user_claimed_old[target] = fresh_name
 
     # Displace any auto-match that conflicts with a user override
@@ -722,9 +729,19 @@ def apply_update_mapping(
                 if fresh_name_auto not in mapping:
                     new_parts.append(fresh_name_auto)
 
-    # Apply user overrides
+    # Apply user overrides — reassignments (existing old names)
     for fresh_name, target in mapping.items():
-        if target != "new":
+        if target != "new" and target in old_parts_set:
+            rename_map[fresh_name] = target
+            if target.startswith("Part_"):
+                try:
+                    used_numbers.add(int(target.split("_", 1)[1]))
+                except ValueError:
+                    pass
+
+    # Apply user overrides — custom new IDs (Part_N not in old state)
+    for fresh_name, target in mapping.items():
+        if target != "new" and target not in old_parts_set:
             rename_map[fresh_name] = target
             if target.startswith("Part_"):
                 try:
