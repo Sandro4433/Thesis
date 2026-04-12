@@ -1,20 +1,41 @@
 {
-  "Part_1": {
-    "fragility": "fragile"
+  "Container_2": {
+    "role": "output"
   },
-  "Part_2": {
-    "fragility": "fragile"
+  "Container_3": {
+    "role": "output"
   },
-  "Part_3": {
-    "fragility": "fragile"
+  "workspace": {
+    "operation_mode": "sorting"
   },
-  "Part_4": {
-    "fragility": "fragile"
-  },
-  "Part_5": {
-    "fragility": "fragile"
-  },
-  "Part_6": {
-    "fragility": "fragile"
-  }
+  "part_compatibility": [
+    {
+      "part_color": "green",
+      "allowed_in": [
+        "Container_3"
+      ]
+    },
+    {
+      "part_color": "red",
+      "allowed_in": [
+        "Container_2"
+      ]
+    },
+    {
+      "part_color": "blue",
+      "allowed_in": [
+        "Container_2"
+      ]
+    }
+  ],
+  "priority": [
+    {
+      "destination": "Container_3",
+      "order": 1
+    },
+    {
+      "destination": "Container_2",
+      "order": 2
+    }
+  ]
 }
