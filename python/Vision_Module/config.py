@@ -78,6 +78,17 @@ TAG_AXIS_DRAW_LEN_M = 0.04            # meters
 # Robot output
 Z_ROBOT_M = 0.2
 
+# ── Pick offset correction ────────────────────────────────────────────────────
+# X: linear left/right correction.  0 at image center, ±mm at edges.
+#   Set to 0 to disable.
+# Y: varies with vertical position in the image.
+#   BOTTOM: mm offset at the bottom of the image
+#   TOP:    mm offset at the top of the image
+#   Interpolates linearly between them.  Set both to 0 to disable.
+PERSPECTIVE_X_OFFSET_MM = 5.0
+Y_OFFSET_BOTTOM_MM      = 3.0
+Y_OFFSET_TOP_MM          = 15.0
+
 # RealSense capture
 REALSENSE_WIDTH = 1920
 REALSENSE_HEIGHT = 1080

@@ -341,6 +341,7 @@ def detect_color_cluster_parts_on_board(
 
             cx_px = float(centroids[label_id][0])
             cy_px = float(centroids[label_id][1])
+
             cx_b_m, cy_b_m = _to_board_m(cx_px, cy_px, H_inv)
 
             edge_b_m, _ = _to_board_m(cx_px + radius_px, cy_px, H_inv)
