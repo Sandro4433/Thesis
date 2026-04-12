@@ -8,7 +8,10 @@ import numpy as np
 
 from Vision_Module.geometry import project, wrap_deg_180, wrap_deg_90, rot2d, OriginAxes
 from Vision_Module.vision_circles import detect_color_cluster_parts_on_board
-from Vision_Module.config import KIT_TAG_ID_TO_NUMBER, CONTAINER_TAG_ID_TO_NUMBER
+from Vision_Module.config import (
+    KIT_TAG_ID_TO_NUMBER, CONTAINER_TAG_ID_TO_NUMBER,
+    PERSPECTIVE_X_OFFSET_MM, Y_OFFSET_BOTTOM_MM, Y_OFFSET_TOP_MM,
+)
 
 
 def _tag_center_to_board_m(r: Any, H_inv: np.ndarray) -> np.ndarray:
@@ -234,6 +237,16 @@ def compute_tag_targets_and_annotate(
         delta_b = c_b - o_b
         x_mm = float(delta_b.dot(ux_unit_b)) * 1000.0
         y_mm = float(delta_b.dot(uy_unit_b)) * 1000.0
+
+        # ── Pick offset corrections ───────────────────────────────────
+        # X: linear left/right correction, same strength everywhere.
+        img_w = img_raw.shape[1]
+        norm_x = (d["cx_px"] - img_w / 2.0) / (img_w / 2.0)   # -1..+1
+        x_mm += norm_x * PERSPECTIVE_X_OFFSET_MM
+        # Y: stronger toward top of image (0 at bottom, 1 at top).
+        img_h = img_raw.shape[0]
+        norm_y = 1.0 - d["cy_px"] / img_h
+        y_mm += Y_OFFSET_BOTTOM_MM + norm_y * (Y_OFFSET_TOP_MM - Y_OFFSET_BOTTOM_MM)
 
         center = (int(round(d["cx_px"])), int(round(d["cy_px"])))
         if draw_parts:
