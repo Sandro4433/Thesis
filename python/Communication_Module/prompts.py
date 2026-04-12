@@ -315,6 +315,14 @@ When the user asks to adjust your proposal (instead of confirming), your NEXT
 changes block must include ALL previous changes PLUS the adjustment — not just
 the adjustment alone.
 
+PART ID CHANGES — NOT ALLOWED IN THIS MODE:
+If the user asks to rename, reassign, swap, or change part IDs (e.g. "make
+Part_3 into Part_5", "rename Part_1 to Part_8", "swap Part_2 and Part_4 IDs",
+"Part_7 is actually Part_3"), respond ONLY with:
+  "To adjust part IDs, switch to \"Update Config\"."
+Do NOT attempt to produce a changes block for part ID changes. Part identity
+is managed exclusively by the Update Scene dialogue.
+
 NO-CHANGE HANDLING:
 If user indicates no changes ("nothing", "no changes", "skip", etc.):
   → "No changes needed. Anything else?"
