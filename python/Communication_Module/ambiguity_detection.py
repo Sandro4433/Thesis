@@ -48,6 +48,22 @@ CRITICAL — CONVERSATION CONTEXT:
   Only flag ambiguity when the FULL conversation context still leaves something
   genuinely unclear.
 
+CRITICAL — SINGLE ATTRIBUTE CHANGES ARE NOT AMBIGUOUS:
+  The configurator supports these independent attributes:
+    operation_mode, batch_size, role, kit_recipe, priority,
+    part_compatibility, fragility, color, fill_order.
+  If the user's message clearly maps to changing ONE of these attributes,
+  it is NOT ambiguous — even if other attributes seem "missing" or "implied".
+  Each attribute can be set independently. Examples of NON-ambiguous messages:
+    • "kit recipe is 1 red and 1 green" → kit_recipe. NOT an omission.
+    • "container 1 is input" → role. NOT an implicit constraint.
+    • "switch to sorting" → operation_mode. NOT an omission.
+    • "batch size 3" → batch_size. NOT ambiguous.
+    • "do green parts first" → priority. NOT ambiguous.
+  Do NOT flag omissions or implicit constraints for single-attribute requests.
+  Only flag ambiguity for BROAD setup requests ("set up kitting with...")
+  where genuinely required information is missing.
+
 Your job is to check whether the user message contains any of the following
 ambiguity types when evaluated against the scene:
 
@@ -66,11 +82,19 @@ TYPE 1 — REFERENTIAL AMBIGUITY
 TYPE 2 — OMISSION
   A required parameter for the operation is missing from the instruction AND
   cannot be reliably inferred from the scene alone.
-  Examples:
+  ⚠ CRITICAL: Each attribute is independent. If the user sets ONE attribute
+  (e.g. kit_recipe, role, operation_mode, batch_size, fragility, priority),
+  do NOT flag other attributes as omitted. The user can set them later.
+  Only flag omissions for BROAD SETUP requests where the user is clearly
+  trying to configure a complete operation and a genuinely required detail
+  within that scope is missing.
+  Examples of REAL omissions:
     • "set up kitting with blue and red" — missing per-kit quantities
-    • "sort the parts" — missing which container is input vs output
-      (unless it can be inferred from existing contents/roles)
     • "move Part_3" — missing destination
+  Examples of NOT omissions (single-attribute, do NOT flag):
+    • "kit recipe is 1 red" — no omission even if roles aren't set
+    • "container 1 is input" — no omission even if mode isn't set
+    • "batch size 3" — no omission even if nothing else is configured
   Detection: map the instruction to the changes/sequence schema. Identify
   required fields that are neither stated nor unambiguously inferable.
   Do NOT flag something as omitted if the scene JSON provides a single
@@ -80,14 +104,21 @@ TYPE 2 — OMISSION
 TYPE 3 — IMPLICIT CONSTRAINT
   The instruction implies a configuration change that the user did not state
   directly.
-  Examples:
-    • "sort blue parts into Container_2" implies Container_2 must be output
-      and the container holding blue parts must be input — but the user
-      didn't say "set Container_2 as output"
-    • "fill kits with green parts first" implies a color priority — but the
-      user may mean within-kit ordering OR across-kit sweep
+  ⚠ CRITICAL: If the user is setting a SINGLE attribute, there are NO implicit
+  constraints. Each attribute is independent. Do NOT flag that setting kit_recipe
+  "implies" roles or mode, or that setting a role "implies" operation_mode.
+  Only flag implicit constraints for BROAD SETUP requests or task-based requests
+  ("place Part_5 in Kit_1") where the instruction genuinely requires bundling
+  multiple attribute changes AND the implied changes have multiple valid
+  interpretations or could surprise the user.
+  Examples of REAL implicit constraints:
     • "put Part_5 in Kit_1" implies kitting mode, input/output roles, and
-      possibly a compatibility rule — none stated explicitly
+      a compatibility rule — these are all needed to execute the task.
+    • "fill kits with green parts first" could mean within-kit ordering OR
+      across-kit sweep — the implied priority encoding is ambiguous.
+  Examples of NOT implicit constraints (do NOT flag):
+    • "kit recipe is 1 red 1 green" — does NOT imply roles or mode changes.
+    • "container 1 is input" — does NOT imply mode or compatibility.
   Detection: identify side-effects or prerequisite changes that the
   instruction requires but does not mention. Only flag when the implied
   change has multiple valid interpretations or could surprise the user.

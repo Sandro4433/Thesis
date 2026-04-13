@@ -1,39 +1,12 @@
 {
-  "workspace": {
-    "operation_mode": "sorting"
-  },
-  "part_compatibility": [
-    {
-      "part_color": "red",
-      "allowed_in": [
-        "Container_2"
-      ]
-    },
-    {
-      "part_color": "blue",
-      "allowed_in": [
-        "Container_2"
-      ]
-    },
-    {
-      "part_color": "green",
-      "allowed_in": [
-        "Container_3"
-      ]
-    }
-  ],
-  "priority": [
-    {
-      "color": "green",
-      "order": 2
-    },
+  "kit_recipe": [
     {
       "color": "red",
-      "order": 1
+      "quantity": 1
     },
     {
-      "color": "blue",
-      "order": 1
+      "color": "green",
+      "quantity": 1
     }
   ]
 }

@@ -280,7 +280,16 @@
       }
     ],
     "priority": [],
-    "kit_recipe": [],
+    "kit_recipe": [
+      {
+        "color": "red",
+        "quantity": 1
+      },
+      {
+        "color": "green",
+        "quantity": 1
+      }
+    ],
     "part_compatibility": [],
     "fragility": []
   },
