@@ -879,6 +879,7 @@ class RobotGUI:
             ("Configure",     C["btn_1"],  self._show_configure_options),
             ("Plan Sequence", C["btn_2"],  lambda: self._run("motion")),
             ("Execute",       C["btn_3"],  lambda: self._run("execute")),
+            ("Camera Home",   C["btn_4"],  self._run_camera_home),
             ("Log",           C["btn_4"],  self._open_log_window),
         ]
         # Center the buttons by packing into an inner frame
@@ -1402,6 +1403,50 @@ class RobotGUI:
         except Exception as exc:
             self._out_q.put(("print",
                 f"\n[ERR] Could not start execute subprocess: {exc}\n"))
+
+    def _run_camera_home(self) -> None:
+        """Move the robot to Camera_Home in a subprocess."""
+        if self._busy:
+            return
+        self._busy = True
+        self._set_status("Moving to Camera Home...", C["fg_warn"])
+        self._clear_bar()
+        threading.Thread(
+            target=self._camera_home_worker, daemon=True,
+        ).start()
+
+    def _camera_home_worker(self) -> None:
+        """Background worker that launches move_camera_home.py as a subprocess."""
+        import subprocess as _sp
+        script = PROJECT_DIR / "Execution_Module" / "move_camera_home.py"
+        try:
+            proc = _sp.Popen(
+                [sys.executable, str(script)],
+                cwd=str(PROJECT_DIR),
+                stdout=_sp.PIPE,
+                stderr=_sp.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            for line in proc.stdout:
+                stripped = line.strip()
+                # Drop ROS/moveit C++ log noise and Robot init dumps
+                if not stripped:
+                    continue
+                if stripped.startswith(("\x1b[", "[0m", "[INFO]", "[WARN]", "[ERROR]", "Loaded positions")):
+                    continue
+                self._out_q.put(("print", line))
+            proc.wait()
+            if proc.returncode != 0:
+                self._out_q.put(("print",
+                    "\nMoving robot to camera home position failed. "
+                    "Check robot connection.\n"))
+        except Exception:
+            self._out_q.put(("print",
+                "\nMoving robot to camera home position failed. "
+                "Check robot connection.\n"))
+        finally:
+            self._out_q.put(("done", None))
 
     # ─────────────────────────────────────────────────────────────────────────
     # Input handling
