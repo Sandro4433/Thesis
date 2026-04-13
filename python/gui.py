@@ -353,7 +353,7 @@ class RobotGUI:
         self._vpane.add(scene_outer, stretch="always", minsize=120)
 
         # Horizontal PanedWindow to split scene desc (left) and info (right)
-        top_hpane = tk.PanedWindow(
+        self._top_hpane = tk.PanedWindow(
             scene_outer,
             orient=tk.HORIZONTAL,
             bg=C["bg_main"],
@@ -362,11 +362,11 @@ class RobotGUI:
             bd=0,
             handlesize=0,
         )
-        top_hpane.pack(fill=tk.BOTH, expand=True)
+        self._top_hpane.pack(fill=tk.BOTH, expand=True)
 
         # ── left: scene description ───────────────────────────────────────────
-        scene_left = tk.Frame(top_hpane, bg=C["bg_main"])
-        top_hpane.add(scene_left, stretch="always", minsize=160)
+        scene_left = tk.Frame(self._top_hpane, bg=C["bg_main"])
+        self._top_hpane.add(scene_left, stretch="always", minsize=160)
 
         tk.Label(
             scene_left, text="SCENE DESCRIPTION",
@@ -377,18 +377,11 @@ class RobotGUI:
         scene_wrap = tk.Frame(scene_left, bg=C["bg_chat"], bd=0, highlightthickness=0)
         scene_wrap.pack(fill=tk.BOTH, expand=True)
 
-        # Scrollable canvas for the scene table
+        # Canvas for the scene table
         self._scene_canvas = tk.Canvas(
             scene_wrap, bg=C["bg_chat"],
             highlightthickness=0, bd=0,
         )
-        scene_sb = tk.Scrollbar(scene_wrap, orient=tk.VERTICAL,
-                                command=self._scene_canvas.yview,
-                                width=6, bd=0, highlightthickness=0,
-                                bg="#2a2a32", troughcolor=C["bg_chat"],
-                                activebackground="#3a3a44", relief=tk.FLAT)
-        self._scene_canvas.configure(yscrollcommand=scene_sb.set)
-        scene_sb.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 2), pady=4)
         self._scene_canvas.pack(fill=tk.BOTH, expand=True)
 
         # Inner frame that holds table rows
@@ -422,8 +415,8 @@ class RobotGUI:
         self._set_scene_placeholder("No scene loaded yet.\nRun Reconfigure to populate.")
 
         # ── right: information panel ──────────────────────────────────────────
-        info_right = tk.Frame(top_hpane, bg=C["bg_main"])
-        top_hpane.add(info_right, stretch="always", minsize=160)
+        info_right = tk.Frame(self._top_hpane, bg=C["bg_main"])
+        self._top_hpane.add(info_right, stretch="always", minsize=160)
 
         tk.Label(
             info_right, text="INFORMATION",
@@ -434,26 +427,30 @@ class RobotGUI:
         info_wrap = tk.Frame(info_right, bg=C["bg_chat"], bd=0, highlightthickness=0)
         info_wrap.pack(fill=tk.BOTH, expand=True)
 
-        self._info_text = tk.Text(
-            info_wrap,
-            bg=C["bg_chat"], fg=C["fg_robot"],
-            font=(FONT, 9),
-            bd=0, padx=14, pady=10,
-            highlightthickness=0,
-            wrap=tk.WORD,
-            cursor="arrow",
-            state=tk.DISABLED,
+        # Title label (bold, larger)
+        self._info_title_lbl = tk.Label(
+            info_wrap, text="",
+            bg=C["bg_chat"], fg=C["fg_white"],
+            font=(FONT, 11, "bold"),
+            pady=8,
         )
-        self._info_text.pack(fill=tk.BOTH, expand=True)
-        self._info_text.tag_configure("title", font=(FONT, 11, "bold"),
-                                      foreground=C["fg_white"], justify=tk.CENTER)
-        self._info_text.tag_configure("status", font=(FONT, 9),
-                                      foreground=C["fg_success"], justify=tk.CENTER)
-        self._info_text.tag_configure("body", font=(FONT, 9),
-                                      foreground=C["fg_robot"], justify=tk.CENTER)
+        self._info_title_lbl.pack(fill=tk.X)
 
-        # Track current info content and status so either can be updated independently
-        self._info_current = ("", "")        # (title, body)
+        # Status label (dot + text, colored)
+        self._info_status_lbl = tk.Label(
+            info_wrap, text="● Ready",
+            bg=C["bg_chat"], fg=C["fg_success"],
+            font=(FONT, 9),
+            pady=2,
+        )
+        self._info_status_lbl.pack(fill=tk.X)
+
+        # Body: either plain text or a table — held in this container
+        self._info_body_frame = tk.Frame(info_wrap, bg=C["bg_chat"])
+        self._info_body_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Track current info content and status
+        self._info_current = ("", [])  # (title, rows) where rows = list of (label, value) or plain str
         self._status_text = "Ready"
         self._status_color = C["fg_success"]
 
@@ -556,17 +553,23 @@ class RobotGUI:
         self._btn_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     def _init_sash_positions(self) -> None:
-        """Set the two PanedWindows to equal 50/50 splits."""
+        """Set initial pane split ratios."""
         try:
             total_w = self._hpane.winfo_width()
             if total_w > 10:
-                self._hpane.sash_place(0, total_w // 2, 0)
+                self._hpane.sash_place(0, int(total_w * 0.38), 0)
         except Exception:
             pass
         try:
             total_h = self._vpane.winfo_height()
             if total_h > 10:
-                self._vpane.sash_place(0, 0, total_h // 2)
+                self._vpane.sash_place(0, 0, int(total_h * 0.40))
+        except Exception:
+            pass
+        try:
+            top_w = self._top_hpane.winfo_width()
+            if top_w > 10:
+                self._top_hpane.sash_place(0, int(top_w * 0.30), 0)
         except Exception:
             pass
 
@@ -649,25 +652,33 @@ class RobotGUI:
     # Information panel
     # ─────────────────────────────────────────────────────────────────────────
 
+    # Info content: (title, body)
+    # body is either a list of (label, description) tuples → rendered as table,
+    # or a plain string → rendered as centered text.
+
     _INFO_MAIN_MENU = (
-        "Vision-Guided Conversational Task Configuration",
-        "• Configure:  Start a new configuration session\n\n"
-        "• Plan Sequence:  Start planner to create a motion sequence\n\n"
-        "• Execute:  Call robot to execute the current motion sequence\n\n"
-        "• Camera Home:  Drive robot to the camera home position\n\n"
-        "• Log:  Open chat dialogue history",
+        "Vision-Guided Conversational\nTask Configuration",
+        [
+            ("Configure", "Start a new configuration session"),
+            ("Plan Sequence", "Start planner to create a motion sequence"),
+            ("Execute", "Call robot to execute the current motion sequence"),
+            ("Camera Home", "Drive robot to the camera home position"),
+            ("Log", "Open chat dialogue history"),
+        ],
     )
 
     _INFO_CONFIGURE_OPTIONS = (
         "Configuration Mode",
-        "• New Config:  Capture new image and start configuration from scratch\n\n"
-        "• Update Config:  Capture new image and merge the new scene data with the previous configuration\n\n"
-        "• Edit Config:  Load an existing configuration file from memory and start editing it",
+        [
+            ("New Config", "Capture new image and start configuration from scratch"),
+            ("Update Config", "Capture new image and merge the new scene data with the previous configuration"),
+            ("Edit Config", "Load an existing configuration file from memory and start editing it"),
+        ],
     )
 
     _INFO_RECONFIG_ACTIVE = (
         "Configuration Mode",
-        "Tell the assistant what to do in natural language.\n "
+        "Tell the assistant what to do in natural language. "
         "The attributes shown in the scene description can be adjusted.",
     )
 
@@ -683,18 +694,83 @@ class RobotGUI:
         self._render_info()
 
     def _render_info(self) -> None:
-        """Re-render the full info panel: title + status + body."""
+        """Re-render the full info panel: title + status + body (table or text)."""
         title, body = self._info_current
-        w = self._info_text
-        w.configure(state=tk.NORMAL)
-        w.delete("1.0", tk.END)
-        w.insert(tk.END, title + "\n\n", "title")
-        # Status line with dot
-        w.insert(tk.END, f"● {self._status_text}\n\n", "status")
-        w.insert(tk.END, body, "body")
-        w.configure(state=tk.DISABLED)
-        # Update the status tag colour
-        w.tag_configure("status", foreground=self._status_color)
+
+        # Title
+        self._info_title_lbl.configure(text=title)
+
+        # Status
+        self._info_status_lbl.configure(
+            text=f"● {self._status_text}",
+            fg=self._status_color,
+        )
+
+        # Clear body
+        for w in self._info_body_frame.winfo_children():
+            w.destroy()
+
+        if isinstance(body, list):
+            # Render as 3-column table (same style as scene description)
+            tbl = tk.Frame(self._info_body_frame, bg=C["bg_chat"])
+            tbl.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
+            tbl.columnconfigure(0, weight=1)  # left spacer
+            tbl.columnconfigure(2, weight=1)  # value col stretches
+
+            val_labels = []
+            for i, (lbl, val) in enumerate(body):
+                row_bg = "#1e1e24" if i % 2 == 0 else C["bg_chat"]
+
+                # Col 0: empty label spacer (same type = uniform row height)
+                tk.Label(tbl, bg=row_bg).grid(row=i, column=0, sticky="nsew")
+
+                lbl_w = tk.Label(
+                    tbl, text=lbl + ":",
+                    bg=row_bg, fg=C["fg_muted"],
+                    font=(MONO, 9, "bold"), anchor=tk.NW,
+                    padx=8, pady=5,
+                )
+                lbl_w.grid(row=i, column=1, sticky="nsew")
+
+                val_w = tk.Label(
+                    tbl, text=val,
+                    bg=row_bg, fg=C["fg_robot"],
+                    font=(MONO, 9), anchor=tk.NW,
+                    padx=8, pady=5, justify=tk.LEFT,
+                )
+                val_w.grid(row=i, column=2, sticky="nsew")
+                val_labels.append(val_w)
+
+            # Fill remaining vertical space
+            tk.Label(tbl, bg=C["bg_chat"]).grid(
+                row=len(body), column=0, columnspan=3, sticky="nsew")
+            tbl.rowconfigure(len(body), weight=1)
+
+            # Dynamic wraplength on resize
+            def _on_tbl_resize(event, _tbl=tbl, _labels=val_labels):
+                try:
+                    bbox = _tbl.grid_bbox(column=2)
+                    col2_w = bbox[2] if bbox else event.width // 2
+                except Exception:
+                    col2_w = event.width // 2
+                avail = max(col2_w - 20, 80)
+                for vl in _labels:
+                    vl.configure(wraplength=avail)
+            tbl.bind("<Configure>", _on_tbl_resize)
+
+        else:
+            # Render as plain centered text
+            txt_lbl = tk.Label(
+                self._info_body_frame, text=body,
+                bg=C["bg_chat"], fg=C["fg_robot"],
+                font=(FONT, 9), justify=tk.CENTER,
+                padx=14, pady=10,
+            )
+            txt_lbl.pack(fill=tk.BOTH, expand=True)
+
+            def _on_txt_resize(event, _lbl=txt_lbl):
+                _lbl.configure(wraplength=max(event.width - 30, 80))
+            self._info_body_frame.bind("<Configure>", _on_txt_resize)
 
     def _set_info_main_menu(self) -> None:
         self._set_info_text(self._INFO_MAIN_MENU)
@@ -720,32 +796,36 @@ class RobotGUI:
         lbl.pack(fill=tk.BOTH, padx=14, pady=10)
 
     def _add_scene_row(self, parent: tk.Frame, label: str, value: str,
-                       row_idx: int, is_separator: bool = False) -> None:
-        """Add a single row to the scene table grid."""
+                       row_idx: int, is_separator: bool = False) -> tk.Label:
+        """Add a single row to the scene table grid (3-col: spacer|label|value).
+        Returns the value label (or None for separators)."""
         if is_separator:
             sep = tk.Frame(parent, bg="#2a2a32", height=1)
-            sep.grid(row=row_idx, column=0, columnspan=2,
-                     sticky="ew", padx=8, pady=4)
-            return
+            sep.grid(row=row_idx, column=0, columnspan=3,
+                     sticky="ew", padx=0, pady=0)
+            return None
 
         row_bg = "#1e1e24" if row_idx % 2 == 0 else C["bg_chat"]
 
+        # Col 0: empty label as spacer (same widget type = same row height)
+        tk.Label(parent, bg=row_bg).grid(row=row_idx, column=0, sticky="nsew")
+
         lbl_w = tk.Label(
-            parent, text=label,
+            parent, text=label + ":",
             bg=row_bg, fg=C["fg_muted"],
             font=(MONO, 9, "bold"), anchor=tk.NW,
-            padx=12, pady=5,
+            padx=8, pady=5,
         )
-        lbl_w.grid(row=row_idx, column=0, sticky="nw")
+        lbl_w.grid(row=row_idx, column=1, sticky="nsew")
 
         val_w = tk.Label(
             parent, text=value,
             bg=row_bg, fg=C["fg_robot"],
             font=(MONO, 9), anchor=tk.NW,
             padx=8, pady=5, justify=tk.LEFT,
-            wraplength=300,
         )
-        val_w.grid(row=row_idx, column=1, sticky="nwe")
+        val_w.grid(row=row_idx, column=2, sticky="nsew")
+        return val_w
 
     def _refresh_scene_from_config(self) -> None:
         """Build scene summary as a clean table from config file."""
@@ -767,23 +847,30 @@ class RobotGUI:
                 pass
 
             table = tk.Frame(self._scene_inner, bg=C["bg_chat"])
-            table.pack(anchor=tk.CENTER, padx=4, pady=6)
-            table.columnconfigure(1, weight=1)
+            table.pack(fill=tk.BOTH, expand=True, padx=0, pady=(12, 0))
+            table.columnconfigure(0, weight=1)  # left spacer
+            table.columnconfigure(2, weight=1)  # value col stretches too
 
             row = 0
+            _scene_val_labels = []
+
+            def _add(label, value, r, **kw):
+                vl = self._add_scene_row(table, label, value, r, **kw)
+                if vl is not None:
+                    _scene_val_labels.append(vl)
 
             # Mode
             ws = state.get("workspace", {})
-            mode = ws.get("operation_mode") or "not set"
-            self._add_scene_row(table, "Mode", mode, row); row += 1
+            mode = ws.get("operation_mode") or "none"
+            _add("Mode", mode, row); row += 1
 
             # Batch Size
             batch = ws.get("batch_size")
-            batch_str = str(batch) if batch else "not set"
-            self._add_scene_row(table, "Batch Size", batch_str, row); row += 1
+            batch_str = str(batch) if batch else "none"
+            _add("Batch Size", batch_str, row); row += 1
 
             # Separator
-            self._add_scene_row(table, "", "", row, is_separator=True); row += 1
+            _add("", "", row, is_separator=True); row += 1
 
             # Roles
             roles = preds.get("role", [])
@@ -795,12 +882,12 @@ class RobotGUI:
                 )
             else:
                 val = "none"
-            self._add_scene_row(table, "Roles", val, row); row += 1
+            _add("Roles", val, row); row += 1
 
             # Fragility
             frag = [e["part"] for e in preds.get("fragility", [])
                     if e.get("fragility") == "fragile"]
-            self._add_scene_row(table, "Fragility",
+            _add("Fragility",
                                 ", ".join(sorted(frag)) if frag else "none",
                                 row); row += 1
 
@@ -813,10 +900,10 @@ class RobotGUI:
                 )
             else:
                 prio_str = "none"
-            self._add_scene_row(table, "Priority", prio_str, row); row += 1
+            _add("Priority", prio_str, row); row += 1
 
             # Separator
-            self._add_scene_row(table, "", "", row, is_separator=True); row += 1
+            _add("", "", row, is_separator=True); row += 1
 
             # Kit recipe
             recipe = preds.get("kit_recipe", [])
@@ -836,7 +923,7 @@ class RobotGUI:
                 recipe_str = "\n".join(parts)
             else:
                 recipe_str = "none"
-            self._add_scene_row(table, "Kit Recipe", recipe_str, row); row += 1
+            _add("Kit Recipe", recipe_str, row); row += 1
 
             # Compatibility
             compat = preds.get("part_compatibility", [])
@@ -863,7 +950,24 @@ class RobotGUI:
                 compat_str = "\n".join(rules)
             else:
                 compat_str = "none"
-            self._add_scene_row(table, "Compatibility", compat_str, row); row += 1
+            _add("Compatibility", compat_str, row); row += 1
+
+            # Fill remaining vertical space
+            tk.Label(table, bg=C["bg_chat"]).grid(
+                row=row, column=0, columnspan=3, sticky="nsew")
+            table.rowconfigure(row, weight=1)
+
+            # Dynamic wraplength for scene value labels
+            def _on_scene_tbl_resize(event, _tbl=table, _labels=_scene_val_labels):
+                try:
+                    bbox = _tbl.grid_bbox(column=2)
+                    col2_w = bbox[2] if bbox else event.width // 2
+                except Exception:
+                    col2_w = event.width // 2
+                avail = max(col2_w - 20, 80)
+                for vl in _labels:
+                    vl.configure(wraplength=avail)
+            table.bind("<Configure>", _on_scene_tbl_resize)
 
         except Exception as exc:
             self._set_scene_placeholder("Could not load scene:\n" + str(exc))
@@ -1102,8 +1206,8 @@ class RobotGUI:
         if current_path is None and configs:
             current_path = configs[0]["path"]
 
-        # ── create overlay frame on top of the right panel ────────────────
-        overlay = tk.Frame(self._right_panel, bg=C["bg_main"])
+        # ── create overlay frame on top of the vision image box ──────────
+        overlay = tk.Frame(self._img_outer, bg=C["bg_main"])
         overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
         overlay.lift()
         self._browser_overlay = overlay
@@ -2111,7 +2215,9 @@ class RobotGUI:
     def _set_status(self, text: str, color: str = C["fg_white"]) -> None:
         self._status_text = text
         self._status_color = color
-        self._render_info()
+        self._info_status_lbl.configure(
+            text=f"● {text}", fg=color,
+        )
 
     def _update_window_title(self) -> None:
         self.root.title("")
