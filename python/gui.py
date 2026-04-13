@@ -165,7 +165,7 @@ class RobotGUI:
 
         # ── window ────────────────────────────────────────────────────────────
         self.root = tk.Tk()
-        self.root.title("Robot Configuration System")
+        self.root.title("")
         self.root.configure(bg=C["bg_main"])
         self.root.geometry("1400x820")
         self.root.minsize(1000, 640)
@@ -193,7 +193,7 @@ class RobotGUI:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        self.root.title("Robot Configuration System")
+        self.root.title("")
 
         # ── main content: horizontal PanedWindow (left | right) ───────────
         self._hpane = tk.PanedWindow(
@@ -348,17 +348,33 @@ class RobotGUI:
         )
         self._vpane.pack(fill=tk.BOTH, expand=True)
 
-        # ── top: scene description ────────────────────────────────────────────
+        # ── top: scene description + information (side by side) ────────────────
         scene_outer = tk.Frame(self._vpane, bg=C["bg_main"])
         self._vpane.add(scene_outer, stretch="always", minsize=120)
 
+        # Horizontal PanedWindow to split scene desc (left) and info (right)
+        top_hpane = tk.PanedWindow(
+            scene_outer,
+            orient=tk.HORIZONTAL,
+            bg=C["bg_main"],
+            sashwidth=6,
+            sashrelief=tk.FLAT,
+            bd=0,
+            handlesize=0,
+        )
+        top_hpane.pack(fill=tk.BOTH, expand=True)
+
+        # ── left: scene description ───────────────────────────────────────────
+        scene_left = tk.Frame(top_hpane, bg=C["bg_main"])
+        top_hpane.add(scene_left, stretch="always", minsize=160)
+
         tk.Label(
-            scene_outer, text="SCENE DESCRIPTION",
+            scene_left, text="SCENE DESCRIPTION",
             bg=C["bg_main"], fg=C["fg_muted"],
             font=(FONT, 8, "bold"),
         ).pack(anchor=tk.CENTER, pady=(2, 3))
 
-        scene_wrap = tk.Frame(scene_outer, bg=C["bg_chat"], bd=0, highlightthickness=0)
+        scene_wrap = tk.Frame(scene_left, bg=C["bg_chat"], bd=0, highlightthickness=0)
         scene_wrap.pack(fill=tk.BOTH, expand=True)
 
         # Scrollable canvas for the scene table
@@ -384,13 +400,10 @@ class RobotGUI:
             self._scene_canvas.configure(scrollregion=self._scene_canvas.bbox("all"))
         def _on_scene_canvas_cfg(event):
             self._scene_canvas.itemconfigure(self._scene_canvas_win, width=event.width)
-            # When placeholder is active, stretch inner frame to full canvas height
-            # so the label can be vertically centered
             if self._scene_placeholder_active:
                 self._scene_canvas.itemconfigure(
                     self._scene_canvas_win, height=event.height)
             else:
-                # Reset to natural height for scrollable table content
                 self._scene_canvas.itemconfigure(
                     self._scene_canvas_win, height=0)
         self._scene_inner.bind("<Configure>", _on_scene_inner_cfg)
@@ -407,6 +420,45 @@ class RobotGUI:
 
         self._scene_placeholder_active = False
         self._set_scene_placeholder("No scene loaded yet.\nRun Reconfigure to populate.")
+
+        # ── right: information panel ──────────────────────────────────────────
+        info_right = tk.Frame(top_hpane, bg=C["bg_main"])
+        top_hpane.add(info_right, stretch="always", minsize=160)
+
+        tk.Label(
+            info_right, text="INFORMATION",
+            bg=C["bg_main"], fg=C["fg_muted"],
+            font=(FONT, 8, "bold"),
+        ).pack(anchor=tk.CENTER, pady=(2, 3))
+
+        info_wrap = tk.Frame(info_right, bg=C["bg_chat"], bd=0, highlightthickness=0)
+        info_wrap.pack(fill=tk.BOTH, expand=True)
+
+        self._info_text = tk.Text(
+            info_wrap,
+            bg=C["bg_chat"], fg=C["fg_robot"],
+            font=(FONT, 9),
+            bd=0, padx=14, pady=10,
+            highlightthickness=0,
+            wrap=tk.WORD,
+            cursor="arrow",
+            state=tk.DISABLED,
+        )
+        self._info_text.pack(fill=tk.BOTH, expand=True)
+        self._info_text.tag_configure("title", font=(FONT, 11, "bold"),
+                                      foreground=C["fg_white"], justify=tk.CENTER)
+        self._info_text.tag_configure("status", font=(FONT, 9),
+                                      foreground=C["fg_success"], justify=tk.CENTER)
+        self._info_text.tag_configure("body", font=(FONT, 9),
+                                      foreground=C["fg_robot"], justify=tk.CENTER)
+
+        # Track current info content and status so either can be updated independently
+        self._info_current = ("", "")        # (title, body)
+        self._status_text = "Ready"
+        self._status_color = C["fg_success"]
+
+        # Show main menu info text initially
+        self._set_info_main_menu()
 
         # ── bottom: vision image ──────────────────────────────────────────────
         self._img_outer = tk.Frame(self._vpane, bg=C["bg_main"])
@@ -503,24 +555,6 @@ class RobotGUI:
         self._btn_bar = tk.Frame(btn_row, bg=C["bg_main"])
         self._btn_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        # ── status indicator (bottom-right, same row as buttons) ──────
-        self._status_frame = tk.Frame(btn_row, bg=C["bg_main"])
-        self._status_frame.pack(side=tk.RIGHT, padx=(0, 8))
-
-        self._status_dot = tk.Label(
-            self._status_frame, text="●",
-            bg=C["bg_main"], fg=C["fg_success"],
-            font=(FONT, 8),
-        )
-        self._status_dot.pack(side=tk.LEFT, padx=(4, 3))
-
-        self._status_label = tk.Label(
-            self._status_frame, text="Ready",
-            bg=C["bg_main"], fg=C["fg_success"],
-            font=(FONT, 9),
-        )
-        self._status_label.pack(side=tk.LEFT)
-
     def _init_sash_positions(self) -> None:
         """Set the two PanedWindows to equal 50/50 splits."""
         try:
@@ -611,6 +645,69 @@ class RobotGUI:
         for w in self._scene_inner.winfo_children():
             w.destroy()
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # Information panel
+    # ─────────────────────────────────────────────────────────────────────────
+
+    _INFO_MAIN_MENU = (
+        "Vision-Guided Conversational Task Configuration",
+        "• Configure:  Start a new configuration session\n\n"
+        "• Plan Sequence:  Start planner to create a motion sequence\n\n"
+        "• Execute:  Call robot to execute the current motion sequence\n\n"
+        "• Camera Home:  Drive robot to the camera home position\n\n"
+        "• Log:  Open chat dialogue history",
+    )
+
+    _INFO_CONFIGURE_OPTIONS = (
+        "Configuration Mode",
+        "• New Config:  Capture new image and start configuration from scratch\n\n"
+        "• Update Config:  Capture new image and merge the new scene data with the previous configuration\n\n"
+        "• Edit Config:  Load an existing configuration file from memory and start editing it",
+    )
+
+    _INFO_RECONFIG_ACTIVE = (
+        "Configuration Mode",
+        "Tell the assistant what to do in natural language.\n "
+        "The attributes shown in the scene description can be adjusted.",
+    )
+
+    _INFO_UPDATE_ACTIVE = (
+        "Update Configuration Mode",
+        "Compare the new scan with the previous config and explain to the LLM "
+        "in natural language what needs to be changed.",
+    )
+
+    def _set_info_text(self, info: tuple) -> None:
+        """Update the information panel. info = (title, body)."""
+        self._info_current = info
+        self._render_info()
+
+    def _render_info(self) -> None:
+        """Re-render the full info panel: title + status + body."""
+        title, body = self._info_current
+        w = self._info_text
+        w.configure(state=tk.NORMAL)
+        w.delete("1.0", tk.END)
+        w.insert(tk.END, title + "\n\n", "title")
+        # Status line with dot
+        w.insert(tk.END, f"● {self._status_text}\n\n", "status")
+        w.insert(tk.END, body, "body")
+        w.configure(state=tk.DISABLED)
+        # Update the status tag colour
+        w.tag_configure("status", foreground=self._status_color)
+
+    def _set_info_main_menu(self) -> None:
+        self._set_info_text(self._INFO_MAIN_MENU)
+
+    def _set_info_configure_options(self) -> None:
+        self._set_info_text(self._INFO_CONFIGURE_OPTIONS)
+
+    def _set_info_reconfig_active(self) -> None:
+        self._set_info_text(self._INFO_RECONFIG_ACTIVE)
+
+    def _set_info_update_active(self) -> None:
+        self._set_info_text(self._INFO_UPDATE_ACTIVE)
+
     def _set_scene_content(self, text: str) -> None:
         """Unused — kept for backward compat. Use _refresh_scene_from_config."""
         self._scene_placeholder_active = False
@@ -670,7 +767,7 @@ class RobotGUI:
                 pass
 
             table = tk.Frame(self._scene_inner, bg=C["bg_chat"])
-            table.pack(fill=tk.BOTH, expand=True, padx=4, pady=6)
+            table.pack(anchor=tk.CENTER, padx=4, pady=6)
             table.columnconfigure(1, weight=1)
 
             row = 0
@@ -866,6 +963,7 @@ class RobotGUI:
         self._set_input(False)
         self._in_configure_mode = False
         self._in_update_mode = False
+        self._set_info_main_menu()
 
         # Show greeting the very first time
         if not self._first_menu_shown:
@@ -945,14 +1043,7 @@ class RobotGUI:
         """Replace the main button bar with three configure sub-options + Done."""
         self._clear_bar()
         self._set_input(False)
-
-        self._append(
-            "\nHow do you want to load the scene?\n"
-            "  [1] New Configuration — Capture new image and configure from scratch\n"
-            "  [2] Update Configuration — Update configuration with new vision data\n"
-            "  [3] Edit Configuration — Load existing configuration from memory\n",
-            "robot",
-        )
+        self._set_info_configure_options()
 
         items = [
             ("New Config",    C["btn_1"], lambda: self._run_reconfig_sub("reconfig_fresh")),
@@ -972,7 +1063,10 @@ class RobotGUI:
         self._config_from_memory = False
         self._in_update_mode = (sub == "reconfig_update")
         if sub == "reconfig_update":
+            self._set_info_update_active()
             self._enter_split_view()
+        elif sub == "reconfig_fresh":
+            self._set_info_reconfig_active()
         if sub == "reconfig_memory":
             self._show_config_browser()
             return
@@ -1235,6 +1329,7 @@ class RobotGUI:
         if is_current:
             # Already the active config — just proceed
             self._close_config_browser()
+            self._set_info_reconfig_active()
             self._run("reconfig")
             return
 
@@ -1251,6 +1346,7 @@ class RobotGUI:
         self._close_config_browser()
         self._refresh_scene_from_config()
         self._load_image()                  # show placeholder
+        self._set_info_reconfig_active()
         self._run("reconfig")
 
     def _browser_cancel(self) -> None:
@@ -1894,6 +1990,7 @@ class RobotGUI:
             if self._split_mode:
                 self._exit_split_view()
             self._in_update_mode = False
+            self._set_info_reconfig_active()
 
         # ── handle ASSISTANT: prefix → orange label on own line + body below ──
         if tag == "robot" and stripped.startswith("ASSISTANT:"):
@@ -2012,11 +2109,12 @@ class RobotGUI:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _set_status(self, text: str, color: str = C["fg_white"]) -> None:
-        self._status_label.configure(text=text, fg=color)
-        self._status_dot.configure(fg=color)
+        self._status_text = text
+        self._status_color = color
+        self._render_info()
 
     def _update_window_title(self) -> None:
-        self.root.title("Robot Configuration System")
+        self.root.title("")
 
     def _quit(self) -> None:
         sys.stdout = sys.__stdout__

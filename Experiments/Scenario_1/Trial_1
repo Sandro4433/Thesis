@@ -1,42 +1,23 @@
-── Mode: Reconfiguration ──
+── Configuration complete. ──
 
+How do you want to load the scene?
+  [1] New Configuration — Capture new image and configure from scratch
+  [2] Update Configuration — Update configuration with new vision data
+  [3] Edit Configuration — Load existing configuration from memory
+
+Starting vision module …
+
+Vision complete.
+
+Loaded fresh scene from vision.
+
+── Mode: Reconfiguration ──
 
 ASSISTANT:
 What would you like to change?
 
-YOU: switch to kitting
-
-ASSISTANT:
-```changes
-{
-  "workspace": {"operation_mode": "kitting"}
-}
-```
-Confirm?
-
-YOU: yes
-✅  Changes noted.
-
-
-Anything else?
-YOU: 
-YOU: done
-  workspace: {'operation_mode': 'kitting'}
-✅  Configuration updated.
-✅  Image updated.
-✅  Changes saved.
-
-── Session complete. ──
-
--------------------------------Success
-
-── Mode: Reconfiguration ──
-
-
-ASSISTANT:
-What would you like to change?
-
-YOU: switch to sorting mode
+YOU:
+Switch to sorting mode
 
 ASSISTANT:
 ```changes
@@ -46,20 +27,58 @@ ASSISTANT:
 ```
 Confirm?
 
-YOU: yes
+YOU:
+yes
+
 ✅  Changes noted.
 
+ASSISTANT:
+Anything else? If not, type or press 'done'.
 
-Anything else?
-YOU: 
-YOU: done
-  workspace: {'operation_mode': 'sorting'}
+YOU:
+done
+
 ✅  Configuration updated.
+✅  State archived → configuration_13042026_1343.json
 ✅  Image updated.
-✅  Changes saved.
 
-── Session complete. ──
+── Configuration complete. ──
 
------------------------------Success
+How do you want to load the scene?
+  [1] New Configuration — Capture new image and configure from scratch
+  [2] Update Configuration — Update configuration with new vision data
+  [3] Edit Configuration — Load existing configuration from memory
 
+── Mode: Reconfiguration ──
+
+ASSISTANT:
+What would you like to change?
+
+YOU:
+Switch to kitting
+
+ASSISTANT:
+```changes
+{
+  "workspace": {"operation_mode": "kitting"}
+}
+```
+Confirm?
+
+YOU:
+yes
+
+✅  Changes noted.
+
+ASSISTANT:
+Anything else? If not, type or press 'done'.
+
+YOU:
+done
+
+✅  Configuration updated.
+✅  State archived → configuration_13042026_1344.json
+✅  Image updated.
+
+── Configuration complete. ──
 
