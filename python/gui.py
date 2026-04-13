@@ -205,10 +205,13 @@ class RobotGUI:
             bd=0,
             handlesize=0,
         )
-        self._hpane.pack(fill=tk.BOTH, expand=True, padx=8, pady=(4, 8))
+        self._hpane.pack(fill=tk.BOTH, expand=True, padx=8, pady=(4, 0))
 
         self._build_chat_panel(self._hpane)
         self._build_right_panel(self._hpane)
+
+        # ── bottom spacer — empty bar below everything ────────────────────
+        tk.Frame(self.root, bg=C["bg_main"], height=14).pack(fill=tk.X)
 
     def _build_chat_panel(self, parent: tk.PanedWindow) -> None:
         left = tk.Frame(parent, bg=C["bg_main"])
@@ -224,17 +227,67 @@ class RobotGUI:
         chat_wrap = tk.Frame(left, bg=C["bg_chat"], bd=0, highlightthickness=0)
         chat_wrap.pack(fill=tk.BOTH, expand=True)
         self._chat_wrap = chat_wrap
-
-        # input area — sits at the bottom of the chat box, visually merged
-        # Pack BOTTOM first so the chat text fills the remaining space above
-        input_wrap = tk.Frame(chat_wrap, bg=C["bg_chat"], bd=0, highlightthickness=0)
-        input_wrap.pack(fill=tk.X, side=tk.BOTTOM)
-        self._input_row = input_wrap
         self._chat_left = left
 
-        self._input_sep = tk.Frame(chat_wrap, bg="#2a2a32", height=1)
-        self._input_sep.pack(fill=tk.X, side=tk.BOTTOM, padx=8)
+        # ── Bottom area: holds EITHER the button bar OR the input row ─────
+        bottom_area = tk.Frame(left, bg=C["bg_main"])
+        bottom_area.pack(fill=tk.X, side=tk.BOTTOM)
+        self._bottom_area = bottom_area
 
+        # Button bar (shown in main menu / configure options / execute)
+        self._btn_bar = tk.Frame(bottom_area, bg=C["bg_main"], pady=6)
+        # (packed/forgotten dynamically)
+
+        # Input row (shown during dialogue with assistant)
+        input_outer = tk.Frame(bottom_area, bg=C["bg_chat"], bd=0, highlightthickness=0)
+        self._input_outer = input_outer
+        # (packed/forgotten dynamically)
+
+        self._input_sep = tk.Frame(input_outer, bg="#2a2a32", height=1)
+        self._input_sep.pack(fill=tk.X, padx=8)
+
+        input_wrap = tk.Frame(input_outer, bg=C["bg_chat"], bd=0, highlightthickness=0)
+        input_wrap.pack(fill=tk.X)
+        self._input_row = input_wrap
+
+        # Done button (shown next to Send during dialogue) — pack RIGHT first
+        self._done_btn = tk.Button(
+            input_wrap, text="Done",
+            bg=C["btn_1"], fg=C["fg_white"],
+            font=(FONT, 10, "bold"),
+            relief=tk.FLAT, bd=0, padx=16, pady=9,
+            highlightthickness=0,
+            activebackground=C["btn_1"], activeforeground=C["fg_white"],
+            command=self._cancel_configure,
+        )
+        # (packed/forgotten dynamically — rightmost position)
+
+        # Recapture button (shown next to Done during update mode)
+        self._recapture_btn = tk.Button(
+            input_wrap, text="Recapture",
+            bg=C["btn_2"], fg=C["fg_white"],
+            font=(FONT, 10, "bold"),
+            relief=tk.FLAT, bd=0, padx=16, pady=9,
+            highlightthickness=0,
+            activebackground=C["btn_2"], activeforeground=C["fg_white"],
+            command=self._request_recapture,
+        )
+        # (packed/forgotten dynamically)
+
+        # Send button — packed RIGHT, appears left of Done
+        self._send = tk.Button(
+            input_wrap, text="Send",
+            bg=C["fg_assist"], fg=C["bg_main"],
+            font=(FONT, 10, "bold"),
+            relief=tk.FLAT, bd=0, padx=16, pady=9,
+            highlightthickness=0,
+            activebackground="#d4821f", activeforeground=C["bg_main"],
+            state=tk.DISABLED,
+            command=self._submit_text,
+        )
+        # (packed dynamically — always left of Done)
+
+        # Text input — fills remaining space (packed last so buttons always visible)
         self._input_text = tk.Text(
             input_wrap,
             bg=C["bg_chat"], fg=C["fg_white"],
@@ -256,6 +309,7 @@ class RobotGUI:
         )
         self._input_text.configure(yscrollcommand=self._input_sb.set)
         self._input_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._input_text.configure(width=1)  # minimal request so buttons always fit
 
         # Auto-resize on content change
         def _on_input_modified(event=None):
@@ -266,19 +320,6 @@ class RobotGUI:
         self._input_text.bind("<KeyRelease>", lambda e: self._resize_input())
         self._input_text.bind("<Return>", self._on_input_return)
         self._input_text.bind("<Shift-Return>", lambda e: None)
-
-        # Send button — orange, sits to the right of the input text
-        self._send = tk.Button(
-            input_wrap, text="Send",
-            bg=C["fg_assist"], fg=C["bg_main"],
-            font=(FONT, 10, "bold"),
-            relief=tk.FLAT, bd=0, padx=16, pady=9,
-            highlightthickness=0,
-            activebackground="#d4821f", activeforeground=C["bg_main"],
-            state=tk.DISABLED,
-            command=self._submit_text,
-        )
-        self._send.pack(side=tk.RIGHT, padx=(4, 6), pady=2)
 
         self._input_var = None
 
@@ -545,33 +586,73 @@ class RobotGUI:
 
         self._img_outer.bind("<Configure>", _on_img_resize)
 
-        # ── button bar (centered below image, same level as input row) ────
-        btn_row = tk.Frame(right, bg=C["bg_main"], pady=6)
-        btn_row.pack(fill=tk.X)
-
-        self._btn_bar = tk.Frame(btn_row, bg=C["bg_main"])
-        self._btn_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
     def _init_sash_positions(self) -> None:
-        """Set initial pane split ratios."""
+        """Set initial pane split ratios and install drag limits.
+
+        SASH LIMITS — adjust min/max fractions here:
+          _hpane      (chat | right)          : line ~600  MIN_LEFT / MAX_LEFT
+          _vpane      (scene+info | vision)   : line ~610  MIN_TOP  / MAX_TOP
+          _top_hpane  (scene desc | info)     : line ~620  MIN_SCENE / MAX_SCENE
+        """
+        # ── initial positions ─────────────────────────────────────────────
         try:
             total_w = self._hpane.winfo_width()
             if total_w > 10:
-                self._hpane.sash_place(0, int(total_w * 0.38), 0)
+                self._hpane.sash_place(0, int(total_w * 0.33), 0)
         except Exception:
             pass
         try:
             total_h = self._vpane.winfo_height()
             if total_h > 10:
-                self._vpane.sash_place(0, 0, int(total_h * 0.40))
+                self._vpane.sash_place(0, 0, int(total_h * 0.3))
         except Exception:
             pass
         try:
             top_w = self._top_hpane.winfo_width()
             if top_w > 10:
-                self._top_hpane.sash_place(0, int(top_w * 0.30), 0)
+                self._top_hpane.sash_place(0, int(top_w * 0.1), 0)
         except Exception:
             pass
+
+        # ── drag limits (fraction of total size) ──────────────────────────
+        # _hpane: chat (left) vs right panel — horizontal sash
+        MIN_LEFT = 0.20;  MAX_LEFT = 0.55                          # ← ADJUST HERE
+        def _clamp_hpane(event):
+            w = self._hpane.winfo_width()
+            if w < 10: return
+            lo, hi = int(w * MIN_LEFT), int(w * MAX_LEFT)
+            try:
+                x = self._hpane.sash_coord(0)[0]
+                if x < lo: self._hpane.sash_place(0, lo, 0)
+                elif x > hi: self._hpane.sash_place(0, hi, 0)
+            except Exception: pass
+        self._hpane.bind("<B1-Motion>", _clamp_hpane)
+
+        # _vpane: scene+info (top) vs vision (bottom) — vertical sash
+        MIN_TOP = 0.20;  MAX_TOP = 0.70                            # ← ADJUST HERE
+        def _clamp_vpane(event):
+            h = self._vpane.winfo_height()
+            if h < 10: return
+            lo, hi = int(h * MIN_TOP), int(h * MAX_TOP)
+            try:
+                y = self._vpane.sash_coord(0)[1]
+                if y < lo: self._vpane.sash_place(0, 0, lo)
+                elif y > hi: self._vpane.sash_place(0, 0, hi)
+            except Exception: pass
+        self._vpane.bind("<B1-Motion>", _clamp_vpane)
+
+        # _top_hpane: scene description (left) vs info (right) — horizontal sash
+        MIN_SCENE = 0.15;  MAX_SCENE = 0.60                        # ← ADJUST HERE
+        def _clamp_top_hpane(event):
+            w = self._top_hpane.winfo_width()
+            if w < 10: return
+            lo, hi = int(w * MIN_SCENE), int(w * MAX_SCENE)
+            try:
+                x = self._top_hpane.sash_coord(0)[0]
+                if x < lo: self._top_hpane.sash_place(0, lo, 0)
+                elif x > hi: self._top_hpane.sash_place(0, hi, 0)
+            except Exception: pass
+        self._top_hpane.bind("<B1-Motion>", _clamp_top_hpane)
 
     # ─────────────────────────────────────────────────────────────────────────
     # IO redirection & patching
@@ -1064,6 +1145,7 @@ class RobotGUI:
 
     def _show_main_menu(self) -> None:
         self._clear_bar()
+        self._show_button_bar()
         self._set_input(False)
         self._in_configure_mode = False
         self._in_update_mode = False
@@ -1073,7 +1155,7 @@ class RobotGUI:
         if not self._first_menu_shown:
             self._first_menu_shown = True
             self._append(
-                "Let's configure, what would you like to do?\n",
+                "\nLet's configure, what would you like to do?\n",
                 "greeting",
             )
 
@@ -1084,35 +1166,30 @@ class RobotGUI:
             ("Camera Home",   C["btn_4"],  self._run_camera_home),
             ("Log",           C["btn_4"],  self._open_log_window),
         ]
-        # Center the buttons by packing into an inner frame
         inner = tk.Frame(self._btn_bar, bg=C["bg_main"])
         inner.pack(anchor=tk.CENTER)
         for text, color, cmd in items:
             self._btn(inner, text, color, cmd).pack(side=tk.LEFT, padx=3)
+        self._btn_bar.pack(fill=tk.X)
 
     def _show_cancel_bar(self) -> None:
-        """Show only the Done button (used during configure/planning mode)."""
-        self._clear_bar()
-        inner = tk.Frame(self._btn_bar, bg=C["bg_main"])
-        inner.pack(anchor=tk.CENTER)
-        self._btn(
-            inner, "Done", C["btn_1"],
-            self._cancel_configure,
-        ).pack(side=tk.LEFT, padx=3)
+        """Show Done + Send in the input row. Done rightmost."""
+        self._recapture_btn.pack_forget()
+        self._send.pack_forget()
+        self._done_btn.pack_forget()
+        # Pack RIGHT in order: first = rightmost
+        self._done_btn.pack(side=tk.RIGHT, padx=(2, 6), pady=2)
+        self._send.pack(side=tk.RIGHT, padx=(4, 2), pady=2)
 
     def _show_update_bar(self) -> None:
-        """Show Recapture + Done buttons during Update Config mode."""
-        self._clear_bar()
-        inner = tk.Frame(self._btn_bar, bg=C["bg_main"])
-        inner.pack(anchor=tk.CENTER)
-        self._btn(
-            inner, "Recapture Image", C["btn_2"],
-            self._request_recapture,
-        ).pack(side=tk.LEFT, padx=3)
-        self._btn(
-            inner, "Done", C["btn_1"],
-            self._cancel_configure,
-        ).pack(side=tk.LEFT, padx=3)
+        """Show Recapture + Done + Send in the input row. Done rightmost."""
+        self._recapture_btn.pack_forget()
+        self._send.pack_forget()
+        self._done_btn.pack_forget()
+        # Pack RIGHT in order: first = rightmost
+        self._done_btn.pack(side=tk.RIGHT, padx=(2, 6), pady=2)
+        self._recapture_btn.pack(side=tk.RIGHT, padx=(2, 2), pady=2)
+        self._send.pack(side=tk.RIGHT, padx=(4, 2), pady=2)
 
     def _request_recapture(self) -> None:
         """Send the recapture sentinel through the input queue so the
@@ -1142,6 +1219,7 @@ class RobotGUI:
             inner, "Log", C["btn_2"],
             self._open_log_window,
         ).pack(side=tk.LEFT, padx=3)
+        self._btn_bar.pack(fill=tk.X)
 
     def _show_configure_options(self) -> None:
         """Replace the main button bar with three configure sub-options + Done."""
@@ -1159,6 +1237,7 @@ class RobotGUI:
         inner.pack(anchor=tk.CENTER)
         for text, color, cmd in items:
             self._btn(inner, text, color, cmd).pack(side=tk.LEFT, padx=3)
+        self._btn_bar.pack(fill=tk.X)
 
     def _run_reconfig_sub(self, sub: str) -> None:
         """Launch the reconfig worker with a pre-selected sub-option so the
@@ -1403,6 +1482,7 @@ class RobotGUI:
 
         # Update button bar (hide main menu buttons while browsing)
         self._clear_bar()
+        self._btn_bar.pack_forget()
 
     def _close_config_browser(self) -> None:
         """Destroy the browser overlay.  The right panel widgets underneath
@@ -1475,30 +1555,36 @@ class RobotGUI:
             self._append(f"\n[ERR] Could not request cancel: {exc}\n", "error")
 
     def _show_text_input(self) -> None:
+        self._show_input_row()
         if self._in_configure_mode:
             if self._in_update_mode:
                 self._show_update_bar()
             else:
                 self._show_cancel_bar()
-        else:
-            self._clear_bar()
         self._set_input(True)
-        self._input_text.focus_set()
 
     def _set_input(self, enabled: bool) -> None:
         s = tk.NORMAL if enabled else tk.DISABLED
         self._input_text.configure(state=s)
         self._send.configure(state=s)
+        self._done_btn.configure(state=s)
+        self._recapture_btn.configure(state=s)
         if enabled:
-            # Show input row and separator (pack bottom-up: input first, sep above)
-            self._input_row.pack(fill=tk.X, side=tk.BOTTOM)
-            self._input_sep.pack(fill=tk.X, side=tk.BOTTOM, padx=8)
-        else:
-            # Reset height and hide scrollbar, separator, input row
-            self._input_text.configure(height=1)
-            self._input_sb.pack_forget()
-            self._input_sep.pack_forget()
-            self._input_row.pack_forget()
+            self._input_text.focus_set()
+
+    def _show_input_row(self) -> None:
+        """Switch from button bar to input row (with Send + Done)."""
+        self._btn_bar.pack_forget()
+        self._input_outer.pack(fill=tk.X)
+
+    def _show_button_bar(self) -> None:
+        """Switch from input row back to button bar."""
+        self._input_text.configure(height=1)
+        self._input_sb.pack_forget()
+        self._send.pack_forget()
+        self._done_btn.pack_forget()
+        self._recapture_btn.pack_forget()
+        self._input_outer.pack_forget()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Backend worker
@@ -1521,6 +1607,7 @@ class RobotGUI:
         if mode == "execute":
             self._show_execute_bar()
         else:
+            self._show_input_row()
             self._show_cancel_bar()
         self._set_input(False)
         threading.Thread(target=self._worker, args=(mode,), daemon=True).start()
@@ -1611,6 +1698,7 @@ class RobotGUI:
         self._busy = True
         self._set_status("Moving to Camera Home...", C["fg_warn"])
         self._clear_bar()
+        self._btn_bar.pack_forget()
         threading.Thread(
             target=self._camera_home_worker, daemon=True,
         ).start()
