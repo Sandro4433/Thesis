@@ -1,10 +1,5 @@
 Let's configure, what would you like to do?
 
-How do you want to load the scene?
-  [1] New Configuration — Capture new image and configure from scratch
-  [2] Update Configuration — Update configuration with new vision data
-  [3] Edit Configuration — Load existing configuration from memory
-
 Starting vision module …
 
 Vision complete.
@@ -17,7 +12,7 @@ ASSISTANT:
 What would you like to change?
 
 YOU:
-Change role of container 1 to input
+Switch role of container 1 to input
 
 ASSISTANT:
 ```changes
@@ -39,15 +34,10 @@ YOU:
 done
 
 ✅  Configuration updated.
-✅  State archived → configuration_13042026_1346.json
+✅  State archived → configuration_14042026_1511.json
 ✅  Image updated.
 
 ── Configuration complete. ──
-
-How do you want to load the scene?
-  [1] New Configuration — Capture new image and configure from scratch
-  [2] Update Configuration — Update configuration with new vision data
-  [3] Edit Configuration — Load existing configuration from memory
 
 ── Mode: Reconfiguration ──
 
@@ -55,12 +45,12 @@ ASSISTANT:
 What would you like to change?
 
 YOU:
-Change container 1 role to output
+Switch role of container 2 to output
 
 ASSISTANT:
 ```changes
 {
-  "Container_1": {"role": "output"}
+  "Container_2": {"role": "output"}
 }
 ```
 Confirm?
@@ -77,15 +67,10 @@ YOU:
 done
 
 ✅  Configuration updated.
-✅  State archived → configuration_13042026_1346.json
+✅  State archived → configuration_14042026_1512.json
 ✅  Image updated.
 
 ── Configuration complete. ──
-
-How do you want to load the scene?
-  [1] New Configuration — Capture new image and configure from scratch
-  [2] Update Configuration — Update configuration with new vision data
-  [3] Edit Configuration — Load existing configuration from memory
 
 ── Mode: Reconfiguration ──
 
@@ -93,13 +78,12 @@ ASSISTANT:
 What would you like to change?
 
 YOU:
-Change role of container 1 and container 2 to input and container 3 to output
+Change role of container 1 and container 3 to output
 
 ASSISTANT:
 ```changes
 {
-  "Container_1": {"role": "input"},
-  "Container_2": {"role": "input"},
+  "Container_1": {"role": "output"},
   "Container_3": {"role": "output"}
 }
 ```
@@ -117,7 +101,7 @@ YOU:
 done
 
 ✅  Configuration updated.
-✅  State archived → configuration_13042026_1348.json
+✅  State archived → configuration_14042026_1512.json
 ✅  Image updated.
 
 ── Configuration complete. ──
