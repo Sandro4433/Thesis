@@ -1,8 +1,16 @@
 {
   "priority": [
     {
-      "color": "blue",
+      "kit": "Kit_2",
+      "order": 3
+    },
+    {
+      "kit": "Kit_3",
       "order": 2
+    },
+    {
+      "kit": "Kit_1",
+      "order": 1
     }
   ]
 }
