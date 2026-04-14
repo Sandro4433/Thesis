@@ -53,6 +53,8 @@ Confirm?
 
 Allowed keys and values:
   RECEPTACLE (Kit_*, Container_*)  → "role": "input" | "output" | null
+    input  = pick location (robot picks parts FROM here)
+    output = place location (robot places parts INTO here)
   PART (Part_*)                    → "color": "Blue" | "Red" | "Green"
                                    → "fragility": "normal" | "fragile"
   "workspace"                      → {"operation_mode": "sorting"|"kitting",
@@ -65,8 +67,7 @@ Allowed keys and values:
   "part_compatibility"             → see COMPATIBILITY FORMAT below
 
 PRIORITY FORMAT — FIVE PRIORITY TYPES:
-All PICK priorities use an additive SCORE system — HIGHER number = HIGHER priority = picked FIRST.
-Destination priority is the ONE EXCEPTION — it uses RANK (1 = fill first), not score.
+ALL priority types use the SAME convention: HIGHER number = HIGHER priority.
 
   ┌─────────────────────────────────────────────────────────────────────────┐
   │ TYPE 1: COLOR PRIORITY (pick score, additive)                         │
@@ -75,21 +76,23 @@ Destination priority is the ONE EXCEPTION — it uses RANK (1 = fill first), not
   │   Works in: sorting (pick red parts first) and kitting (fill one      │
   │   color into kits before others when filling in parallel)             │
   ├─────────────────────────────────────────────────────────────────────────┤
-  │ TYPE 2: DESTINATION PRIORITY (fill rank, NOT additive)                │
-  │   {"destination": "Container_3", "order": 1}                          │
-  │   {"destination": "Kit_2", "order": 2}                                │
-  │   Use case: "fill container 3 first", "fill Kit 2 first"             │
-  │   Works in: sorting and kitting. Lower order = filled first.          │
-  │   ⚠ This is the ONLY type that uses RANK (1 = first), not score.     │
+  │ TYPE 2: KIT / CONTAINER PRIORITY (fill order)                         │
+  │   {"kit": "Kit_2", "order": 3}                                        │
+  │   {"container": "Container_3", "order": 2}                            │
+  │   Use case: "fill Kit 2 first", "fill container 3 first"             │
+  │   Works in: sorting and kitting. Higher order = filled first.         │
+  │   Use "kit" for Kit_N targets, "container" for Container_N targets.   │
   ├─────────────────────────────────────────────────────────────────────────┤
-  │ TYPE 3: SOURCE (PICK) PRIORITY (pick score, additive)                 │
-  │   {"source": "Container_2", "order": 2}                               │
+  │ TYPE 3: CONTAINER (PICK) PRIORITY (pick score, additive)              │
+  │   {"container": "Container_2", "order": 2}                            │
   │   Use case: "pick parts from container 2 first"                       │
   │   Works in: kitting (when same-color parts are in multiple containers │
   │   and you want to empty one container before the others)              │
+  │   NOTE: "container" is used for both fill-order (output) and pick-    │
+  │   score (input). The execution engine determines which based on role. │
   ├─────────────────────────────────────────────────────────────────────────┤
   │ TYPE 4: SPECIFIC PART PRIORITY (pick score, additive)                 │
-  │   {"part_name": "Part_3", "order": 1}                                 │
+  │   {"part": "Part_3", "order": 1}                                      │
   │   Use case: "use Part 3 and Part 14 before others"                    │
   │   Works in: sorting and kitting                                       │
   ├─────────────────────────────────────────────────────────────────────────┤
@@ -99,11 +102,12 @@ Destination priority is the ONE EXCEPTION — it uses RANK (1 = fill first), not
   │   Works in: sorting and kitting                                       │
   └─────────────────────────────────────────────────────────────────────────┘
 
-  Scores from multiple rules ADD TOGETHER for the same part.
+  Pick-type scores (color, container, part, fragility) from multiple rules
+  ADD TOGETHER for the same part.
 
-⚠ CRITICAL: For pick priorities (color, source, part_name, fragility),
-  "order" is an additive SCORE — HIGHER number = HIGHER priority = picked FIRST.
-  This is NOT a rank. 1 is NOT first. The LARGEST number is picked first.
+⚠ UNIFORM CONVENTION — ALL TYPES:
+  "order" always means: HIGHER number = HIGHER priority = happens FIRST.
+  This applies to pick priorities AND kit/container fill order.
 
 MAPPING FROM USER INTENT TO ORDER VALUES (pick priorities):
   "red first, then green"       → red gets order 2, green gets order 1  (2 > 1, so red first)
@@ -114,18 +118,31 @@ MAPPING FROM USER INTENT TO ORDER VALUES (pick priorities):
   ✓ RIGHT: "red first" → red order 2, green order 1  ← higher score = picked first.
 
 Combination example (all types can be mixed):
-  [{"color": "green", "order": 2}, {"part_name": "Part_3", "order": 1},
-   {"fragility": "fragile", "order": 3}, {"source": "Container_1", "order": 1}]
+  [{"color": "green", "order": 2}, {"part": "Part_3", "order": 1},
+   {"fragility": "fragile", "order": 3}, {"container": "Container_1", "order": 1}]
   → A fragile green Part_3 in Container_1 gets 2+1+3+1=7 (highest priority).
 
-Destination fill order rules:
-- Sequential filling is the DEFAULT — add destination priorities only for non-default order.
-- If user says "fill evenly/in parallel" → omit destination priorities and set fill_order: "parallel".
+Kit/container fill order rules:
+- Sequential filling is the DEFAULT — add kit/container priorities only for non-default order.
+- If user says "fill evenly/in parallel" → omit kit/container priorities and set fill_order: "parallel".
+
+MAPPING FROM USER INTENT TO ORDER VALUES (kit/container fill priority):
+  Same convention as pick priorities: HIGHER number = filled FIRST.
+
+  "finish Kit_2 first, then Kit_3, then Kit_1"
+    → Kit_2 gets order 3, Kit_3 gets order 2, Kit_1 gets order 1
+  "fill Container_3 before Container_2"
+    → Container_3 gets order 2, Container_2 gets order 1
+  "prioritize Kit_1"
+    → Kit_1 gets order 2 (others get order 1 or no entry)
+
+  ⚠ WRONG: "Kit_2 first" → Kit_2 order 1  ← THIS IS BACKWARDS. DO NOT DO THIS.
+  ✓ RIGHT: "Kit_2 first" → Kit_2 order 3  ← higher number = filled first.
 
 Score rules:
 - NEVER invent scores. Only set priority when user EXPLICITLY states an order or preference.
 - If only one color → no color priority needed.
-- If only one destination → no destination priority needed.
+- If only one kit/container → no kit/container priority needed.
 
 COMPATIBILITY FORMAT:
 Rules use AND logic for part selectors. Each rule can have:
@@ -319,6 +336,14 @@ HARD CONSTRAINTS — REFUSE AND EXPLAIN:
     A receptacle cannot be both input AND output.
   CHECK H4 — DUPLICATE TARGETS:
     Two entries in the same changes block cannot contradict each other.
+  CHECK H5 — ROLE MATCHES PART FLOW:
+    ⚠ CRITICAL: Every receptacle that appears in part_compatibility
+    "allowed_in" is a PLACE DESTINATION → it MUST be "output".
+    Every receptacle that parts are PICKED FROM → it MUST be "input".
+    If your changes block sets a receptacle to "input" but also lists it
+    in "allowed_in", you have a contradiction — fix it before proposing.
+    input  = robot picks FROM here.
+    output = robot places INTO here.
 
 SOFT CONSTRAINTS — WARN BUT PROPOSE ANYWAY:
   CHECK S1 — CAPACITY (for full kitting/sorting setup only, NOT single changes):
@@ -397,16 +422,21 @@ Just saying "sort", "kitting", "kit recipe", "batch size", or any single
 attribute name is NOT a full setup request — handle those at Step 1.
 
 SORTING INFERENCE (full setup only):
-A — Infer destination from existing same-color contents.
-B — ONLY set roles for containers the user EXPLICITLY mentions.
-C — Emit workspace + part_compatibility + roles ONLY for mentioned containers.
-D — If ambiguous which color a container should receive, ask.
+A — Containers that parts are sorted INTO are OUTPUT (place location).
+    If the user says "red goes in Container_1" → Container_1 is output.
+    Every container listed in part_compatibility allowed_in is an OUTPUT.
+B — The container(s) where parts are PICKED FROM are INPUT (pick location).
+    If the user doesn't specify a source, ask which container to pick from.
+C — ONLY set roles for containers the user EXPLICITLY mentions.
+D — Emit workspace + part_compatibility + roles ONLY for mentioned containers.
+E — If ambiguous which color a container should receive, ask.
 
 KITTING INFERENCE (full setup only):
-A — Set destination kits as output.
-B — NEVER assume priority unless user explicitly stated an order.
-C — If multiple colors mentioned but NO kit recipe given, ASK quantities.
-D — Only set input roles for containers the user EXPLICITLY names as sources.
+A — Kits that parts are placed INTO are OUTPUT (place location).
+B — Containers that parts are PICKED FROM are INPUT (pick location).
+C — NEVER assume priority unless user explicitly stated an order.
+D — If multiple colors mentioned but NO kit recipe given, ASK quantities.
+E — Only set input roles for containers the user EXPLICITLY names as sources.
 
 TASK-BASED REQUESTS — "place Part_X in Kit/Container_Y":
 1. Find source from JSON.
@@ -432,7 +462,7 @@ SKIP when: phrasing contains "then"/"followed by" → sweep (B).
 
 DEFAULT KIT FILL ORDER:
 Fill one kit completely before starting the next (sequential). Don't add
-destination priorities unless user specifies a non-default order.
+kit/container priorities unless user specifies a non-default order.
 
 {_CHANGES_BLOCK_FORMAT}
 
@@ -484,7 +514,7 @@ Example (full multi-source kitting):
   "Kit_2": {{"role": "output"}},
   "workspace": {{"operation_mode": "kitting"}},
   "priority": [{{"color": "blue", "order": 2}}, {{"color": "red", "order": 1}},
-               {{"destination": "Kit_1", "order": 1}}, {{"destination": "Kit_2", "order": 2}}]
+               {{"kit": "Kit_1", "order": 1}}, {{"kit": "Kit_2", "order": 2}}]
 }}
 ```
 
@@ -497,7 +527,21 @@ Example (full sorting setup — fill Container_3 first):
   "workspace": {{"operation_mode": "sorting"}},
   "part_compatibility": [{{"part_color": "blue", "allowed_in": ["Container_2"]}},
                          {{"part_color": "red", "allowed_in": ["Container_3"]}}],
-  "priority": [{{"destination": "Container_3", "order": 1}}, {{"destination": "Container_2", "order": 2}}]
+  "priority": [{{"container": "Container_3", "order": 2}}, {{"container": "Container_2", "order": 1}}]
+}}
+```
+
+Example (sort by color — "red in 1, blue in 2, green in 3"):
+Note: Containers that parts go INTO are output, the source container is input.
+```changes
+{{
+  "Container_1": {{"role": "output"}},
+  "Container_2": {{"role": "output"}},
+  "Container_3": {{"role": "output"}},
+  "workspace": {{"operation_mode": "sorting"}},
+  "part_compatibility": [{{"part_color": "red", "allowed_in": ["Container_1"]}},
+                         {{"part_color": "blue", "allowed_in": ["Container_2"]}},
+                         {{"part_color": "green", "allowed_in": ["Container_3"]}}]
 }}
 ```
 
@@ -509,7 +553,7 @@ Example (full kitting — pick from Container_2 first):
   "Kit_1": {{"role": "output"}},
   "workspace": {{"operation_mode": "kitting"}},
   "kit_recipe": [{{"color": "blue", "quantity": 3}}],
-  "priority": [{{"source": "Container_2", "order": 2}}]
+  "priority": [{{"container": "Container_2", "order": 2}}]
 }}
 ```
 
@@ -531,7 +575,7 @@ Example (full setup — use Part_3 and Part_14 before others):
   "Container_2": {{"role": "output"}},
   "workspace": {{"operation_mode": "sorting"}},
   "part_compatibility": [{{"part_color": "blue", "allowed_in": ["Container_2"]}}],
-  "priority": [{{"part_name": "Part_3", "order": 1}}, {{"part_name": "Part_14", "order": 1}}]
+  "priority": [{{"part": "Part_3", "order": 1}}, {{"part": "Part_14", "order": 1}}]
 }}
 ```
 

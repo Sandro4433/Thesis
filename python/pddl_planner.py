@@ -424,31 +424,35 @@ def _compute_part_score(part: str, color: str, preds: Dict[str, Any],
 
     Supported priority rule types (all additive):
       - {"color": "green", "order": 2}           → all green parts get +2
-      - {"part_name": "Part_3", "order": 1}      → Part_3 gets +1
-      - {"fragility": "fragile", "order": 3}     → all fragile parts get +3
-      - {"source": "Container_2", "order": 2}    → all parts in Container_2 get +2
+      - {"part": "Part_3", "order": 1}            → Part_3 gets +1
+      - {"fragility": "fragile", "order": 3}      → all fragile parts get +3
+      - {"container": "Container_2", "order": 2}  → all parts in Container_2 get +2
 
-    Destination (receptacle fill) priority uses "destination" key and is rank-based
+    Kit/container fill priority uses "kit"/"container" key and is rank-based
     (not additive). It is handled separately and does NOT contribute to pick scores.
 
+    Legacy keys ("part_name", "source", "destination") are also supported.
+
     Example: Part_3 is green and fragile, in Container_2.
-      color score = 2, fragility score = 3, part_name score = 1 → total = 6
+      color score = 2, fragility score = 3, part score = 1 → total = 6
     """
     score = 0
     part_frag = (fragility_map or {}).get(part, "normal")
     part_rec  = (part_to_receptacle or {}).get(part, "")
 
     for e in preds.get("priority", []):
-        # Skip destination priorities — they control place ordering, not pick scoring
-        if "destination" in e:
+        # Skip kit/container fill priorities — they control place ordering, not pick scoring
+        if "kit" in e or "destination" in e:
             continue
         if "color" in e and (e["color"] or "").lower() == color:
             score += int(e.get("order", 0))
-        elif "part_name" in e and e["part_name"] == part:
+        elif ("part" in e and e["part"] == part) or \
+             ("part_name" in e and e["part_name"] == part):
             score += int(e.get("order", 0))
         elif "fragility" in e and (e["fragility"] or "").lower() == part_frag:
             score += int(e.get("order", 0))
-        elif "source" in e and e["source"] == part_rec:
+        elif ("container" in e and e["container"] == part_rec) or \
+             ("source" in e and e["source"] == part_rec):
             score += int(e.get("order", 0))
     return score
 
@@ -463,19 +467,26 @@ def _priority_key(preds: Dict[str, Any]):
 
 
 def _destination_priority_key(preds: Dict[str, Any]):
-    """Return sort key for destination receptacles (kits/containers) based on priority list.
+    """Return sort key for output receptacles (kits/containers) based on priority list.
     
-    Uses 'destination' key in priority entries. Lower order = higher priority (filled first).
-    Falls back to legacy 'receptacle' key for backward compatibility.
+    Uses 'kit' and 'container' keys in priority entries.
+    HIGHER order = HIGHER priority = filled first (consistent with pick priorities).
+    Falls back to legacy 'destination' and 'receptacle' keys for backward compatibility.
     """
     order = {}
     for e in preds.get("priority", []):
-        if "destination" in e:
-            order[e["destination"]] = e.get("order", 999)
+        if "kit" in e:
+            order[e["kit"]] = e.get("order", 0)
+        elif "container" in e:
+            order[e["container"]] = e.get("order", 0)
+        elif "destination" in e:
+            # Legacy format
+            order[e["destination"]] = e.get("order", 0)
         elif "receptacle" in e and "destination" not in e and "source" not in e:
-            # Legacy format: bare "receptacle" key treated as destination
-            order[e["receptacle"]] = e.get("order", 999)
-    return lambda rec: (order.get(rec, 999), rec)  # secondary sort by name for stability
+            # Legacy format
+            order[e["receptacle"]] = e.get("order", 0)
+    # Negate so that higher order sorts first; default 0 = lowest priority
+    return lambda rec: (-order.get(rec, 0), rec)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -768,16 +779,16 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, b
     #
     # Supported pick-priority types (all additive):
     #   {"color": "green", "order": 2}           → all green parts get +2
-    #   {"part_name": "Part_3", "order": 1}      → Part_3 gets +1
+    #   {"part": "Part_3", "order": 1}            → Part_3 gets +1
     #   {"fragility": "fragile", "order": 3}     → all fragile parts get +3
-    #   {"source": "Container_2", "order": 2}    → parts in Container_2 get +2
+    #   {"container": "Container_2", "order": 2}  → parts in Container_2 get +2
     #
-    # Destination priority uses RANK (1 = fill first), not additive score:
-    #   {"destination": "Kit_1", "order": 1}     → fill Kit_1 first
-    #   {"destination": "Container_3", "order": 2} → fill Container_3 second
+    # Kit/container priority uses RANK (1 = fill first), not additive score:
+    #   {"kit": "Kit_1", "order": 1}              → fill Kit_1 first
+    #   {"container": "Container_3", "order": 2}  → fill Container_3 second
     #
-    # Legacy format: {"receptacle": "X", "order": N} is auto-classified as
-    # "destination" if X is an output, or "source" if X is an input.
+    # Legacy keys ("part_name", "source", "destination", "receptacle") are
+    # also supported for backward compatibility.
 
     priority_entries = preds.get("priority", [])
     slot_belongs     = state.get("slot_belongs_to", {})
@@ -839,20 +850,39 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, b
     # Initialise total-cost to zero (required by :action-costs)
     init.append("    (= (total-cost) 0)")
 
-    # ── destination (output) priority assignments ────────────────────────
-    # Destination priorities control fill order (rank-based, 1 = first).
-    # Supports both new "destination" key and legacy "receptacle" key.
-    rec_to_level: Dict[str, int] = {}
+    # ── kit/container (output) priority assignments ────────────────────
+    # Kit/container priorities control fill order.
+    # User-facing: HIGHER order = filled FIRST (consistent with pick priorities).
+    # PDDL-internal: LOWER level = filled FIRST (cost-based planner).
+    # We collect the user orders first, then convert to PDDL levels below.
+    _user_rec_order: Dict[str, int] = {}
     for e in priority_entries:
-        if "destination" in e:
+        if "kit" in e:
+            rec_name = _to_pddl_name(e["kit"])
+            if e["kit"] in outputs:
+                _user_rec_order[rec_name] = int(e["order"])
+        elif "container" in e:
+            rec_name_raw = e["container"]
+            if rec_name_raw in outputs:
+                _user_rec_order[_to_pddl_name(rec_name_raw)] = int(e["order"])
+        elif "destination" in e:
+            # Legacy format
             rec_name = _to_pddl_name(e["destination"])
             if e["destination"] in outputs:
-                rec_to_level[rec_name] = int(e["order"])
+                _user_rec_order[rec_name] = int(e["order"])
         elif "receptacle" in e and "source" not in e:
             # Legacy format: bare "receptacle" key → auto-classify
             rec_name_raw = e["receptacle"]
             if rec_name_raw in outputs:
-                rec_to_level[_to_pddl_name(rec_name_raw)] = int(e["order"])
+                _user_rec_order[_to_pddl_name(rec_name_raw)] = int(e["order"])
+
+    # Convert to PDDL levels: highest user order → level 1, next → level 2, etc.
+    rec_to_level: Dict[str, int] = {}
+    if _user_rec_order:
+        sorted_recs = sorted(_user_rec_order.keys(),
+                             key=lambda r: (-_user_rec_order[r], r))
+        for idx, rec_name in enumerate(sorted_recs, start=1):
+            rec_to_level[rec_name] = idx
 
     workspace_cfg = state.get("workspace", {})
     fill_order = (workspace_cfg.get("fill_order") or "").lower()
@@ -1197,8 +1227,8 @@ def _goal_kitting(state: Dict[str, Any]) -> List[str]:
     
     Universal recipes are expanded to all kits with role=output.
     
-    Receptacle priority (from priority list with "destination" or legacy "receptacle" key):
-      - [{"destination": "Kit_1", "order": 1}, {"destination": "Kit_2", "order": 2}]
+    Receptacle priority (from priority list with "kit"/"container" or legacy "destination"/"receptacle" key):
+      - [{"kit": "Kit_1", "order": 1}, {"kit": "Kit_2", "order": 2}]
       - Lower order = higher priority (filled first)
       - This naturally achieves "finish Kit_1 before Kit_2" behavior
     """

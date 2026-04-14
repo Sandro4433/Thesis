@@ -932,8 +932,18 @@ class RobotGUI:
             # Priority
             prio = preds.get("priority", [])
             if prio:
+                def _prio_label(e):
+                    """Format a single priority entry for display."""
+                    order = e.get("order", 0)
+                    # Check each type key (new names first, then legacy)
+                    for key in ("color", "kit", "container", "part",
+                                "fragility", "destination", "source",
+                                "part_name"):
+                        if key in e:
+                            return f"{e[key]} (#{order})"
+                    return f"? (#{order})"
                 prio_str = ", ".join(
-                    f"{e.get('color')} (#{e.get('order')})"
+                    _prio_label(e)
                     for e in sorted(prio, key=lambda x: x.get("order", 0))
                 )
             else:
