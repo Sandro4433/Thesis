@@ -125,6 +125,7 @@ class RobotGUI:
 
         # ── state ─────────────────────────────────────────────────────────────
         self._busy              = False
+        self._cancel_event      = threading.Event()   # signal to abort LLM call
         self._img_mtime         = 0.0
         self._photo_ref: Optional[Any] = None   # prevent GC of PhotoImage
         self._image_ready       = False          # True only after a new image is taken this session
@@ -132,7 +133,7 @@ class RobotGUI:
         # scene-routing state
         self._config_from_memory   = False   # show placeholder instead of image
         self._in_configure_mode    = False   # only Done in button bar
-        self._in_update_mode       = False   # True during "Update Config" (enables Recapture)
+        self._in_update_mode       = False   # True during "Update Config" (split view)
         self._first_menu_shown     = False   # greeting shown exactly once
         self._current_mode: str    = ""      # "reconfig" | "motion" | "execute"
         self._reconfig_sub: str    = ""      # pre-selected reconfig sub-option
@@ -215,7 +216,7 @@ class RobotGUI:
 
     def _build_chat_panel(self, parent: tk.PanedWindow) -> None:
         left = tk.Frame(parent, bg=C["bg_main"])
-        parent.add(left, stretch="always", minsize=320)
+        parent.add(left, stretch="always", minsize=300)  # ← DRAG LIMIT: chat min width
 
         tk.Label(
             left, text="CONVERSATION",
@@ -261,18 +262,6 @@ class RobotGUI:
             command=self._cancel_configure,
         )
         # (packed/forgotten dynamically — rightmost position)
-
-        # Recapture button (shown next to Done during update mode)
-        self._recapture_btn = tk.Button(
-            input_wrap, text="Recapture",
-            bg=C["btn_2"], fg=C["fg_white"],
-            font=(FONT, 10, "bold"),
-            relief=tk.FLAT, bd=0, padx=16, pady=9,
-            highlightthickness=0,
-            activebackground=C["btn_2"], activeforeground=C["fg_white"],
-            command=self._request_recapture,
-        )
-        # (packed/forgotten dynamically)
 
         # Send button — packed RIGHT, appears left of Done
         self._send = tk.Button(
@@ -375,7 +364,7 @@ class RobotGUI:
         """Right half: scene description (top) + vision image (bottom) + button row."""
         right = tk.Frame(parent, bg=C["bg_main"])
         self._right_panel = right   # keep reference for overlay
-        parent.add(right, stretch="always", minsize=320)
+        parent.add(right, stretch="always", minsize=320)  # ← DRAG LIMIT: right panel min width
 
         # vertical PanedWindow inside right half
         self._vpane = tk.PanedWindow(
@@ -391,7 +380,7 @@ class RobotGUI:
 
         # ── top: scene description + information (side by side) ────────────────
         scene_outer = tk.Frame(self._vpane, bg=C["bg_main"])
-        self._vpane.add(scene_outer, stretch="always", minsize=120)
+        self._vpane.add(scene_outer, stretch="always", minsize=120)  # ← DRAG LIMIT: top section min height
 
         # Horizontal PanedWindow to split scene desc (left) and info (right)
         self._top_hpane = tk.PanedWindow(
@@ -407,7 +396,7 @@ class RobotGUI:
 
         # ── left: scene description ───────────────────────────────────────────
         scene_left = tk.Frame(self._top_hpane, bg=C["bg_main"])
-        self._top_hpane.add(scene_left, stretch="always", minsize=160)
+        self._top_hpane.add(scene_left, stretch="always", minsize=160)  # ← DRAG LIMIT: scene desc min width
 
         tk.Label(
             scene_left, text="SCENE DESCRIPTION",
@@ -453,11 +442,11 @@ class RobotGUI:
             _w.bind("<Button-5>", _scene_mousewheel)
 
         self._scene_placeholder_active = False
-        self._set_scene_placeholder("No scene loaded yet.\nRun Reconfigure to populate.")
+        self._set_scene_placeholder("No scene\nloaded yet.\nRun Reconfigure\nto populate.")
 
         # ── right: information panel ──────────────────────────────────────────
         info_right = tk.Frame(self._top_hpane, bg=C["bg_main"])
-        self._top_hpane.add(info_right, stretch="always", minsize=160)
+        self._top_hpane.add(info_right, stretch="always", minsize=500)  # ← DRAG LIMIT: info panel min width
 
         tk.Label(
             info_right, text="INFORMATION",
@@ -501,7 +490,7 @@ class RobotGUI:
         # ── bottom: vision image ──────────────────────────────────────────────
         self._img_outer = tk.Frame(self._vpane, bg=C["bg_main"])
         img_outer = self._img_outer
-        self._vpane.add(img_outer, stretch="always", minsize=120)
+        self._vpane.add(img_outer, stretch="always", minsize=120)  # ← DRAG LIMIT: vision section min height
 
         tk.Label(
             img_outer, text="VISION",
@@ -587,18 +576,19 @@ class RobotGUI:
         self._img_outer.bind("<Configure>", _on_img_resize)
 
     def _init_sash_positions(self) -> None:
-        """Set initial pane split ratios and install drag limits.
+        """Set initial pane split ratios.
 
-        SASH LIMITS — adjust min/max fractions here:
-          _hpane      (chat | right)          : line ~600  MIN_LEFT / MAX_LEFT
-          _vpane      (scene+info | vision)   : line ~610  MIN_TOP  / MAX_TOP
-          _top_hpane  (scene desc | info)     : line ~620  MIN_SCENE / MAX_SCENE
+        DRAG LIMITS are controlled by the ``minsize`` parameter on each
+        ``.add()`` call (see ``_build_chat_panel`` and ``_build_right_panel``).
+        Tk enforces these natively during sash dragging — no extra bindings
+        are needed.  To change how far a pane can be dragged, adjust the
+        ``minsize`` value on the corresponding ``.add()`` call.
         """
         # ── initial positions ─────────────────────────────────────────────
         try:
             total_w = self._hpane.winfo_width()
             if total_w > 10:
-                self._hpane.sash_place(0, int(total_w * 0.33), 0)
+                self._hpane.sash_place(0, int(total_w * 0.43), 0)
         except Exception:
             pass
         try:
@@ -613,46 +603,6 @@ class RobotGUI:
                 self._top_hpane.sash_place(0, int(top_w * 0.1), 0)
         except Exception:
             pass
-
-        # ── drag limits (fraction of total size) ──────────────────────────
-        # _hpane: chat (left) vs right panel — horizontal sash
-        MIN_LEFT = 0.20;  MAX_LEFT = 0.55                          # ← ADJUST HERE
-        def _clamp_hpane(event):
-            w = self._hpane.winfo_width()
-            if w < 10: return
-            lo, hi = int(w * MIN_LEFT), int(w * MAX_LEFT)
-            try:
-                x = self._hpane.sash_coord(0)[0]
-                if x < lo: self._hpane.sash_place(0, lo, 0)
-                elif x > hi: self._hpane.sash_place(0, hi, 0)
-            except Exception: pass
-        self._hpane.bind("<B1-Motion>", _clamp_hpane)
-
-        # _vpane: scene+info (top) vs vision (bottom) — vertical sash
-        MIN_TOP = 0.20;  MAX_TOP = 0.70                            # ← ADJUST HERE
-        def _clamp_vpane(event):
-            h = self._vpane.winfo_height()
-            if h < 10: return
-            lo, hi = int(h * MIN_TOP), int(h * MAX_TOP)
-            try:
-                y = self._vpane.sash_coord(0)[1]
-                if y < lo: self._vpane.sash_place(0, 0, lo)
-                elif y > hi: self._vpane.sash_place(0, 0, hi)
-            except Exception: pass
-        self._vpane.bind("<B1-Motion>", _clamp_vpane)
-
-        # _top_hpane: scene description (left) vs info (right) — horizontal sash
-        MIN_SCENE = 0.15;  MAX_SCENE = 0.60                        # ← ADJUST HERE
-        def _clamp_top_hpane(event):
-            w = self._top_hpane.winfo_width()
-            if w < 10: return
-            lo, hi = int(w * MIN_SCENE), int(w * MAX_SCENE)
-            try:
-                x = self._top_hpane.sash_coord(0)[0]
-                if x < lo: self._top_hpane.sash_place(0, lo, 0)
-                elif x > hi: self._top_hpane.sash_place(0, hi, 0)
-            except Exception: pass
-        self._top_hpane.bind("<B1-Motion>", _clamp_top_hpane)
 
     # ─────────────────────────────────────────────────────────────────────────
     # IO redirection & patching
@@ -787,6 +737,9 @@ class RobotGUI:
             fg=self._status_color,
         )
 
+        # Unbind old resize handler before destroying children
+        self._info_body_frame.unbind("<Configure>")
+
         # Clear body
         for w in self._info_body_frame.winfo_children():
             w.destroy()
@@ -829,6 +782,8 @@ class RobotGUI:
 
             # Dynamic wraplength on resize
             def _on_tbl_resize(event, _tbl=tbl, _labels=val_labels):
+                if not _tbl.winfo_exists():
+                    return
                 try:
                     bbox = _tbl.grid_bbox(column=2)
                     col2_w = bbox[2] if bbox else event.width // 2
@@ -836,7 +791,8 @@ class RobotGUI:
                     col2_w = event.width // 2
                 avail = max(col2_w - 20, 80)
                 for vl in _labels:
-                    vl.configure(wraplength=avail)
+                    if vl.winfo_exists():
+                        vl.configure(wraplength=avail)
             tbl.bind("<Configure>", _on_tbl_resize)
 
         else:
@@ -850,7 +806,8 @@ class RobotGUI:
             txt_lbl.pack(fill=tk.BOTH, expand=True)
 
             def _on_txt_resize(event, _lbl=txt_lbl):
-                _lbl.configure(wraplength=max(event.width - 30, 80))
+                if _lbl.winfo_exists():
+                    _lbl.configure(wraplength=max(event.width - 30, 80))
             self._info_body_frame.bind("<Configure>", _on_txt_resize)
 
     def _set_info_main_menu(self) -> None:
@@ -1040,6 +997,8 @@ class RobotGUI:
 
             # Dynamic wraplength for scene value labels
             def _on_scene_tbl_resize(event, _tbl=table, _labels=_scene_val_labels):
+                if not _tbl.winfo_exists():
+                    return
                 try:
                     bbox = _tbl.grid_bbox(column=2)
                     col2_w = bbox[2] if bbox else event.width // 2
@@ -1047,7 +1006,8 @@ class RobotGUI:
                     col2_w = event.width // 2
                 avail = max(col2_w - 20, 80)
                 for vl in _labels:
-                    vl.configure(wraplength=avail)
+                    if vl.winfo_exists():
+                        vl.configure(wraplength=avail)
             table.bind("<Configure>", _on_scene_tbl_resize)
 
         except Exception as exc:
@@ -1174,37 +1134,11 @@ class RobotGUI:
 
     def _show_cancel_bar(self) -> None:
         """Show Done + Send in the input row. Done rightmost."""
-        self._recapture_btn.pack_forget()
         self._send.pack_forget()
         self._done_btn.pack_forget()
         # Pack RIGHT in order: first = rightmost
         self._done_btn.pack(side=tk.RIGHT, padx=(2, 6), pady=2)
         self._send.pack(side=tk.RIGHT, padx=(4, 2), pady=2)
-
-    def _show_update_bar(self) -> None:
-        """Show Recapture + Done + Send in the input row. Done rightmost."""
-        self._recapture_btn.pack_forget()
-        self._send.pack_forget()
-        self._done_btn.pack_forget()
-        # Pack RIGHT in order: first = rightmost
-        self._done_btn.pack(side=tk.RIGHT, padx=(2, 6), pady=2)
-        self._recapture_btn.pack(side=tk.RIGHT, padx=(2, 2), pady=2)
-        self._send.pack(side=tk.RIGHT, padx=(4, 2), pady=2)
-
-    def _request_recapture(self) -> None:
-        """Send the recapture sentinel through the input queue so the
-        backend re-runs vision while keeping the original old config."""
-        self._set_input(False)
-        self._append("YOU: Recapture image\n", "robot")
-        self._set_status("Recapturing...", C["fg_warn"])
-        # Reset the new-scan label to show "waiting" while vision runs
-        self._split_lbl_new.configure(
-            image="", text="Recapturing …",
-            fg=C["fg_muted"], font=(FONT, 10, "italic"))
-        self._split_photo_new = None
-        self._last_render_size = (0, 0)
-        # Send sentinel — the backend worker thread is blocked on input()
-        self._in_resp_q.put("__RECAPTURE__")
 
     def _show_execute_bar(self) -> None:
         """Show Cancel + Log buttons during robot execution."""
@@ -1539,7 +1473,8 @@ class RobotGUI:
         self._show_main_menu()
 
     def _cancel_configure(self) -> None:
-        """Send 'done' to the worker, as if the user typed it."""
+        """Send 'done' to the worker and signal any in-flight LLM call to abort."""
+        self._cancel_event.set()
         self._append("YOU: done\n", "robot")
         self._in_resp_q.put("done")
 
@@ -1557,18 +1492,15 @@ class RobotGUI:
     def _show_text_input(self) -> None:
         self._show_input_row()
         if self._in_configure_mode:
-            if self._in_update_mode:
-                self._show_update_bar()
-            else:
-                self._show_cancel_bar()
+            self._show_cancel_bar()
         self._set_input(True)
 
     def _set_input(self, enabled: bool) -> None:
         s = tk.NORMAL if enabled else tk.DISABLED
         self._input_text.configure(state=s)
         self._send.configure(state=s)
-        self._done_btn.configure(state=s)
-        self._recapture_btn.configure(state=s)
+        # Done button stays always enabled so the user can cancel during LLM thinking
+        self._done_btn.configure(state=tk.NORMAL)
         if enabled:
             self._input_text.focus_set()
 
@@ -1583,7 +1515,6 @@ class RobotGUI:
         self._input_sb.pack_forget()
         self._send.pack_forget()
         self._done_btn.pack_forget()
-        self._recapture_btn.pack_forget()
         self._input_outer.pack_forget()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1594,6 +1525,7 @@ class RobotGUI:
         if self._busy:
             return
         self._busy = True
+        self._cancel_event.clear()
         self._current_mode = mode
         self._in_configure_mode = True
 
@@ -1616,6 +1548,11 @@ class RobotGUI:
         # Re-apply redirect here — some imports (rospy, etc.) can reset sys.stdout.
         sys.stdout = _GUIStream(self._out_q)
         sys.stderr = _GUIStream(self._out_q)
+
+        # Make the cancel event available to API_Main for aborting LLM calls
+        import Communication_Module.API_Main as _api
+        _api._cancel_event = self._cancel_event
+
         try:
             if mode == "execute":
                 self._run_execute_subprocess()
@@ -1659,9 +1596,19 @@ class RobotGUI:
         except SystemExit:
             pass
         except Exception as exc:
-            print(f"\n[ERR] Unexpected error: {exc}\n")
-            print(traceback.format_exc())
+            # LLMCancelled is expected when the user presses Done during an
+            # LLM call — don't print a scary error for that.
+            from Communication_Module.API_Main import LLMCancelled
+            if not isinstance(exc, LLMCancelled):
+                print(f"\n[ERR] Unexpected error: {exc}\n")
+                print(traceback.format_exc())
         finally:
+            # Drain any leftover responses so the next session starts clean
+            while not self._in_resp_q.empty():
+                try:
+                    self._in_resp_q.get_nowait()
+                except queue.Empty:
+                    break
             self._out_q.put(("done", None))
 
     def _run_execute_subprocess(self) -> None:

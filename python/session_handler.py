@@ -333,8 +333,37 @@ def load_scene(client: OpenAI, mode: str) -> Optional[dict]:
 # Update Scene pipeline  (vision → auto-match → LLM dialogue → merge → save)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Sentinel returned by run_update_dialogue when the user requests a recapture
-RECAPTURE_SENTINEL = "__RECAPTURE__"
+
+def _image_ok(text: str) -> Optional[bool]:
+    """Interpret the user's response to 'Is the new image okay?'
+
+    Returns True  → image accepted
+            False → wants recapture
+            None  → ambiguous (ask again)
+    """
+    t = text.strip().lower()
+    if not t:
+        return None
+
+    # Positive signals
+    pos = {"yes", "y", "ye", "yep", "yeah", "yea", "yup", "ja", "jo",
+           "ok", "okay", "sure", "correct", "fine", "good", "great",
+           "perfect", "looks good", "looks fine", "looks ok", "looks okay",
+           "that works", "go ahead", "do it", "proceed", "accept",
+           "confirmed", "confirm", "alright"}
+    if t in pos or any(t.startswith(p) for p in ("looks good", "looks fine",
+                                                   "looks ok", "that works")):
+        return True
+
+    # Negative signals
+    neg = {"no", "n", "nah", "nope", "nej", "wrong", "bad", "redo",
+           "again", "retake", "recapture", "another", "retry", "re-take",
+           "not ok", "not okay", "not good", "no good"}
+    if t in neg or any(t.startswith(p) for p in ("not ok", "not good",
+                                                   "no good", "take another")):
+        return False
+
+    return None
 
 
 def run_update_pipeline(client: OpenAI) -> None:
@@ -342,11 +371,9 @@ def run_update_pipeline(client: OpenAI) -> None:
     Full update-scene pipeline:
       1. Run vision subprocess (via prepare_update)
       2. Auto-match parts and re-annotate image
+      2b. Ask user if the image looks okay; recapture if not
       3. Hand off to the LLM for user dialogue (API_Main)
       4. Apply confirmed mapping and save
-
-    If the user requests a recapture during the dialogue, steps 1-3 are
-    repeated with a fresh vision scan while keeping the original old_state.
     """
     from Configuration_Module.Update_Scene import (
         prepare_update,
@@ -367,33 +394,55 @@ def run_update_pipeline(client: OpenAI) -> None:
         print("⚠  Update aborted (missing state files).")
         return
 
-    # ── Recapture loop ─────────────────────────────────────────────────────
+    # ── Image confirmation + recapture loop ────────────────────────────────
     while True:
         # ── Step 2: auto-match + image re-annotation ───────────────────
         image_rename_map = redraw_image_with_auto_matches(old_state, fresh_state)
 
-        # ── Step 3: LLM dialogue ───────────────────────────────────────
-        mapping = run_update_dialogue(
-            client, old_state, fresh_state, image_rename_map,
-        )
+        # ── Step 2b: ask user if the captured image is acceptable ──────
+        print("\nASSISTANT:\nA new image has been captured. "
+              "Does the image look okay, or should I take another picture?\n")
 
-        # ── Recapture requested? ───────────────────────────────────────
-        if mapping == RECAPTURE_SENTINEL:
-            print("\n── Recapturing image … ──\n")
-            try:
-                fresh_state = prepare_recapture(old_state)
-            except RuntimeError as e:
-                print(f"\n❌  Recapture failed: {e}\n")
-                print("Continuing with previous scan.\n")
-            continue  # loop back to step 2
+        while True:
+            answer = input("YOU: ").strip()
+            if not answer:
+                continue
+            # Allow "done" to abort the whole update
+            if answer.lower() in ("done", "exit", "quit", "cancel"):
+                print("⚠  Update cancelled.\n")
+                return
+            verdict = _image_ok(answer)
+            if verdict is True:
+                break
+            elif verdict is False:
+                # ── Recapture ──────────────────────────────────────
+                print("\n── Recapturing image … ──\n")
+                try:
+                    fresh_state = prepare_recapture(old_state)
+                except RuntimeError as e:
+                    print(f"\n❌  Recapture failed: {e}\n")
+                    print("Continuing with previous scan.\n")
+                break  # break inner loop, outer loop will re-run step 2
+            else:
+                # Ambiguous — ask again
+                print("\nASSISTANT:\nSorry, I didn't understand. "
+                      "Is the image okay? (yes / no)\n")
 
-        # ── Step 4: apply mapping and save ─────────────────────────────
-        if mapping is not None:
-            apply_update_mapping(old_state, fresh_state, mapping, image_rename_map)
-            print("✅  Update complete.\n")
-        else:
-            print("⚠  Update dialogue was cancelled.\n")
-        break
+        if verdict is True:
+            break  # image accepted — proceed to LLM dialogue
+        # verdict is False → outer loop repeats with new fresh_state
+
+    # ── Step 3: LLM dialogue ───────────────────────────────────────────
+    mapping = run_update_dialogue(
+        client, old_state, fresh_state, image_rename_map,
+    )
+
+    # ── Step 4: apply mapping and save ─────────────────────────────────
+    if mapping is not None:
+        apply_update_mapping(old_state, fresh_state, mapping, image_rename_map)
+        print("✅  Update complete.\n")
+    else:
+        print("⚠  Update dialogue was cancelled.\n")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

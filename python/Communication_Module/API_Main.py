@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -26,6 +27,20 @@ from openai import OpenAI
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
+
+# ── Cancel event (set by the GUI when the user presses Done during LLM call) ─
+_cancel_event: Optional[threading.Event] = None
+
+
+class LLMCancelled(Exception):
+    """Raised when an in-flight LLM call is aborted by the user."""
+    pass
+
+
+def _check_cancelled():
+    """Raise LLMCancelled if the cancel event has been set."""
+    if _cancel_event is not None and _cancel_event.is_set():
+        raise LLMCancelled("LLM call cancelled by user")
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
@@ -69,6 +84,36 @@ from Communication_Module.capacity_tools import (
 # LLM call helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _cancellable_api_call(client, **kwargs):
+    """Run a blocking OpenAI API call in a sub-thread so the cancel event
+    can interrupt the wait.  Returns the response or raises LLMCancelled."""
+    result = [None]
+    error  = [None]
+    done   = threading.Event()
+
+    def _call():
+        try:
+            result[0] = client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            error[0] = exc
+        finally:
+            done.set()
+
+    t = threading.Thread(target=_call, daemon=True)
+    t.start()
+
+    # Poll every 0.25 s so we notice the cancel event quickly
+    while not done.wait(timeout=0.25):
+        _check_cancelled()
+
+    # If we get here, the call finished — but check cancel once more
+    _check_cancelled()
+
+    if error[0] is not None:
+        raise error[0]
+    return result[0]
+
+
 def chat(
     client: OpenAI,
     messages: List[Dict[str, str]],
@@ -82,6 +127,8 @@ def chat(
     offered. When the LLM calls one, the tool is executed locally and the
     result is fed back so the LLM can continue.  This loop runs at most
     MAX_TOOL_ROUNDS times to avoid runaway calls.
+
+    Raises LLMCancelled if the user presses Done during the call.
     """
     MAX_TOOL_ROUNDS = 3
     tools = (
@@ -93,13 +140,15 @@ def chat(
     working_messages = list(messages)
 
     for _ in range(MAX_TOOL_ROUNDS + 1):
+        _check_cancelled()
+
         kwargs: Dict[str, Any] = dict(
             model=MODEL, messages=working_messages, temperature=temperature
         )
         if tools:
             kwargs["tools"] = tools
 
-        resp = client.chat.completions.create(**kwargs)
+        resp = _cancellable_api_call(client, **kwargs)
         choice = resp.choices[0]
 
         # If the LLM produced a normal text response, we're done
@@ -574,7 +623,9 @@ def _chat_update(
     leaves the mapping field empty (a common compliance failure), we extract
     the mapping from the message text.
     """
-    resp = client.chat.completions.create(
+    _check_cancelled()
+    resp = _cancellable_api_call(
+        client,
         model=MODEL,
         messages=messages,
         temperature=temperature,
@@ -787,11 +838,8 @@ def run_update_dialogue(
 
     Returns
     -------
-    mapping : dict of user-confirmed overrides, None if cancelled,
-              or the string "__RECAPTURE__" if the user wants a new scan.
+    mapping : dict of user-confirmed overrides, or None if cancelled / aborted.
     """
-    from session_handler import RECAPTURE_SENTINEL
-
     prompt_text = _build_update_prompt(old_state, fresh_state, image_rename_map)
     messages: List[Dict[str, str]] = [
         {
@@ -931,82 +979,84 @@ def run_update_dialogue(
     # Only applied once the user says "done".
     accumulated_mapping: Dict[str, str] = {}
 
-    while True:
-        msg_text, turn_mapping = _chat_update(client, messages)
-        print(f"ASSISTANT:\n{msg_text}\n")
-        if turn_mapping:
-            print(f"  [Proposed mapping: {json.dumps(turn_mapping)}]")
-
-        # Record the assistant turn in conversation history.
-        messages.append({"role": "assistant", "content": msg_text})
-
-        user = input("YOU: ").strip()
-
-        # ── "done" / empty → apply all accumulated overrides and exit ────
-        if not user or user.lower() in ("done", "skip"):
-            if accumulated_mapping:
-                print(f"\n  Applying mapping: {json.dumps(accumulated_mapping)}")
-            else:
-                print("\n  No overrides — accepting auto-matches only.")
-            return accumulated_mapping
-
-        # ── Recapture request ────────────────────────────────────────────
-        if user == RECAPTURE_SENTINEL:
-            print("\n  Recapture requested — restarting vision …\n")
-            return RECAPTURE_SENTINEL
-
-        # ── "yes" → validate, accumulate, and let the LLM ask about more.
-        if is_yes(user):
+    try:
+        while True:
+            msg_text, turn_mapping = _chat_update(client, messages)
+            print(f"ASSISTANT:\n{msg_text}\n")
             if turn_mapping:
-                validation_issues = _validate_mapping_proposal(
-                    turn_mapping, accumulated_mapping,
-                    old_state, fresh_state, image_rename_map,
-                )
-                if validation_issues:
-                    # Bounce back to the LLM to resolve with the user
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "The system detected issues with the proposed "
-                            "mapping:\n"
-                            + "\n".join(f"- {i}" for i in validation_issues)
-                            + "\nPlease resolve these with me before "
-                            "re-proposing."
-                        ),
-                    })
-                    continue
+                print(f"  [Proposed mapping: {json.dumps(turn_mapping)}]")
 
-                # No issues — accumulate
-                conflicts = []
-                for k, v in turn_mapping.items():
-                    if k in accumulated_mapping and accumulated_mapping[k] != v:
-                        conflicts.append(
-                            f"  '{k}' was previously mapped to "
-                            f"'{accumulated_mapping[k]}', now to '{v}'"
-                        )
-                if conflicts:
-                    print("  ⚠  Override conflict (using latest):")
-                    for c in conflicts:
-                        print(c)
-                accumulated_mapping.update(turn_mapping)
-                print(f"  [Accumulated mapping: {json.dumps(accumulated_mapping)}]")
-            # Tell the LLM the user confirmed — it should ask about more changes.
-            messages.append({
-                "role": "user",
-                "content": (
-                    "Confirmed. (The mapping has been saved. "
-                    "Ask if there are more changes.)"
-                ),
-            })
-            continue
+            # Record the assistant turn in conversation history.
+            messages.append({"role": "assistant", "content": msg_text})
 
-        # ── "no" → reject the proposed mapping ──────────────────────────
-        if is_no(user):
-            messages.append({"role": "user", "content": "Rejected. Ask me again."})
-            continue
+            user = input("YOU: ").strip()
 
-        # ── anything else → pass through to the LLM ─────────────────────
-        messages.append({"role": "user", "content": user})
+            # ── "done" / empty → apply all accumulated overrides and exit ────
+            if not user or user.lower() in ("done", "skip"):
+                if accumulated_mapping:
+                    print(f"\n  Applying mapping: {json.dumps(accumulated_mapping)}")
+                else:
+                    print("\n  No overrides — accepting auto-matches only.")
+                return accumulated_mapping
+
+            # ── "yes" → validate, accumulate, and let the LLM ask about more.
+            if is_yes(user):
+                if turn_mapping:
+                    validation_issues = _validate_mapping_proposal(
+                        turn_mapping, accumulated_mapping,
+                        old_state, fresh_state, image_rename_map,
+                    )
+                    if validation_issues:
+                        # Bounce back to the LLM to resolve with the user
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "The system detected issues with the proposed "
+                                "mapping:\n"
+                                + "\n".join(f"- {i}" for i in validation_issues)
+                                + "\nPlease resolve these with me before "
+                                "re-proposing."
+                            ),
+                        })
+                        continue
+
+                    # No issues — accumulate
+                    conflicts = []
+                    for k, v in turn_mapping.items():
+                        if k in accumulated_mapping and accumulated_mapping[k] != v:
+                            conflicts.append(
+                                f"  '{k}' was previously mapped to "
+                                f"'{accumulated_mapping[k]}', now to '{v}'"
+                            )
+                    if conflicts:
+                        print("  ⚠  Override conflict (using latest):")
+                        for c in conflicts:
+                            print(c)
+                    accumulated_mapping.update(turn_mapping)
+                    print(f"  [Accumulated mapping: {json.dumps(accumulated_mapping)}]")
+                # Tell the LLM the user confirmed — it should ask about more changes.
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Confirmed. (The mapping has been saved. "
+                        "Ask if there are more changes.)"
+                    ),
+                })
+                continue
+
+            # ── "no" → reject the proposed mapping ──────────────────────────
+            if is_no(user):
+                messages.append({"role": "user", "content": "Rejected. Ask me again."})
+                continue
+
+            # ── anything else → pass through to the LLM ─────────────────────
+            messages.append({"role": "user", "content": user})
+
+    except LLMCancelled:
+        print("\n── LLM call aborted by user. ──\n")
+        if accumulated_mapping:
+            return accumulated_mapping
+        return None
 
     # Should not be reached, but for safety
     return accumulated_mapping
@@ -1027,8 +1077,6 @@ def run_conversation(
     Called by session_handler.run_session() after the scene has been loaded.
     All vision, execution, and config-loading logic is handled by the caller.
     """
-    import session_handler as sh
-
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": build_system_prompt(mode)},
         {
@@ -1041,12 +1089,28 @@ def run_conversation(
         },
     ]
 
+    mode_label = "Reconfiguration" if mode == "reconfig" else "Motion Sequence"
+    print(f"\n── Mode: {mode_label} ──\n")
+
+    try:
+        _run_conversation_loop(client, messages, mode, scene)
+    except LLMCancelled:
+        print("\n── LLM call aborted by user. ──\n")
+        return
+
+
+def _run_conversation_loop(
+    client: OpenAI,
+    messages: List[Dict[str, str]],
+    mode: str,
+    scene: Dict[str, Any],
+) -> None:
+    """Inner loop extracted so LLMCancelled can be caught cleanly."""
+    import session_handler as sh
+
     pending_sequence: Optional[List[List]] = None
     pending_changes: Optional[Dict[str, Any]] = None
     accumulated_changes: Dict[str, Any] = {}
-
-    mode_label = "Reconfiguration" if mode == "reconfig" else "Motion Sequence"
-    print(f"\n── Mode: {mode_label} ──\n")
 
     while True:
         # ── Get LLM response ─────────────────────────────────────────────
