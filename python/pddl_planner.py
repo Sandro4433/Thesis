@@ -419,22 +419,22 @@ def _compute_part_score(part: str, color: str, preds: Dict[str, Any],
                         fragility_map: Optional[Dict[str, str]] = None) -> int:
     """
     Additive priority score for a part.
-    Each applicable rule in the priority list contributes its 'order' value as a score.
-    Higher total score = higher priority = picked first.
+    Each applicable rule in the priority list contributes to the score.
+    LOWER user-facing order = HIGHER priority = picked FIRST (order 1 = top priority).
+
+    Internally the score is negated so that the rest of the planner can
+    keep its "higher internal score = higher priority" convention.
 
     Supported priority rule types (all additive):
-      - {"color": "green", "order": 2}           → all green parts get +2
-      - {"part": "Part_3", "order": 1}            → Part_3 gets +1
-      - {"fragility": "fragile", "order": 3}      → all fragile parts get +3
-      - {"container": "Container_2", "order": 2}  → all parts in Container_2 get +2
+      - {"color": "green", "order": 1}           → all green parts get highest priority
+      - {"part": "Part_3", "order": 2}            → Part_3 gets second-highest
+      - {"fragility": "fragile", "order": 1}      → all fragile parts get highest
+      - {"container": "Container_2", "order": 1}  → all parts in Container_2 get highest
 
-    Kit/container fill priority uses "kit"/"container" key and is rank-based
-    (not additive). It is handled separately and does NOT contribute to pick scores.
+    Kit/container fill priority uses "kit"/"container" key and is handled
+    separately. It does NOT contribute to pick scores.
 
     Legacy keys ("part_name", "source", "destination") are also supported.
-
-    Example: Part_3 is green and fragile, in Container_2.
-      color score = 2, fragility score = 3, part score = 1 → total = 6
     """
     score = 0
     part_frag = (fragility_map or {}).get(part, "normal")
@@ -444,49 +444,56 @@ def _compute_part_score(part: str, color: str, preds: Dict[str, Any],
         # Skip kit/container fill priorities — they control place ordering, not pick scoring
         if "kit" in e or "destination" in e:
             continue
+        # Negate: user order 1 (highest priority) → large internal score
+        order_val = int(e.get("order", 0))
+        if order_val <= 0:
+            continue
+        contribution = 1000 - order_val  # order 1 → 999, order 2 → 998, etc.
         if "color" in e and (e["color"] or "").lower() == color:
-            score += int(e.get("order", 0))
+            score += contribution
         elif ("part" in e and e["part"] == part) or \
              ("part_name" in e and e["part_name"] == part):
-            score += int(e.get("order", 0))
+            score += contribution
         elif "fragility" in e and (e["fragility"] or "").lower() == part_frag:
-            score += int(e.get("order", 0))
+            score += contribution
         elif ("container" in e and e["container"] == part_rec) or \
              ("source" in e and e["source"] == part_rec):
-            score += int(e.get("order", 0))
+            score += contribution
     return score
 
 
 def _priority_key(preds: Dict[str, Any]):
-    """Sort key for colors: higher score = sorted first (negated for ascending sort)."""
+    """Sort key for colors: lower user order = higher priority = sorted first."""
     score = {}
     for e in preds.get("priority", []):
         if "color" in e:
+            # Lower order = higher priority; use order directly for ascending sort
             score[(e["color"] or "").lower()] = int(e.get("order", 0))
-    return lambda color: -score.get((color or "").lower(), 0)
+    # Default 999 so unmentioned colors sort last
+    return lambda color: score.get((color or "").lower(), 999)
 
 
 def _destination_priority_key(preds: Dict[str, Any]):
     """Return sort key for output receptacles (kits/containers) based on priority list.
     
     Uses 'kit' and 'container' keys in priority entries.
-    HIGHER order = HIGHER priority = filled first (consistent with pick priorities).
+    LOWER order = HIGHER priority = filled first (order 1 = top priority).
     Falls back to legacy 'destination' and 'receptacle' keys for backward compatibility.
     """
     order = {}
     for e in preds.get("priority", []):
         if "kit" in e:
-            order[e["kit"]] = e.get("order", 0)
+            order[e["kit"]] = e.get("order", 999)
         elif "container" in e:
-            order[e["container"]] = e.get("order", 0)
+            order[e["container"]] = e.get("order", 999)
         elif "destination" in e:
             # Legacy format
-            order[e["destination"]] = e.get("order", 0)
+            order[e["destination"]] = e.get("order", 999)
         elif "receptacle" in e and "destination" not in e and "source" not in e:
             # Legacy format
-            order[e["receptacle"]] = e.get("order", 0)
-    # Negate so that higher order sorts first; default 0 = lowest priority
-    return lambda rec: (-order.get(rec, 0), rec)
+            order[e["receptacle"]] = e.get("order", 999)
+    # Lower order sorts first (ascending); default 999 = lowest priority
+    return lambda rec: (order.get(rec, 999), rec)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -772,18 +779,21 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, b
     init  = _build_common_init(state, standalone, virtual_slots, VIRTUAL)
     init += _build_compat_init(state, kits, containers)
 
-    # ── priority assignments (additive score system) ─────────────────────────
-    # Each PICK priority rule contributes its 'order' value as a SCORE
-    # (higher = more important, picked first).  A part that matches multiple
-    # rules gets the SUM of all applicable scores.
+    # ── priority assignments ─────────────────────────────────────────────────
+    # ALL priorities use: LOWER order number = HIGHER priority (order 1 = top).
     #
-    # Supported pick-priority types (all additive):
-    #   {"color": "green", "order": 2}           → all green parts get +2
-    #   {"part": "Part_3", "order": 1}            → Part_3 gets +1
-    #   {"fragility": "fragile", "order": 3}     → all fragile parts get +3
-    #   {"container": "Container_2", "order": 2}  → parts in Container_2 get +2
+    # Pick priorities are additive: a part matching multiple rules gets the
+    # combined effect.  Internally, user order values are converted to high
+    # internal scores (order 1 → 999, order 2 → 998, …) so the rest of the
+    # planner's "higher internal score = pick first" logic works unchanged.
     #
-    # Kit/container priority uses RANK (1 = fill first), not additive score:
+    # Supported pick-priority types:
+    #   {"color": "green", "order": 1}           → green parts = top priority
+    #   {"part": "Part_3", "order": 2}            → Part_3 = second priority
+    #   {"fragility": "fragile", "order": 1}     → fragile = top priority
+    #   {"container": "Container_2", "order": 1}  → parts in Container_2 = top
+    #
+    # Kit/container fill priority (order maps directly to PDDL level):
     #   {"kit": "Kit_1", "order": 1}              → fill Kit_1 first
     #   {"container": "Container_3", "order": 2}  → fill Container_3 second
     #
@@ -852,9 +862,9 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, b
 
     # ── kit/container (output) priority assignments ────────────────────
     # Kit/container priorities control fill order.
-    # User-facing: HIGHER order = filled FIRST (consistent with pick priorities).
-    # PDDL-internal: LOWER level = filled FIRST (cost-based planner).
-    # We collect the user orders first, then convert to PDDL levels below.
+    # User-facing: LOWER order = HIGHER priority = filled FIRST (order 1 = top).
+    # PDDL-internal: LOWER level = filled FIRST.
+    # Since both use lower = first, user order maps directly to PDDL level.
     _user_rec_order: Dict[str, int] = {}
     for e in priority_entries:
         if "kit" in e:
@@ -876,13 +886,11 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, b
             if rec_name_raw in outputs:
                 _user_rec_order[_to_pddl_name(rec_name_raw)] = int(e["order"])
 
-    # Convert to PDDL levels: highest user order → level 1, next → level 2, etc.
+    # User order maps directly to PDDL level (both use lower = first)
     rec_to_level: Dict[str, int] = {}
     if _user_rec_order:
-        sorted_recs = sorted(_user_rec_order.keys(),
-                             key=lambda r: (-_user_rec_order[r], r))
-        for idx, rec_name in enumerate(sorted_recs, start=1):
-            rec_to_level[rec_name] = idx
+        for rec_name, user_order in _user_rec_order.items():
+            rec_to_level[rec_name] = user_order
 
     workspace_cfg = state.get("workspace", {})
     fill_order = (workspace_cfg.get("fill_order") or "").lower()

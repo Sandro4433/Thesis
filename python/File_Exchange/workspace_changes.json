@@ -1,16 +1,12 @@
 {
   "priority": [
     {
-      "kit": "Kit_2",
-      "order": 3
-    },
-    {
-      "kit": "Kit_3",
-      "order": 2
-    },
-    {
-      "kit": "Kit_1",
+      "part": "Part_8",
       "order": 1
+    },
+    {
+      "part": "Part_13",
+      "order": 2
     }
   ]
 }

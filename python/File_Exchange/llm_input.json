@@ -4,11 +4,7 @@
     "batch_size": null
   },
   "objects": {
-    "kits": [
-      "Kit_1",
-      "Kit_2",
-      "Kit_3"
-    ],
+    "kits": [],
     "containers": [
       "Container_1",
       "Container_2",
@@ -20,11 +16,6 @@
       "Part_11",
       "Part_12",
       "Part_13",
-      "Part_14",
-      "Part_15",
-      "Part_16",
-      "Part_17",
-      "Part_18",
       "Part_2",
       "Part_3",
       "Part_4",
@@ -52,40 +43,22 @@
       "Container_3_Pos_3",
       "Container_3_Pos_4",
       "Container_3_Pos_5",
-      "Container_3_Pos_6",
-      "Kit_1_Pos_1",
-      "Kit_1_Pos_2",
-      "Kit_1_Pos_3",
-      "Kit_2_Pos_1",
-      "Kit_2_Pos_2",
-      "Kit_2_Pos_3",
-      "Kit_3_Pos_1",
-      "Kit_3_Pos_2",
-      "Kit_3_Pos_3"
+      "Container_3_Pos_6"
     ]
   },
   "slot_belongs_to": {
-    "Kit_1_Pos_1": "Kit_1",
-    "Kit_1_Pos_2": "Kit_1",
-    "Kit_1_Pos_3": "Kit_1",
     "Container_1_Pos_1": "Container_1",
     "Container_1_Pos_2": "Container_1",
     "Container_1_Pos_3": "Container_1",
     "Container_1_Pos_4": "Container_1",
     "Container_1_Pos_5": "Container_1",
     "Container_1_Pos_6": "Container_1",
-    "Kit_2_Pos_1": "Kit_2",
-    "Kit_2_Pos_2": "Kit_2",
-    "Kit_2_Pos_3": "Kit_2",
     "Container_2_Pos_1": "Container_2",
     "Container_2_Pos_2": "Container_2",
     "Container_2_Pos_3": "Container_2",
     "Container_2_Pos_4": "Container_2",
     "Container_2_Pos_5": "Container_2",
     "Container_2_Pos_6": "Container_2",
-    "Kit_3_Pos_1": "Kit_3",
-    "Kit_3_Pos_2": "Kit_3",
-    "Kit_3_Pos_3": "Kit_3",
     "Container_3_Pos_1": "Container_3",
     "Container_3_Pos_2": "Container_3",
     "Container_3_Pos_3": "Container_3",
@@ -96,88 +69,49 @@
   "predicates": {
     "at": [
       {
-        "part": "Part_10",
-        "slot": "Container_1_Pos_1"
-      },
-      {
-        "part": "Part_8",
+        "part": "Part_11",
         "slot": "Container_1_Pos_2"
       },
       {
-        "part": "Part_7",
+        "part": "Part_10",
         "slot": "Container_1_Pos_3"
       },
       {
-        "part": "Part_9",
+        "part": "Part_12",
         "slot": "Container_1_Pos_4"
       },
       {
-        "part": "Part_11",
-        "slot": "Container_1_Pos_5"
-      },
-      {
-        "part": "Part_12",
-        "slot": "Container_1_Pos_6"
-      },
-      {
-        "part": "Part_15",
-        "slot": "Container_2_Pos_1"
-      },
-      {
-        "part": "Part_13",
-        "slot": "Container_2_Pos_2"
-      },
-      {
-        "part": "Part_14",
+        "part": "Part_3",
         "slot": "Container_2_Pos_3"
       },
       {
-        "part": "Part_16",
+        "part": "Part_4",
         "slot": "Container_2_Pos_4"
       },
       {
-        "part": "Part_18",
-        "slot": "Container_2_Pos_5"
-      },
-      {
-        "part": "Part_17",
-        "slot": "Container_2_Pos_6"
-      },
-      {
-        "part": "Part_3",
+        "part": "Part_6",
         "slot": "Container_3_Pos_1"
       },
       {
-        "part": "Part_1",
+        "part": "Part_5",
         "slot": "Container_3_Pos_2"
       },
       {
-        "part": "Part_2",
-        "slot": "Container_3_Pos_3"
-      },
-      {
-        "part": "Part_4",
-        "slot": "Container_3_Pos_4"
-      },
-      {
-        "part": "Part_6",
-        "slot": "Container_3_Pos_5"
-      },
-      {
-        "part": "Part_5",
+        "part": "Part_7",
         "slot": "Container_3_Pos_6"
       }
     ],
     "slot_empty": [
-      "Kit_1_Pos_1",
-      "Kit_1_Pos_2",
-      "Kit_1_Pos_3",
-      "Kit_2_Pos_1",
-      "Kit_2_Pos_2",
-      "Kit_2_Pos_3",
-      "Kit_3_Pos_1",
-      "Kit_3_Pos_2",
-      "Kit_3_Pos_3"
+      "Container_1_Pos_1",
+      "Container_1_Pos_5",
+      "Container_1_Pos_6",
+      "Container_2_Pos_1",
+      "Container_2_Pos_2",
+      "Container_2_Pos_5",
+      "Container_2_Pos_6",
+      "Container_3_Pos_3",
+      "Container_3_Pos_4",
+      "Container_3_Pos_5"
     ],
     "role": [
       {
@@ -191,79 +125,23 @@
       {
         "object": "Container_3",
         "role": null
-      },
-      {
-        "object": "Kit_1",
-        "role": null
-      },
-      {
-        "object": "Kit_2",
-        "role": null
-      },
-      {
-        "object": "Kit_3",
-        "role": null
       }
     ],
     "color": [
       {
-        "part": "Part_10",
-        "color": "green"
-      },
-      {
-        "part": "Part_8",
-        "color": "green"
-      },
-      {
-        "part": "Part_7",
-        "color": "green"
-      },
-      {
-        "part": "Part_9",
-        "color": "green"
-      },
-      {
         "part": "Part_11",
-        "color": "green"
+        "color": "red"
+      },
+      {
+        "part": "Part_10",
+        "color": "red"
       },
       {
         "part": "Part_12",
-        "color": "green"
-      },
-      {
-        "part": "Part_15",
-        "color": "red"
-      },
-      {
-        "part": "Part_13",
-        "color": "red"
-      },
-      {
-        "part": "Part_14",
-        "color": "red"
-      },
-      {
-        "part": "Part_16",
-        "color": "red"
-      },
-      {
-        "part": "Part_18",
-        "color": "red"
-      },
-      {
-        "part": "Part_17",
         "color": "red"
       },
       {
         "part": "Part_3",
-        "color": "blue"
-      },
-      {
-        "part": "Part_1",
-        "color": "blue"
-      },
-      {
-        "part": "Part_2",
         "color": "blue"
       },
       {
@@ -272,11 +150,35 @@
       },
       {
         "part": "Part_6",
-        "color": "blue"
+        "color": "green"
       },
       {
         "part": "Part_5",
+        "color": "green"
+      },
+      {
+        "part": "Part_7",
+        "color": "green"
+      },
+      {
+        "part": "Part_1",
         "color": "blue"
+      },
+      {
+        "part": "Part_13",
+        "color": "red"
+      },
+      {
+        "part": "Part_2",
+        "color": "blue"
+      },
+      {
+        "part": "Part_8",
+        "color": "green"
+      },
+      {
+        "part": "Part_9",
+        "color": "green"
       }
     ],
     "priority": [],
@@ -286,184 +188,128 @@
   },
   "positions_xy": {
     "Container_1_Pos_1": [
-      0.4885,
-      0.3155
+      0.5162,
+      0.3161
     ],
     "Container_1_Pos_2": [
-      0.5438,
-      0.345
+      0.571,
+      0.3466
     ],
     "Container_1_Pos_3": [
-      0.5444,
-      0.415
+      0.5704,
+      0.4166
     ],
     "Container_1_Pos_4": [
-      0.4897,
-      0.4455
+      0.5151,
+      0.4461
     ],
     "Container_1_Pos_5": [
-      0.4344,
-      0.416
-    ],
-    "Container_1_Pos_6": [
-      0.4338,
-      0.346
-    ],
-    "Container_2_Pos_1": [
-      0.2706,
-      0.3158
-    ],
-    "Container_2_Pos_2": [
-      0.3255,
-      0.346
-    ],
-    "Container_2_Pos_3": [
-      0.3252,
-      0.416
-    ],
-    "Container_2_Pos_4": [
-      0.2701,
-      0.4458
-    ],
-    "Container_2_Pos_5": [
-      0.2152,
+      0.4604,
       0.4156
     ],
-    "Container_2_Pos_6": [
-      0.2155,
+    "Container_1_Pos_6": [
+      0.461,
       0.3456
     ],
+    "Container_2_Pos_1": [
+      0.0214,
+      0.199
+    ],
+    "Container_2_Pos_2": [
+      0.0814,
+      0.217
+    ],
+    "Container_2_Pos_3": [
+      0.0959,
+      0.2854
+    ],
+    "Container_2_Pos_4": [
+      0.0483,
+      0.3262
+    ],
+    "Container_2_Pos_5": [
+      -0.0117,
+      0.3082
+    ],
+    "Container_2_Pos_6": [
+      -0.0262,
+      0.2397
+    ],
     "Container_3_Pos_1": [
-      0.0489,
-      0.3226
+      0.3592,
+      0.1453
     ],
     "Container_3_Pos_2": [
-      0.1034,
-      0.3535
+      0.4214,
+      0.1375
     ],
     "Container_3_Pos_3": [
-      0.1021,
-      0.4235
+      0.4623,
+      0.1943
     ],
     "Container_3_Pos_4": [
-      0.0466,
-      0.4526
+      0.4352,
+      0.2508
     ],
     "Container_3_Pos_5": [
-      -0.0079,
-      0.4216
+      0.373,
+      0.2586
     ],
     "Container_3_Pos_6": [
-      -0.0066,
-      0.3516
-    ],
-    "Kit_1_Pos_1": [
-      0.6398,
-      0.2234
-    ],
-    "Kit_1_Pos_2": [
-      0.5933,
-      0.1855
-    ],
-    "Kit_1_Pos_3": [
-      0.6513,
-      0.1618
-    ],
-    "Kit_2_Pos_1": [
-      0.4996,
-      0.2132
-    ],
-    "Kit_2_Pos_2": [
-      0.4548,
-      0.1732
-    ],
-    "Kit_2_Pos_3": [
-      0.5138,
-      0.1522
-    ],
-    "Kit_3_Pos_1": [
-      0.358,
-      0.2091
-    ],
-    "Kit_3_Pos_2": [
-      0.3118,
-      0.1707
-    ],
-    "Kit_3_Pos_3": [
-      0.37,
-      0.1476
+      0.3321,
+      0.2018
     ],
     "Part_1": [
-      0.1035,
-      0.3648
+      0.3315,
+      0.4327
     ],
     "Part_10": [
-      0.4914,
-      0.3235
+      0.5763,
+      0.4234
     ],
     "Part_11": [
-      0.4342,
-      0.4237
+      0.5759,
+      0.3587
     ],
     "Part_12": [
-      0.4323,
-      0.3572
+      0.5189,
+      0.4563
     ],
     "Part_13": [
-      0.3273,
-      0.3565
-    ],
-    "Part_14": [
-      0.3267,
-      0.4232
-    ],
-    "Part_15": [
-      0.2694,
-      0.3246
-    ],
-    "Part_16": [
-      0.2686,
-      0.4562
-    ],
-    "Part_17": [
-      0.213,
-      0.3569
-    ],
-    "Part_18": [
-      0.2121,
-      0.4222
+      0.1785,
+      0.4449
     ],
     "Part_2": [
-      0.1017,
-      0.4308
+      0.2172,
+      0.3916
     ],
     "Part_3": [
-      0.0451,
-      0.3317
+      0.0941,
+      0.2932
     ],
     "Part_4": [
-      0.0435,
-      0.4614
+      0.0438,
+      0.3363
     ],
     "Part_5": [
-      -0.0116,
-      0.3631
+      0.427,
+      0.1452
     ],
     "Part_6": [
-      -0.0134,
-      0.4271
+      0.3613,
+      0.1519
     ],
     "Part_7": [
-      0.5478,
-      0.4218
+      0.3334,
+      0.2122
     ],
     "Part_8": [
-      0.5475,
-      0.3565
+      0.3061,
+      0.3453
     ],
     "Part_9": [
-      0.4917,
-      0.4545
+      0.1797,
+      0.3225
     ]
   }
 }

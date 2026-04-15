@@ -67,79 +67,81 @@ Allowed keys and values:
   "part_compatibility"             → see COMPATIBILITY FORMAT below
 
 PRIORITY FORMAT — FIVE PRIORITY TYPES:
-ALL priority types use the SAME convention: HIGHER number = HIGHER priority.
+ALL priority types use the SAME convention: LOWER number = HIGHER priority.
+Order 1 = top priority (happens first). Order 2 = second, etc.
 
   ┌─────────────────────────────────────────────────────────────────────────┐
-  │ TYPE 1: COLOR PRIORITY (pick score, additive)                         │
-  │   {"color": "red", "order": 2}                                        │
-  │   Use case: "do blue parts first", "do red and green before blue"     │
+  │ TYPE 1: COLOR PRIORITY (additive)                                     │
+  │   {"color": "red", "order": 1}                                        │
+  │   Use case: "do red parts first", "do red and green before blue"      │
   │   Works in: sorting (pick red parts first) and kitting (fill one      │
   │   color into kits before others when filling in parallel)             │
   ├─────────────────────────────────────────────────────────────────────────┤
   │ TYPE 2: KIT / CONTAINER PRIORITY (fill order)                         │
-  │   {"kit": "Kit_2", "order": 3}                                        │
+  │   {"kit": "Kit_2", "order": 1}                                        │
   │   {"container": "Container_3", "order": 2}                            │
   │   Use case: "fill Kit 2 first", "fill container 3 first"             │
-  │   Works in: sorting and kitting. Higher order = filled first.         │
+  │   Works in: sorting and kitting. Order 1 = filled first.             │
   │   Use "kit" for Kit_N targets, "container" for Container_N targets.   │
   ├─────────────────────────────────────────────────────────────────────────┤
-  │ TYPE 3: CONTAINER (PICK) PRIORITY (pick score, additive)              │
-  │   {"container": "Container_2", "order": 2}                            │
+  │ TYPE 3: CONTAINER (PICK) PRIORITY (additive)                          │
+  │   {"container": "Container_2", "order": 1}                            │
   │   Use case: "pick parts from container 2 first"                       │
   │   Works in: kitting (when same-color parts are in multiple containers │
   │   and you want to empty one container before the others)              │
   │   NOTE: "container" is used for both fill-order (output) and pick-    │
-  │   score (input). The execution engine determines which based on role. │
+  │   order (input). The execution engine determines which based on role. │
   ├─────────────────────────────────────────────────────────────────────────┤
-  │ TYPE 4: SPECIFIC PART PRIORITY (pick score, additive)                 │
+  │ TYPE 4: SPECIFIC PART PRIORITY (additive)                             │
   │   {"part": "Part_3", "order": 1}                                      │
   │   Use case: "use Part 3 and Part 14 before others"                    │
   │   Works in: sorting and kitting                                       │
   ├─────────────────────────────────────────────────────────────────────────┤
-  │ TYPE 5: FRAGILITY PRIORITY (pick score, additive)                     │
-  │   {"fragility": "fragile", "order": 3}                                │
+  │ TYPE 5: FRAGILITY PRIORITY (additive)                                 │
+  │   {"fragility": "fragile", "order": 1}                                │
   │   Use case: "use fragile parts first"                                 │
   │   Works in: sorting and kitting                                       │
   └─────────────────────────────────────────────────────────────────────────┘
 
-  Pick-type scores (color, container, part, fragility) from multiple rules
-  ADD TOGETHER for the same part.
+  Pick-type priorities (color, container, part, fragility) from multiple rules
+  ADD TOGETHER for the same part. A part matching order-1 color + order-1
+  fragility has a combined priority higher than a part matching only one.
 
 ⚠ UNIFORM CONVENTION — ALL TYPES:
-  "order" always means: HIGHER number = HIGHER priority = happens FIRST.
-  This applies to pick priorities AND kit/container fill order.
+  "order" always means: LOWER number = HIGHER priority = happens FIRST.
+  Order 1 is the HIGHEST priority. This applies to ALL five types.
 
 MAPPING FROM USER INTENT TO ORDER VALUES (pick priorities):
-  "red first, then green"       → red gets order 2, green gets order 1  (2 > 1, so red first)
-  "green first"                 → green gets order 2, others get order 1 or 0
-  "blue first, then red, then green" → blue: 3, red: 2, green: 1
+  "red first, then green"       → red gets order 1, green gets order 2
+  "green first"                 → green gets order 1
+  "blue first, then red, then green" → blue: 1, red: 2, green: 3
 
-  ⚠ WRONG: "red first" → red order 1, green order 2  ← THIS IS BACKWARDS. DO NOT DO THIS.
-  ✓ RIGHT: "red first" → red order 2, green order 1  ← higher score = picked first.
+  ⚠ WRONG: "red first" → red order 2, green order 1  ← THIS IS BACKWARDS. DO NOT DO THIS.
+  ✓ RIGHT: "red first" → red order 1, green order 2  ← order 1 = top priority.
 
 Combination example (all types can be mixed):
-  [{"color": "green", "order": 2}, {"part": "Part_3", "order": 1},
-   {"fragility": "fragile", "order": 3}, {"container": "Container_1", "order": 1}]
-  → A fragile green Part_3 in Container_1 gets 2+1+3+1=7 (highest priority).
+  [{"color": "green", "order": 1}, {"part": "Part_3", "order": 1},
+   {"fragility": "fragile", "order": 1}, {"container": "Container_1", "order": 1}]
+  → A fragile green Part_3 in Container_1 matches all four rules (highest combined priority).
 
 Kit/container fill order rules:
 - Sequential filling is the DEFAULT — add kit/container priorities only for non-default order.
 - If user says "fill evenly/in parallel" → omit kit/container priorities and set fill_order: "parallel".
 
 MAPPING FROM USER INTENT TO ORDER VALUES (kit/container fill priority):
-  Same convention as pick priorities: HIGHER number = filled FIRST.
+  Same convention as pick priorities: LOWER number = filled FIRST.
 
   "finish Kit_2 first, then Kit_3, then Kit_1"
-    → Kit_2 gets order 3, Kit_3 gets order 2, Kit_1 gets order 1
+    → Kit_2 gets order 1, Kit_3 gets order 2, Kit_1 gets order 3
   "fill Container_3 before Container_2"
-    → Container_3 gets order 2, Container_2 gets order 1
+    → Container_3 gets order 1, Container_2 gets order 2
   "prioritize Kit_1"
-    → Kit_1 gets order 2 (others get order 1 or no entry)
+    → Kit_1 gets order 1 (others get higher numbers or no entry)
 
-  ⚠ WRONG: "Kit_2 first" → Kit_2 order 1  ← THIS IS BACKWARDS. DO NOT DO THIS.
-  ✓ RIGHT: "Kit_2 first" → Kit_2 order 3  ← higher number = filled first.
+  ⚠ WRONG: "Kit_2 first" → Kit_2 order 3  ← THIS IS BACKWARDS. DO NOT DO THIS.
+  ✓ RIGHT: "Kit_2 first" → Kit_2 order 1  ← order 1 = filled first.
 
-Score rules:
+Priority rules:
 - NEVER invent scores. Only set priority when user EXPLICITLY states an order or preference.
 - If only one color → no color priority needed.
 - If only one kit/container → no kit/container priority needed.
@@ -501,11 +503,11 @@ Example (full kitting setup — "blue first, then red"):
   "Kit_0": {{"role": "output"}},
   "workspace": {{"operation_mode": "kitting"}},
   "kit_recipe": [{{"color": "blue", "quantity": 2}}, {{"color": "red", "quantity": 1}}],
-  "priority": [{{"color": "blue", "order": 2}}, {{"color": "red", "order": 1}}]
+  "priority": [{{"color": "blue", "order": 1}}, {{"color": "red", "order": 2}}]
 }}
 ```
 
-Example (full multi-source kitting):
+Example (full multi-source kitting — fill Kit_1 first):
 ```changes
 {{
   "Container_2": {{"role": "input"}},
@@ -513,7 +515,7 @@ Example (full multi-source kitting):
   "Kit_1": {{"role": "output"}},
   "Kit_2": {{"role": "output"}},
   "workspace": {{"operation_mode": "kitting"}},
-  "priority": [{{"color": "blue", "order": 2}}, {{"color": "red", "order": 1}},
+  "priority": [{{"color": "blue", "order": 1}}, {{"color": "red", "order": 2}},
                {{"kit": "Kit_1", "order": 1}}, {{"kit": "Kit_2", "order": 2}}]
 }}
 ```
@@ -527,7 +529,7 @@ Example (full sorting setup — fill Container_3 first):
   "workspace": {{"operation_mode": "sorting"}},
   "part_compatibility": [{{"part_color": "blue", "allowed_in": ["Container_2"]}},
                          {{"part_color": "red", "allowed_in": ["Container_3"]}}],
-  "priority": [{{"container": "Container_3", "order": 2}}, {{"container": "Container_2", "order": 1}}]
+  "priority": [{{"container": "Container_3", "order": 1}}, {{"container": "Container_2", "order": 2}}]
 }}
 ```
 
@@ -553,7 +555,7 @@ Example (full kitting — pick from Container_2 first):
   "Kit_1": {{"role": "output"}},
   "workspace": {{"operation_mode": "kitting"}},
   "kit_recipe": [{{"color": "blue", "quantity": 3}}],
-  "priority": [{{"container": "Container_2", "order": 2}}]
+  "priority": [{{"container": "Container_2", "order": 1}}]
 }}
 ```
 
@@ -564,7 +566,7 @@ Example (full setup — use fragile parts first):
   "Kit_1": {{"role": "output"}},
   "workspace": {{"operation_mode": "kitting"}},
   "kit_recipe": [{{"color": "blue", "quantity": 3}}],
-  "priority": [{{"fragility": "fragile", "order": 2}}]
+  "priority": [{{"fragility": "fragile", "order": 1}}]
 }}
 ```
 
