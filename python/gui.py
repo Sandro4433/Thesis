@@ -709,8 +709,8 @@ class RobotGUI:
 
     _INFO_RECONFIG_ACTIVE = (
         "Configuration Mode",
-        "Tell the assistant what to do in natural language. "
-        "The attributes shown in the scene description can be adjusted.",
+        "Tell the assistant what to do in natural language. The attributes shown in the scene description can be adjusted.\n"
+        "The LLM can make mistakes, make sure all neccessary world-state variables are set correctly.  ",
     )
 
     _INFO_UPDATE_ACTIVE = (
@@ -1239,6 +1239,12 @@ class RobotGUI:
         overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
         overlay.lift()
         self._browser_overlay = overlay
+
+        # ── update info box: replace the table with a plain prompt ────────
+        self._set_info_text((
+            "Configuration Mode",
+            "Select the configuration file you would like to edit.",
+        ))
 
         # ── header ────────────────────────────────────────────────────────
         hdr = tk.Frame(overlay, bg=C["bg_main"])

@@ -1,116 +1,43 @@
-── Mode: Reconfiguration ──
-
-
-ASSISTANT:
-What would you like to change?
-
-YOU: part 3 is fragile
-
-ASSISTANT:
-```changes
-{
-  "Part_3": {"fragility": "fragile"}
-}
-```
-Confirm?
-
-YOU: done
-  fragility: Part_3 → fragile
-✅  Configuration updated.
-✅  Image updated.
-✅  Changes saved.
-
-── Session complete. ──
-
-
-How do you want to load the scene?
-  [1] New Configuration — Capture new image and configure from scratch
-  [2] Update Configuration — Update configuration with new vision data
-  [3] Edit Configuration — Edit current configuration (no new image)
-
-Starting vision module …
-Vision complete.
-
-
 ── Update Scene Dialogue ──
 
 ASSISTANT:
-All parts except one were auto-matched; the new blue part in position 2 is a new detection, replacing a missing green fragile part.
+Do the auto-matched part IDs look correct? If not, tell me what changed.
 
-```mapping
-{"Part_1": "new"}
-```
+YOU:
+Part 5 from the previous scan was removed from the scene. A green part was moved to a new container slot
 
-
-YOU (confirm / reject / adjust): 
-YOU: A blue part was added to the container. Part 5 from the previous scan was removed from the scene. A green part was moved to a new container slot
 ASSISTANT:
-A new blue part appeared, the previous Part_5 is now missing, and a green part has changed position within the container.
+Just to clarify: the current scan still shows a green part as 'Part_5' in Container_1_Pos_6. Do you mean that this part is actually the one that was moved (i.e., it's not really Part_5, but another green part)? Or should 'Part_5' be marked as removed and the green part in Pos_6 assigned a different identity?
 
-```mapping
-{"Part_1": "new"}
-```
+YOU:
+yes, part 5 is actually another green part that was moved to this position
 
-
-YOU (confirm / reject / adjust): 
-YOU: the green part that was moved needs to be remapped aswell
 ASSISTANT:
-The green part that changed position needs to be remapped; the new blue part is still a new detection.
+Part_5 in the image is actually the green part that was moved (not the original Part_5). Mapping: {"Part_5": "Part_3"}. Confirm?
 
-```mapping
-{"Part_1": "new", "Part_4": "Part_3"}
-```
+[Proposed mapping: {"Part_5": "Part_3"}]
 
+YOU:
+yes
 
-YOU (confirm / reject / adjust): 
-YOU: part 4 didnt move
+[Accumulated mapping: {"Part_5": "Part_3"}]
+
 ASSISTANT:
-Part 4 did not move, so no remapping is needed for it. Only the new blue part requires an override.
+Saved. Any more changes? (say "done" to finish)
 
-```mapping
-{"Part_1": "new"}
-```
+YOU:
+done
 
+Applying mapping: {"Part_5": "Part_3"}
 
-YOU (confirm / reject / adjust): 
-YOU: a different green part was moved
-ASSISTANT:
-A different green part was moved; please specify which green part should be remapped, as both Part_4 and Part_5 are green and present in the auto-matches. Remapping either would conflict with the current auto-match. Which part should keep its identity? 
-
-```mapping
-{}
-```
-
-
-YOU (confirm / reject / adjust): 
-YOU: part 4 stays the same. part 5 is the part that moved from the previous config
-ASSISTANT:
-Part 4 remains unchanged, and Part 5 is the green part that moved; the new blue part is still a new detection.
-
-```mapping
-{"Part_1": "new", "Part_5": "Part_3"}
-```
-
-
-YOU (confirm / reject / adjust): 
-YOU: yes
 ── Final Scene Summary ──
-  + Part_7  [new part]
-  - Part_5  [removed]
+
++ Part_7  [new part]
+
+- Part_5  [removed]
 
 ✅  Configuration updated.
 ✅  State archived.
 ✅  Image updated.
-✅  Update complete.
-
 
 ── Mode: Reconfiguration ──
-
-
-ASSISTANT:
-What would you like to change?
-
-YOU: done
-
-── Session complete. ──
-
