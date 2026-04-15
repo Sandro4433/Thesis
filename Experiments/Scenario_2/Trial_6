@@ -1,154 +1,45 @@
-── Mode: Reconfiguration ──
-
-
-ASSISTANT:
-What would you like to change?
-
-YOU: part 3 is fragile
-
-ASSISTANT:
-What would you like to change about Part_3 being fragile? Should I update its fragility status?
-
-YOU: yes
-
-ASSISTANT:
-```changes
-{
-  "Part_3": {"fragility": "fragile"}
-}
-```
-Confirm?
-
-YOU: done
-  fragility: Part_3 → fragile
-✅  Configuration updated.
-✅  Image updated.
-✅  Changes saved.
-
-── Session complete. ──
-
-
-How do you want to load the scene?
-  [1] New Configuration — Capture new image and configure from scratch
-  [2] Update Configuration — Update configuration with new vision data
-  [3] Edit Configuration — Edit current configuration (no new image)
-
-Starting vision module …
-Vision complete.
-
-
 ── Update Scene Dialogue ──
 
 ASSISTANT:
-One new blue part was detected (Part_1), and the old green fragile Part_3 is missing. All other parts were auto-matched.
+Do the auto-matched part IDs look correct? If not, tell me what changed.
 
-```mapping
-{"Part_1": "new"}
-```
+YOU:
+The green part on the right side of the container from the previous scan was removed from the scene. A green part was moved to a new container slot
 
-
-YOU (confirm / reject / adjust): 
-YOU: A blue part was added to the container. The green part on the right side of the container from the previous scan was removed from the scene. A green part was moved to a new container slot
 ASSISTANT:
-The new blue part (Part_1) was added, the green fragile part (Part_3) was removed, and another green part (Part_4) was moved to a new slot. All other parts were auto-matched.
+Just to clarify: the green part that was on the right (Container_1_Pos_6, previously Part_5) was removed, and the other green part (Part_3, previously in Pos_2) was moved to a new slot. Which slot is the green part now in: Pos_1 (currently labeled Part_4) or Pos_6 (currently labeled Part_5)?
 
-```mapping
-{"Part_1": "new"}
-```
+YOU:
+pos 6
 
-
-YOU (confirm / reject / adjust): 
-YOU: part 3 is on the left side of the container. I meant the green part on the right hand side that was removed
 ASSISTANT:
-Thanks for clarifying. The green part on the right (Part_4) was removed, while the green fragile Part_3 (on the left) remains and was auto-matched. The new blue part (Part_1) was added.
+Part_5 in Pos_6 is actually Part_3 (moved), and Part_5 was removed. Confirm?
 
-```mapping
-{"Part_1": "new"}
-```
+[Proposed mapping: {"Part_5": "Part_3"}]
 
+YOU:
+yes
 
-YOU (confirm / reject / adjust): 
-YOU: no part 3 is at the top of the container. The green part at the right hand side of the container was removed
+[Accumulated mapping: {"Part_5": "Part_3"}]
+
 ASSISTANT:
-Could you confirm which part ID should be assigned to the new blue part, and which part ID should be considered removed from the scene? This will help ensure the mapping is correct and all IDs remain unique.
+Saved. Any more changes? (say "done" to finish)
 
-  [Mapping parse error: No ```mapping``` block found.]
+YOU:
+done
 
-YOU (clarify or 'skip' to accept auto-matches only): 
-YOU: the new blue part should be part 7. part 5 from the previous config was removed
-ASSISTANT:
-Understood. The new blue part will be assigned as Part_7, and Part_5 from the previous config is considered removed.
+Applying mapping: {"Part_5": "Part_3"}
 
-```mapping
-{"Part_1": "Part_7"}
-```
-
-
-YOU (confirm / reject / adjust): 
-YOU: you forgot about the green part that was moved to a new container slot
-ASSISTANT:
-Thanks for pointing that out. The green part (Part_4) was moved to a new slot, and its ID remains unchanged. The new blue part is Part_7, and Part_5 from the previous config was removed.
-
-```mapping
-{"Part_1": "Part_7"}
-```
-
-
-YOU (confirm / reject / adjust): 
-YOU: no part 4 was not moved.
-ASSISTANT:
-Could you specify which part ID should be assigned to the green part that was moved to a new slot, and confirm if its ID should stay the same or be changed? Also, please confirm if the new blue part should be Part_7 and if Part_5 is the only part to be removed. This will help ensure all IDs are unique and the mapping is accurate.
-
-  [Mapping parse error: No ```mapping``` block found.]
-
-YOU (clarify or 'skip' to accept auto-matches only): 
-YOU: the part that was moved was part 3 from the previous config. the new blue part should be part 7. part 5 doesnt exist anymore
-ASSISTANT:
-Thank you for clarifying. The green part that moved is Part_3 (ID unchanged), the new blue part is Part_7, and Part_5 has been removed.
-
-```mapping
-{"Part_1": "Part_7"}
-```
-
-
-YOU (confirm / reject / adjust): 
-YOU: part 3 which was moved needs to be remapped accordingly
-ASSISTANT:
-Understood. The green part that was moved should be mapped as Part_3, and the new blue part as Part_7. Part_5 is removed.
-
-```mapping
-{"Part_1": "Part_7", "Part_3": "Part_3"}
-```
-
-
-YOU (confirm / reject / adjust): 
-YOU: part3 from the old scan should be part 5 from the new scan
-ASSISTANT:
-Got it. The green part that was moved should now be Part_5 in the new scan (remapping old Part_3 to new Part_5), and the new blue part is Part_7. Part_5 from the old scan is removed.
-
-```mapping
-{"Part_1": "Part_7", "Part_5": "Part_3"}
-```
-
-
-YOU (confirm / reject / adjust): 
-YOU: yes
 ── Final Scene Summary ──
-  + Part_7  [new part]
-  - Part_5  [removed]
+
++ Part_7  [new part]
+
++ Part_8  [new part]
+
+- Part_5  [removed]
 
 ✅  Configuration updated.
 ✅  State archived.
 ✅  Image updated.
-✅  Update complete.
-
 
 ── Mode: Reconfiguration ──
-
-
-ASSISTANT:
-What would you like to change?
-
-YOU: done
-
-── Session complete. ──
