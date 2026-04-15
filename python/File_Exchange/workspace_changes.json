@@ -1,12 +1,12 @@
 {
-  "priority": [
+  "part_compatibility": [
     {
-      "part": "Part_8",
-      "order": 1
-    },
-    {
-      "part": "Part_13",
-      "order": 2
+      "part_fragility": "fragile",
+      "not_allowed_in": [
+        "Kit_1",
+        "Kit_2",
+        "Kit_3"
+      ]
     }
   ]
 }

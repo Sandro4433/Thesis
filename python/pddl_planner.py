@@ -895,61 +895,11 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, b
     workspace_cfg = state.get("workspace", {})
     fill_order = (workspace_cfg.get("fill_order") or "").lower()
 
-    # Compute the maximum pick-priority score of parts compatible with each
-    # output receptacle.  Used below to align rec-priority ordering with
-    # part pick ordering so the planner never deadlocks (e.g. "sort red
-    # first" → red → Container_2, so Container_2 must be rec-priority-1).
-    _output_pddl = {_to_pddl_name(r) for r in outputs}
-    _color_lower  = {p: (color_map_raw.get(p, "")).lower()
-                     for p in objs.get("parts", [])}
-    _rec_max_score: Dict[str, int] = {r: 0 for r in _output_pddl}
-    for _rule in preds.get("part_compatibility", []):
-        _rule_color = (_rule.get("part_color") or "").lower()
-        _rule_score = max(
-            (part_scores.get(p_orig, 0)
-             for p_orig in objs.get("parts", [])
-             if _color_lower.get(p_orig) == _rule_color),
-            default=0,
-        )
-        for _rec_orig in _rule.get("allowed_in", []):
-            _rec_pddl = _to_pddl_name(_rec_orig)
-            if _rec_pddl in _rec_max_score:
-                _rec_max_score[_rec_pddl] = max(_rec_max_score[_rec_pddl], _rule_score)
-
-    # Sort output receptacles: when pick-order exists, the receptacle that
-    # receives the highest-priority parts should be filled first (rec-priority-1).
-    # Without pick-order, fall back to alphabetical (stable, deterministic).
-    output_receptacles = sorted(
-        list(_output_pddl),
-        key=lambda r: (-_rec_max_score.get(r, 0), r) if has_pick_order else r,
-    )
-
-    # Auto-assign receptacle priorities when there are multiple output
-    # receptacles and no explicit parallel fill order.
-    #
-    # KEY INVARIANT: two receptacles that share the same max part pick-score
-    # must receive the SAME rec-priority level.  Giving them different levels
-    # causes deadlock: after picking a priority-1 part destined for the
-    # lower-ranked container, the planner cannot place it (the higher-ranked
-    # container is not full yet) and cannot put it back — no solution.
-    #
-    # When pick-order is active we group receptacles by their max part score
-    # and assign contiguous levels to the groups (highest score -> level 1).
-    # When there is no pick-order we fall back to sequential alphabetical
-    # assignment (legacy behaviour, no deadlock risk there).
-    if (not rec_to_level
-            and len(output_receptacles) >= 2 and fill_order != "parallel"):
-        if has_pick_order:
-            distinct_rec_scores = sorted(
-                {_rec_max_score.get(r, 0) for r in output_receptacles},
-                reverse=True,
-            )
-            _score_to_rec_level = {s: i + 1 for i, s in enumerate(distinct_rec_scores)}
-            for rec_name in output_receptacles:
-                rec_to_level[rec_name] = _score_to_rec_level[_rec_max_score.get(rec_name, 0)]
-        else:
-            for idx, rec_name in enumerate(output_receptacles, start=1):
-                rec_to_level[rec_name] = idx
+    # ── Receptacle priority is ONLY set from explicit user requests ─────
+    # (e.g. "fill Kit_2 first").  No auto-assignment from pick priorities.
+    # Pick order (which part to grab) and place destination (where it goes)
+    # are independent concerns.  Auto-linking them causes deadlocks when
+    # individually-prioritised parts go to different containers.
 
     num_kit_priorities = max(rec_to_level.values(), default=0)
 

@@ -70,7 +70,7 @@ USE_CAMERA = False
 
 # Only used when USE_CAMERA = False.
 # Path is relative to this file's directory (Vision_Module/Images/).
-TEST_IMAGE_NAME = "Scenario4_Trial_1.png"
+TEST_IMAGE_NAME = "Scenario_1.png"
 # =============================================================================
 
 
