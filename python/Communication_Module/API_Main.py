@@ -856,13 +856,28 @@ def run_update_dialogue(
                 "correct. If not, ask the user to explain what changed. "
                 "Submit an empty mapping {}. Example: 'Do the auto-matched "
                 "part IDs look correct? If not, tell me what changed.'\n"
-                "2. When the user describes a change, ask any needed "
-                "clarification questions (one per turn, submit mapping {}).\n"
+                "2. When the user describes a change, ask a clarification question ONLY "
+                "when you genuinely cannot determine the mapping (e.g. you "
+                "do not know which part or slot the user means). "
+                "Submit mapping {} ONLY for true clarification. \n"
                 "3. Once you understand the change, propose the mapping and "
                 "ask 'Confirm?'. You MUST include the proposed overrides in "
                 "the mapping field — the system reads the mapping field, NOT "
-                "your message text. If the mapping field is empty, NOTHING "
-                "gets saved regardless of what your message says.\n"
+                "your message text. If the mapping field is empty when you "
+                "ask 'Confirm?', NOTHING gets saved and the confirmation is "
+                "wasted.\n"
+                "KEY DISTINCTION — clarification vs confirmation:\n"
+                "  CLARIFICATION (submit mapping {}): you genuinely cannot "
+                "determine what the mapping should be. Ask one short question.\n"
+                "  CONFIRMATION (submit mapping populated): you understand the "
+                "change and know what the mapping should be — include the "
+                "overrides in the mapping field RIGHT NOW, before the user "
+                "confirms. If you can describe the mapping in your message "
+                "text, you can put it in the field too. Do both at once.\n"
+                "RULE: If you would write the mapping in your message text "
+                "and then ask 'Confirm?', you MUST also put it in the "
+                "mapping field. Never describe a mapping in text while "
+                "submitting an empty field — that saves nothing.\n"
                 "4. If the user confirms, respond ONLY with: "
                 "'Saved. Any more changes? (say \"done\" to finish)' "
                 "and submit an empty mapping {}.\n"
@@ -1001,6 +1016,21 @@ def run_update_dialogue(
 
             # ── "yes" → validate, accumulate, and let the LLM ask about more.
             if is_yes(user):
+                if not turn_mapping:
+                    # The LLM asked a confirmation question (not a clarification)
+                    # but submitted an empty mapping — nothing would be saved.
+                    # Push back so it produces the actual mapping it described.
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "The user confirmed. You clearly already know what "
+                            "the mapping should be — you described it in your "
+                            "message. Now submit it properly: put the overrides "
+                            "in the mapping field of the tool call. "
+                            "Do NOT submit an empty mapping {}."
+                        ),
+                    })
+                    continue
                 if turn_mapping:
                     validation_issues = _validate_mapping_proposal(
                         turn_mapping, accumulated_mapping,

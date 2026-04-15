@@ -66,7 +66,7 @@ if "pyrealsense2" in sys.modules:
 # Set USE_CAMERA = True  → capture live from RealSense (via subprocess worker)
 # Set USE_CAMERA = False → load a PNG from the Images folder
 # =============================================================================
-USE_CAMERA = False
+USE_CAMERA = True
 
 # Only used when USE_CAMERA = False.
 # Path is relative to this file's directory (Vision_Module/Images/).

@@ -1,10 +1,10 @@
 ── Mode: Reconfiguration ──
 
-
 ASSISTANT:
 What would you like to change?
 
-YOU: part 3 is fragile
+YOU:
+part 3 is fragile
 
 ASSISTANT:
 ```changes
@@ -14,75 +14,75 @@ ASSISTANT:
 ```
 Confirm?
 
-YOU: yes
+YOU:
+yes
+
 ✅  Changes noted.
 
-
+ASSISTANT:
 Anything else? If not, type or press 'done'.
-YOU: 
-YOU: done
-  fragility: Part_3 → fragile
+
+YOU:
+done
+
 ✅  Configuration updated.
+✅  State archived → configuration_15042026_1404.json
 ✅  Image updated.
-✅  Changes saved.
 
-── Session complete. ──
-
-
-How do you want to load the scene?
-  [1] New Configuration — Capture new image and configure from scratch
-  [2] Update Configuration — Update configuration with new vision data
-  [3] Edit Configuration — Edit current configuration (no new image)
+── Configuration complete. ──
 
 Starting vision module …
+
 Vision complete.
 
+✅  Image updated.
+
+ASSISTANT:
+A new image has been captured. Does the image look okay, or should I take another picture?
+
+YOU:
+The green part on the right hand side is actually part 3 from the previous config
+
+ASSISTANT:
+Sorry, I didn't understand. Is the image okay? (yes / no)
+
+YOU:
+yes
 
 ── Update Scene Dialogue ──
 
 ASSISTANT:
-All parts except one were auto-matched; the new blue part at position 2 is a new detection, replacing the missing green fragile part.
+Do the auto-matched part IDs look correct? If not, tell me what changed.
 
-```mapping
-{"Part_1": "new"}
-```
+YOU:
+the green part on the right hand side should actually be part 3 from the previous config
 
-
-YOU (confirm / reject / adjust): 
-YOU: the blue part on the left is a new part added to the scene. Part 5 in the new scan is actually the previous part 3
 ASSISTANT:
-There's a conflict: assigning "Part_5" to the previous "Part_3" would duplicate IDs, since "Part_5" is already auto-matched to "Part_5". Which part should keep the "Part_5" identity: the green part in position 6, or the part you want to assign as the previous "Part_3"?
+Just to confirm: you want the green part on the right (Part_5 in the image) to be Part_3 from the previous config. Mapping: {"Part_5": "Part_3"}. Confirm?
 
-  [Mapping parse error: No ```mapping``` block found.]
+[Proposed mapping: {"Part_5": "Part_3"}]
 
-YOU (clarify or 'skip' to accept auto-matches only): 
-YOU: part 5 was removed. the part at this position is part 3 from the previous config
+YOU:
+yes
+
+[Accumulated mapping: {"Part_5": "Part_3"}]
+
 ASSISTANT:
-Understood. The green part at position 6 in the new scan should be mapped to the previous "Part_3", and the blue part on the left is a new part.
+Saved. Any more changes? (say "done" to finish)
 
-```mapping
-{"Part_5": "Part_3", "Part_1": "new"}
-```
+YOU:
+done
 
+Applying mapping: {"Part_5": "Part_3"}
 
-YOU (confirm / reject / adjust): 
-YOU: yes
 ── Final Scene Summary ──
-  + Part_7  [new part]
-  - Part_5  [removed]
+
++ Part_7  [new part]
+
+- Part_5  [removed]
 
 ✅  Configuration updated.
 ✅  State archived.
 ✅  Image updated.
-✅  Update complete.
-
 
 ── Mode: Reconfiguration ──
-
-
-ASSISTANT:
-What would you like to change?
-
-YOU: done
-
-── Session complete. ──

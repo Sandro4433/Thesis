@@ -1,127 +1,43 @@
-── Mode: Reconfiguration ──
-
-
-ASSISTANT:
-What would you like to change?
-
-YOU: part 3 is fragile
-
-ASSISTANT:
-```changes
-{
-  "Part_3": {"fragility": "fragile"}
-}
-```
-Confirm?
-
-YOU: yes
-✅  Changes noted.
-
-
-Anything else? If not, type or press 'done'.
-YOU: 
-YOU: done
-  fragility: Part_3 → fragile
-✅  Configuration updated.
-✅  Image updated.
-✅  Changes saved.
-
-── Session complete. ──
-
-
-How do you want to load the scene?
-  [1] New Configuration — Capture new image and configure from scratch
-  [2] Update Configuration — Update configuration with new vision data
-  [3] Edit Configuration — Edit current configuration (no new image)
-
-Starting vision module …
-Vision complete.
-
-
 ── Update Scene Dialogue ──
 
 ASSISTANT:
-All parts except one were auto-matched; there's one new blue part detected in position 2, replacing a missing green fragile part.
+Do the auto-matched part IDs look correct? If not, tell me what changed.
 
-```mapping
-{"Part_1": "new"}
-```
+YOU:
+A green part was removed. Part 3 from the previous scan was moved to a new position
 
-
-YOU (confirm / reject / adjust): 
-YOU: Remove the part ID of the green part. The fragile part 3 from the prevous config should be mapped to a new part. Remap part 1 to be a new part 7
 ASSISTANT:
-You want to assign the old fragile Part_3's identity to a new part, but Part_3 is already auto-matched to a blue part in the new scan. This would create a duplicate Part_3 ID. Which part should keep the Part_3 identity: the blue part (auto-matched) or the new green fragile part?
+Just to confirm: Part_3 (green, fragile) was moved to a new position, and a different green part was removed. Which slot is Part_3 in now—Container_1_Pos_1 (currently Part_4) or Container_1_Pos_6 (currently Part_5)?
 
-Here's your requested remap for Part_1 in the meantime:
+YOU:
+pos 6 (currently part 5)
 
-```mapping
-{"Part_1": "Part_7"}
-```
-
-
-YOU (confirm / reject / adjust): 
-YOU: the new green fragile part.
 ASSISTANT:
-Understood. The new green fragile part will take the Part_3 identity, and the blue part previously auto-matched as Part_3 will need a new ID. Please specify a new ID for the blue part currently matched as Part_3, or I can assign the next available (e.g., Part_8).
+Part_5 in the image is actually Part_3 (moved), and a green part was removed. Mapping: {"Part_5": "Part_3"}. Confirm?
 
-For now, here's the mapping reflecting your instructions so far:
+[Proposed mapping: {"Part_5": "Part_3"}]
 
-```mapping
-{"Part_1": "Part_7", "Part_3": "Part_8", "Part_7": "Part_3"}
-```
+YOU:
+yes
 
+[Accumulated mapping: {"Part_5": "Part_3"}]
 
-YOU (confirm / reject / adjust): 
-YOU: part 3 in the new scan is part 2 from the previous config
 ASSISTANT:
-Thanks for clarifying. The blue part in the new scan (Part_3) should remain mapped to Part_2 from the previous config, and the new green fragile part should take the Part_3 identity. Part_1 is remapped to Part_7.
+Saved. Any more changes? (say "done" to finish)
 
-Here’s the corrected mapping:
+YOU:
+done
 
-```mapping
-{"Part_1": "Part_7", "Part_7": "Part_3"}
-```
+Applying mapping: {"Part_5": "Part_3"}
 
-
-YOU (confirm / reject / adjust): 
-YOU: there is no part 7 in the current scan
-ASSISTANT:
-To confirm: the new green fragile part should take the Part_3 identity from the previous config, but Part_3 in the new scan is already auto-matched to Part_2 from before. Which part should keep the Part_3 ID—the blue part (currently auto-matched as Part_3), or the new green fragile part? Please specify which part should be Part_3.
-
-  [Mapping parse error: No ```mapping``` block found.]
-
-YOU (clarify or 'skip' to accept auto-matches only): 
-YOU: part 5 should become part 3
-ASSISTANT:
-Got it. The new green fragile part (currently Part_5) will take the Part_3 identity, and Part_1 will be remapped to Part_7.
-
-Here’s the mapping:
-
-```mapping
-{"Part_1": "Part_7", "Part_5": "Part_3"}
-```
-
-
-YOU (confirm / reject / adjust): 
-YOU: yes
 ── Final Scene Summary ──
-  + Part_7  [new part]
-  - Part_5  [removed]
+
++ Part_7  [new part]
+
+- Part_5  [removed]
 
 ✅  Configuration updated.
 ✅  State archived.
 ✅  Image updated.
-✅  Update complete.
-
 
 ── Mode: Reconfiguration ──
-
-
-ASSISTANT:
-What would you like to change?
-
-YOU: done
-
-── Session complete. ──
-
