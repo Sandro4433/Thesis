@@ -895,11 +895,25 @@ def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, b
     workspace_cfg = state.get("workspace", {})
     fill_order = (workspace_cfg.get("fill_order") or "").lower()
 
-    # ── Receptacle priority is ONLY set from explicit user requests ─────
-    # (e.g. "fill Kit_2 first").  No auto-assignment from pick priorities.
+    # ── Sequential kit filling is the DEFAULT behaviour ──────────────────
+    # When no explicit kit priorities are configured AND the user has not
+    # asked for parallel filling, auto-assign rec-priority-K levels to all
+    # output kits in alphabetical order.  This makes "finish one kit before
+    # starting the next" work out of the box for any number of kits without
+    # requiring the user to list every kit in the priority array.
+    #
+    # The auto-assignment is skipped when:
+    #   - fill_order == "parallel"  → user explicitly wants interleaved fills
+    #   - explicit kit priorities already exist (_user_rec_order is non-empty)
+    #   - there is only one output kit  → ordering is trivially sequential
+    #
     # Pick order (which part to grab) and place destination (where it goes)
-    # are independent concerns.  Auto-linking them causes deadlocks when
-    # individually-prioritised parts go to different containers.
+    # remain independent — auto-assignment only affects place ordering.
+    if not rec_to_level and fill_order != "parallel" and mode == "kitting":
+        output_kit_list = sorted([k for k in kits if k in outputs])
+        if len(output_kit_list) > 1:
+            for i, kit_name in enumerate(output_kit_list, 1):
+                rec_to_level[kit_name] = i
 
     num_kit_priorities = max(rec_to_level.values(), default=0)
 
