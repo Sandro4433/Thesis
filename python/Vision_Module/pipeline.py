@@ -200,9 +200,10 @@ def compute_tag_targets_and_annotate(
             cv2.circle(img_vis, pi, 6, draw_color, -1)
             # Show only the position number (e.g. "1" instead of "Container_0_Pos_1")
             pos_num = str(kp["name"]).replace("Pos_", "")
+            (text_w, text_h), _ = cv2.getTextSize(pos_num, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
             cv2.putText(
                 img_vis, pos_num,
-                (pi[0] + 8, pi[1] - 10),
+                (pi[0] - text_w - 15, pi[1] + text_h // 2),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.65, draw_color, 2,
             )
 

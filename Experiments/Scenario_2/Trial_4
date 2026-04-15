@@ -1,91 +1,61 @@
-── Mode: Reconfiguration ──
-
-
-ASSISTANT:
-What would you like to change?
-
-YOU: part 3 is fragile
-
-ASSISTANT:
-```changes
-{
-  "Part_3": {"fragility": "fragile"}
-}
-```
-Confirm?
-
-YOU: yes
-✅  Changes noted.
-
-
-Anything else? If not, type or press 'done'.
-YOU: 
-YOU: done
-  fragility: Part_3 → fragile
-✅  Configuration updated.
-✅  Image updated.
-✅  Changes saved.
-
-── Session complete. ──
-
-
-How do you want to load the scene?
-  [1] New Configuration — Capture new image and configure from scratch
-  [2] Update Configuration — Update configuration with new vision data
-  [3] Edit Configuration — Edit current configuration (no new image)
+── Configuration complete. ──
 
 Starting vision module …
+
 Vision complete.
 
+✅  Image updated.
+
+ASSISTANT:
+A new image has been captured. Does the image look okay, or should I take another picture?
+
+YOU:
+The fragile part 3 from the previous config should be mapped to a new part on the right hand side of the container.
+
+ASSISTANT:
+Sorry, I didn't understand. Is the image okay? (yes / no)
+
+YOU:
+yes
 
 ── Update Scene Dialogue ──
 
 ASSISTANT:
-All parts except one were auto-matched; one new blue part was detected in Container_1_Pos_2, replacing a missing green fragile part.
+Do the auto-matched part IDs look correct? If not, tell me what changed.
 
-```mapping
-{"Part_1": "new"}
-```
+YOU:
+The fragile part 3 from the previous config should be mapped to a new part on the right hand side of the container.
 
-
-YOU (confirm / reject / adjust): 
-YOU: remap part 1 to be a new part 7. The fragile part 3 from the previous config should be mapped to a new part on the right hand side of the container.
 ASSISTANT:
-Part_1 will be assigned as new Part_7. Since the fragile Part_3 is missing from the new scan, but you want it mapped to a new part on the right side (Container_1_Pos_6), note that Part_5 (green) is already auto-matched there as Part_5. Assigning Part_3 here would create a duplicate ID—should Part_5 or Part_3 keep this position and identity?
+Just to confirm: the new part on the right is 'Part_5' (green) in Container_1_Pos_6. So, you want to map 'Part_5' in the image to 'Part_3' (fragile). Confirm?
 
-```mapping
-{"Part_1": "Part_7"}
-```
+[Proposed mapping: {"Part_5": "Part_3"}]
 
+YOU:
+yes
 
-YOU (confirm / reject / adjust): 
-YOU: pos 6 should belong to part 3
+[Accumulated mapping: {"Part_5": "Part_3"}]
+
 ASSISTANT:
-Understood—Container_1_Pos_6 will be assigned to Part_3 (fragile), replacing the auto-matched Part_5. Part_5 will now be unassigned.
+Saved. Any more changes? (say "done" to finish)
 
-```mapping
-{"Part_1": "Part_7", "Part_5": "Part_3"}
-```
+YOU:
+done
 
+Applying mapping: {"Part_5": "Part_3"}
 
-YOU (confirm / reject / adjust): 
-YOU: yes
 ── Final Scene Summary ──
-  + Part_7  [new part]
-  - Part_5  [removed]
+
++ Part_7  [new part]
+
+- Part_5  [removed]
 
 ✅  Configuration updated.
 ✅  State archived.
 ✅  Image updated.
-✅  Update complete.
-
 
 ── Mode: Reconfiguration ──
-
 
 ASSISTANT:
 What would you like to change?
 
-YOU: done
-
-── Session complete. ──
