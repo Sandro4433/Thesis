@@ -1,81 +1,45 @@
 ── Mode: Reconfiguration ──
 
-
 ASSISTANT:
 What would you like to change?
 
-YOU: part 15 is fragile
+YOU:
+part 16 is fragile
 
 ASSISTANT:
 ```changes
 {
-  "Part_15": {"fragility": "fragile"}
-}
-```
-Confirm?
-
-YOU: yes
-✅  Changes noted.
-
-
-Anything else? If not, type or press 'done'.
-YOU: 
-YOU: done
-  fragility: Part_15 → fragile
-✅  Configuration updated.
-✅  Image updated.
-✅  Changes saved.
-
-── Session complete. ──
-
-
-How do you want to load the scene?
-  [1] New Configuration — Capture new image and configure from scratch
-  [2] Update Configuration — Update configuration with new vision data
-  [3] Edit Configuration — Edit current configuration (no new image)
-
-Starting vision module …
-Vision complete.
-
-Loaded fresh scene from vision.
-
-── Mode: Reconfiguration ──
-
-
-ASSISTANT:
-What would you like to change?
-
-YOU: part 7, part 9 and part 16 are fragile
-
-ASSISTANT:
-Should I update the fragility for just these three parts, or are there others you want to mark as fragile as well?
-
-YOU: just these 3
-
-ASSISTANT:
-```changes
-{
-  "Part_7": {"fragility": "fragile"},
-  "Part_9": {"fragility": "fragile"},
   "Part_16": {"fragility": "fragile"}
 }
 ```
 Confirm?
 
-YOU: yes
+YOU:
+yes
+
 ✅  Changes noted.
 
-
+ASSISTANT:
 Anything else? If not, type or press 'done'.
-YOU: 
-YOU: done
-  fragility: Part_7 → fragile
-  fragility: Part_9 → fragile
-  fragility: Part_16 → fragile
-✅  Configuration updated.
-✅  Image updated.
-✅  Changes saved.
 
-── Session complete. ──
+YOU:
+all green parts are fragile
 
+ASSISTANT:
+```changes
+{
+  "Part_10": {"fragility": "fragile"},
+  "Part_8": {"fragility": "fragile"},
+  "Part_7": {"fragility": "fragile"},
+  "Part_9": {"fragility": "fragile"},
+  "Part_11": {"fragility": "fragile"},
+  "Part_12": {"fragility": "fragile"}
+}
+```
+Confirm?
+
+YOU:
+yes
+
+✅  Changes noted.
 
