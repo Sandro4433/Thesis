@@ -1,6 +1,6 @@
 {
   "workspace": {
-    "operation_mode": null,
+    "operation_mode": "kitting",
     "batch_size": null,
     "fill_order": "parallel"
   },
@@ -183,27 +183,27 @@
     "role": [
       {
         "object": "Container_1",
-        "role": null
+        "role": "input"
       },
       {
         "object": "Container_2",
-        "role": null
+        "role": "input"
       },
       {
         "object": "Container_3",
-        "role": null
+        "role": "input"
       },
       {
         "object": "Kit_1",
-        "role": null
+        "role": "output"
       },
       {
         "object": "Kit_2",
-        "role": null
+        "role": "output"
       },
       {
         "object": "Kit_3",
-        "role": null
+        "role": "output"
       }
     ],
     "color": [
@@ -280,10 +280,50 @@
         "color": "blue"
       }
     ],
-    "priority": [],
-    "kit_recipe": [],
-    "part_compatibility": [],
-    "fragility": []
+    "priority": [
+      {
+        "container": "Container_3",
+        "order": 1
+      }
+    ],
+    "kit_recipe": [
+      {
+        "color": "red",
+        "quantity": 1
+      },
+      {
+        "color": "green",
+        "quantity": 1
+      },
+      {
+        "color": "blue",
+        "quantity": 1
+      }
+    ],
+    "part_compatibility": [
+      {
+        "part_fragility": "fragile",
+        "not_allowed_in": [
+          "Kit_1",
+          "Kit_2",
+          "Kit_3"
+        ]
+      }
+    ],
+    "fragility": [
+      {
+        "part": "Part_1",
+        "fragility": "fragile"
+      },
+      {
+        "part": "Part_2",
+        "fragility": "fragile"
+      },
+      {
+        "part": "Part_3",
+        "fragility": "fragile"
+      }
+    ]
   },
   "metric": {
     "Container_1_Pos_1": {

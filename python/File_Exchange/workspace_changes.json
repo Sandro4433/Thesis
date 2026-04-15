@@ -1,12 +1,5 @@
 {
-  "part_compatibility": [
-    {
-      "part_fragility": "fragile",
-      "not_allowed_in": [
-        "Kit_1",
-        "Kit_2",
-        "Kit_3"
-      ]
-    }
-  ]
+  "workspace": {
+    "fill_order": "parallel"
+  }
 }

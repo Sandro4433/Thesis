@@ -907,6 +907,11 @@ class RobotGUI:
             batch_str = str(batch) if batch else "none"
             _add("Batch Size", batch_str, row); row += 1
 
+            # Fill Order
+            fill_order = (ws.get("fill_order") or "").strip().lower()
+            fill_order_str = "parallel" if fill_order == "parallel" else "sequential (default)"
+            _add("Fill Order", fill_order_str, row); row += 1
+
             # Separator
             _add("", "", row, is_separator=True); row += 1
 
