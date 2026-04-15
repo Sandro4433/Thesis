@@ -60,8 +60,11 @@ Allowed keys and values:
   "workspace"                      → {"operation_mode": "sorting"|"kitting",
                                       "batch_size": N,
                                       "fill_order": "parallel"}
-                                     fill_order is optional — only set "parallel"
-                                     when user explicitly asks for parallel/even filling.
+                                     fill_order is optional and rarely needed.
+                                     Sequential kit filling is the DEFAULT — the planner
+                                     enforces it automatically with no config required.
+                                     Only set fill_order: "parallel" when the user
+                                     explicitly asks for parallel/even/interleaved filling.
   "priority"                       → see PRIORITY FORMAT below
   "kit_recipe"                     → [{"color": "blue", "quantity": 2}, ...]
   "part_compatibility"             → see COMPATIBILITY FORMAT below
@@ -125,8 +128,12 @@ Combination example (all types can be mixed):
   → A fragile green Part_3 in Container_1 matches all four rules (highest combined priority).
 
 Kit/container fill order rules:
-- Sequential filling is the DEFAULT — add kit/container priorities only for non-default order.
-- If user says "fill evenly/in parallel" → omit kit/container priorities and set fill_order: "parallel".
+- Sequential filling is the DEFAULT — the planner enforces it automatically.
+  Do NOT add kit/container priorities just because the user says "finish one kit at a time" or
+  "sequential" — that is already the default behaviour and requires NO config change.
+- Only add kit/container priorities when the user specifies a SPECIFIC order
+  (e.g. "fill Kit_2 first", "Kit_3 before Kit_1").
+- If user says "fill evenly/in parallel/all at once" → set fill_order: "parallel" (no kit priorities).
 
 MAPPING FROM USER INTENT TO ORDER VALUES (kit/container fill priority):
   Same convention as pick priorities: LOWER number = filled FIRST.
@@ -463,8 +470,14 @@ SKIP when: phrasing contains "then"/"followed by" → sweep (B).
   User says "complete each kit first" → sequential (A). One color → no ambiguity.
 
 DEFAULT KIT FILL ORDER:
-Fill one kit completely before starting the next (sequential). Don't add
-kit/container priorities unless user specifies a non-default order.
+Sequential (finish one kit completely before starting the next) is automatic —
+the planner enforces it with no configuration needed.
+- User says "finish one kit at a time" / "sequential" / "doesn't matter which order"
+  → NO CHANGES needed. Confirm it's already the default. Do NOT emit a changes block.
+- User says "fill Kit_2 first" / specifies a SPECIFIC order
+  → add explicit kit priority entries for the kits mentioned.
+- User says "fill in parallel" / "fill all kits at once"
+  → set fill_order: "parallel" only. No kit priority entries.
 
 {_CHANGES_BLOCK_FORMAT}
 
