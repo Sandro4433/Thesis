@@ -1,8 +1,7 @@
 {
   "workspace": {
     "operation_mode": null,
-    "batch_size": null,
-    "fill_order": "parallel"
+    "batch_size": null
   },
   "objects": {
     "kits": [
@@ -283,7 +282,40 @@
     "priority": [],
     "kit_recipe": [],
     "part_compatibility": [],
-    "fragility": []
+    "fragility": [
+      {
+        "part": "Part_16",
+        "fragility": "fragile"
+      },
+      {
+        "part": "Part_10",
+        "fragility": "fragile"
+      },
+      {
+        "part": "Part_8",
+        "fragility": "fragile"
+      },
+      {
+        "part": "Part_7",
+        "fragility": "fragile"
+      },
+      {
+        "part": "Part_9",
+        "fragility": "fragile"
+      },
+      {
+        "part": "Part_11",
+        "fragility": "fragile"
+      },
+      {
+        "part": "Part_12",
+        "fragility": "fragile"
+      },
+      {
+        "part": "Part_4",
+        "fragility": "fragile"
+      }
+    ]
   },
   "metric": {
     "Container_1_Pos_1": {
