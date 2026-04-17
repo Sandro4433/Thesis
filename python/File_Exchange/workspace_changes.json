@@ -1,8 +1,31 @@
 {
-  "Container_1": {
-    "role": "output"
+  "workspace": {
+    "operation_mode": "sorting"
   },
-  "Container_2": {
-    "role": "output"
-  }
+  "part_compatibility": [
+    {
+      "part_color": "blue",
+      "allowed_in": [
+        "Container_1"
+      ]
+    },
+    {
+      "part_color": "red",
+      "allowed_in": [
+        "Container_1"
+      ]
+    },
+    {
+      "part_color": "green",
+      "allowed_in": [
+        "Container_2"
+      ]
+    },
+    {
+      "part_fragility": "fragile",
+      "allowed_in": [
+        "Container_2"
+      ]
+    }
+  ]
 }
