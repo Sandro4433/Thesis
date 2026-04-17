@@ -317,7 +317,8 @@ class RobotGUI:
         self._input_text.bind("<KeyRelease>", lambda e: self._resize_input())
         self._input_text.bind("<Return>", self._on_input_return)
         self._input_text.bind("<Shift-Return>", lambda e: None)
-
+        # Re-evaluate wrap count when the widget is resized (window resize changes chars-per-line)
+        self._input_text.bind("<Configure>", lambda e: self._resize_input())
         self._input_var = None
 
         # Now pack the chat text area (fills remaining space above the input)
@@ -1160,8 +1161,8 @@ class RobotGUI:
         self._send.pack_forget()
         self._done_btn.pack_forget()
         # Pack RIGHT in order: first = rightmost
-        self._done_btn.pack(side=tk.RIGHT, padx=(2, 6), pady=2)
-        self._send.pack(side=tk.RIGHT, padx=(4, 2), pady=2)
+        self._done_btn.pack(side=tk.RIGHT, anchor=tk.S, padx=(2, 6), pady=2)
+        self._send.pack(side=tk.RIGHT, anchor=tk.S, padx=(4, 2), pady=2)
 
     def _show_execute_bar(self) -> None:
         """Show Cancel + Log buttons during robot execution."""
@@ -1748,25 +1749,26 @@ class RobotGUI:
 
     def _resize_input(self) -> None:
         """Resize the input Text widget to fit content, up to 10 rows.
-        Grows and shrinks dynamically. Beyond 10 rows, scrollbar appears."""
+        Grows and shrinks dynamically, including word-wrapped lines.
+        Beyond 10 rows, scrollbar appears."""
         MAX_ROWS = 10
 
         try:
-            # Get actual display line count from the Text widget
-            # This accounts for word-wrapped lines too
-            content = self._input_text.get("1.0", "end-1c")
-            newline_count = content.count("\n") + 1  # number of actual lines
+            # count("displaylines") returns the number of rendered rows,
+            # including lines created by word-wrap — not just \n characters.
+            result = self._input_text.count("1.0", "end", "displaylines")
+            display_lines = result[0] if result else 1
+            display_lines = max(1, display_lines)
 
-            new_h = max(1, min(newline_count, MAX_ROWS))
+            new_h = min(display_lines, MAX_ROWS)
             current_h = int(self._input_text.cget("height"))
 
             if new_h != current_h:
                 self._input_text.configure(height=new_h)
-                # Force geometry recalculation
                 self._input_text.update_idletasks()
 
-            # Show scrollbar only when content exceeds max
-            if newline_count > MAX_ROWS:
+            # Show scrollbar only when content exceeds max rows
+            if display_lines > MAX_ROWS:
                 self._input_sb.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 2), pady=2)
             else:
                 self._input_sb.pack_forget()
