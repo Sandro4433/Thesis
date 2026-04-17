@@ -518,6 +518,14 @@ def _finalize_session(
     if accumulated:
         sh.save_changes(accumulated)
         sh.apply_and_save_config(accumulated)
+    else:
+        # No changes were made, but still save the current config to Memory
+        # so the session is accessible from "Edit Config"
+        if sh.CONFIGURATION_PATH.exists():
+            state = __import__("json").loads(
+                sh.CONFIGURATION_PATH.read_text(encoding="utf-8")
+            )
+            sh.save_config_to_memory(state)
 
     print("\n── Configuration complete. ──\n")
 
@@ -1236,6 +1244,12 @@ def _run_conversation_loop(
                 if accumulated_changes:
                     sh.save_changes(accumulated_changes)
                     sh.apply_and_save_config(accumulated_changes)
+                else:
+                    if sh.CONFIGURATION_PATH.exists():
+                        state = __import__("json").loads(
+                            sh.CONFIGURATION_PATH.read_text(encoding="utf-8")
+                        )
+                        sh.save_config_to_memory(state)
                 print("\n── Configuration complete. ──\n")
                 return
             if user_input:
