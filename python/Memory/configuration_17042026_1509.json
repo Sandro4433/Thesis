@@ -1,7 +1,7 @@
 {
   "workspace": {
     "operation_mode": null,
-    "batch_size": 4
+    "batch_size": null
   },
   "objects": {
     "kits": [

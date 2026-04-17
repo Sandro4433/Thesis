@@ -383,7 +383,22 @@ def _validate_capacity(
     elif op_mode == "kitting":
         recipe = changes.get("kit_recipe") or preds.get("kit_recipe", [])
         if recipe:
+            # Hard limit: each quantity must be >= 1
+            for entry in recipe:
+                qty = entry.get("quantity", 0)
+                color = entry.get("color", "unknown")
+                if qty <= 0:
+                    problems.append(
+                        f"Kit recipe quantity for '{color}' is {qty}. "
+                        f"Each part in the recipe must have a quantity of at least 1."
+                    )
             total_per_kit = sum(e.get("quantity", 0) for e in recipe)
+            # Hard limit: total recipe parts cannot exceed 3
+            if total_per_kit > 3:
+                problems.append(
+                    f"Kit recipe total is {total_per_kit} parts, but the maximum allowed is 3. "
+                    f"Please reduce the quantities."
+                )
             for rec in output_recs:
                 avail = empty_slots.get(rec, 0)
                 if total_per_kit > avail:
