@@ -380,7 +380,23 @@ def _validate_capacity(
                     f"{avail} empty slot{'s' if avail != 1 else ''}."
                 )
 
-    elif op_mode == "kitting":
+    # Hard limit: batch_size cannot exceed total number of kits
+    proposed_ws = changes.get("workspace") or {}
+    current_ws  = state.get("workspace") or {}
+    batch_size = proposed_ws.get("batch_size") or current_ws.get("batch_size")
+    num_kits = len(objs.get("kits", []))
+    if batch_size is not None and num_kits > 0:
+        if not isinstance(batch_size, int) or batch_size <= 0:
+            problems.append(
+                f"Batch size must be a positive integer (got {batch_size!r})."
+            )
+        elif batch_size > num_kits:
+            problems.append(
+                f"Batch size {batch_size} exceeds the number of available kits "
+                f"({num_kits}). Please set a batch size of {num_kits} or fewer."
+            )
+
+    if op_mode == "kitting":
         recipe = changes.get("kit_recipe") or preds.get("kit_recipe", [])
         if recipe:
             # Hard limit: each quantity must be >= 1
