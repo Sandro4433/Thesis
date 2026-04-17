@@ -1441,8 +1441,12 @@ class RobotGUI:
         btn_frame = tk.Frame(overlay, bg=C["bg_main"])
         btn_frame.pack(fill=tk.X, padx=10, pady=(4, 10))
 
-        self._btn(btn_frame, "Use Selected", C["btn_1"],
-                  self._browser_use_selected).pack(anchor=tk.CENTER)
+        inner_btn = tk.Frame(btn_frame, bg=C["bg_main"])
+        inner_btn.pack(anchor=tk.CENTER)
+        self._btn(inner_btn, "Use Selected", C["btn_1"],
+                  self._browser_use_selected).pack(side=tk.LEFT, padx=(0, 6))
+        self._btn(inner_btn, "Cancel", C["btn_3"],
+                  self._browser_cancel).pack(side=tk.LEFT)
 
         # Update button bar (hide main menu buttons while browsing)
         self._clear_bar()
