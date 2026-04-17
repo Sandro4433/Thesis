@@ -1,5 +1,8 @@
 {
-  "Part_3": {
-    "fragility": "fragile"
+  "Container_1": {
+    "role": "output"
+  },
+  "Container_2": {
+    "role": "output"
   }
 }
