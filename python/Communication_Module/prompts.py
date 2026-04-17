@@ -354,6 +354,14 @@ HARD CONSTRAINTS — REFUSE AND EXPLAIN:
     input  = robot picks FROM here.
     output = robot places INTO here.
 
+
+  CHECK H6 — KIT RECIPE TOTAL (MAX 3 PARTS):
+    The sum of all quantities in kit_recipe MUST be between 1 and 3 (inclusive).
+    - If the total would exceed 3, REFUSE. Tell the user: "The kit recipe cannot
+      exceed 3 parts in total. Please reduce the quantities."
+    - If any individual quantity is 0 or negative, REFUSE. Tell the user:
+      "Each part in the kit recipe must have a quantity of at least 1."
+    - NEVER propose a changes block with a kit_recipe that violates these rules.
 SOFT CONSTRAINTS — WARN BUT PROPOSE ANYWAY:
   CHECK S1 — CAPACITY (for full kitting/sorting setup only, NOT single changes):
     Call the check_capacity tool. If INSUFFICIENT, warn but still propose.
