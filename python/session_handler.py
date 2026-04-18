@@ -314,6 +314,18 @@ def load_scene(client: OpenAI, mode: str) -> Optional[dict]:
 
         elif sub == "reconfig_update":
             run_update_pipeline(client)
+            # The Done button sets the cancel event to interrupt in-flight LLM
+            # calls, but in the update pipeline "done" means "accept and move on"
+            # rather than "abort the whole session".  If the event is still set
+            # here (from auto-commit or any other path), the reconfiguration
+            # conversation that follows would be killed on its very first LLM
+            # call.  Clear it now so the conversation starts cleanly.
+            try:
+                from Communication_Module import API_Main as _api_mod
+                if _api_mod._cancel_event is not None:
+                    _api_mod._cancel_event.clear()
+            except Exception:
+                pass
             if not CONFIGURATION_PATH.exists():
                 print("ERROR: configuration.json not found")
                 return None
@@ -374,6 +386,17 @@ def run_update_pipeline(client: OpenAI) -> None:
       2b. Ask user if the image looks okay; recapture if not
       3. Hand off to the LLM for user dialogue (API_Main)
       4. Apply confirmed mapping and save
+
+    IMAGE CONSISTENCY GUARANTEE
+    ───────────────────────────
+    redraw_image_with_auto_matches() writes latest_image.png to disk early
+    (before the user has confirmed anything) so the GUI can show it.  If the
+    pipeline exits at any point before apply_update_mapping() commits the new
+    configuration, the image on disk would no longer match configuration.json.
+
+    To prevent that, this function always restores the annotated image to
+    match the current configuration.json on any early exit — whether the user
+    typed "done", pressed Done, or the LLM call was aborted.
     """
     from Configuration_Module.Update_Scene import (
         prepare_update,
@@ -394,55 +417,115 @@ def run_update_pipeline(client: OpenAI) -> None:
         print("⚠  Update aborted (missing state files).")
         return
 
-    # ── Image confirmation + recapture loop ────────────────────────────────
-    while True:
-        # ── Step 2: auto-match + image re-annotation ───────────────────
-        image_rename_map = redraw_image_with_auto_matches(old_state, fresh_state)
+    # Track whether we committed a new config + image successfully.
+    _committed = False
 
-        # ── Step 2b: ask user if the captured image is acceptable ──────
-        print("\nASSISTANT:\nA new image has been captured. "
-              "Does the image look okay, or should I take another picture?\n")
+    # Back up latest_image.png BEFORE Step 2 overwrites it with auto-matched
+    # annotations.  On any early exit we restore this backup so the image
+    # stays in sync with configuration.json (already restored to old_state
+    # by prepare_update).
+    #
+    # We cannot use refresh_annotated_image(old_state) for this: that function
+    # reads latest_pixel_map.json (fresh scan — fresh part names) and draws
+    # those names verbatim.  The old config has different names, so image and
+    # config would still be out of sync after "restoration".  A straight file
+    # copy is the only reliable way to get back the pre-update image.
+    import shutil as _shutil
+    _fe         = PROJECT_DIR / "File_Exchange"
+    _img_path   = _fe / "latest_image.png"
+    _img_backup = _fe / "latest_image_pre_update.png"
 
-        while True:
-            answer = input("YOU: ").strip()
-            if not answer:
-                continue
-            # Allow "done" to abort the whole update
-            if answer.lower() in ("done", "exit", "quit", "cancel"):
-                print("⚠  Update cancelled.\n")
-                return
-            verdict = _image_ok(answer)
-            if verdict is True:
-                break
-            elif verdict is False:
-                # ── Recapture ──────────────────────────────────────
-                print("\n── Recapturing image … ──\n")
-                try:
-                    fresh_state = prepare_recapture(old_state)
-                except RuntimeError as e:
-                    print(f"\n❌  Recapture failed: {e}\n")
-                    print("Continuing with previous scan.\n")
-                break  # break inner loop, outer loop will re-run step 2
-            else:
-                # Ambiguous — ask again
-                print("\nASSISTANT:\nSorry, I didn't understand. "
-                      "Is the image okay? (yes / no)\n")
-
-        if verdict is True:
-            break  # image accepted — proceed to LLM dialogue
-        # verdict is False → outer loop repeats with new fresh_state
-
-    # ── Step 3: LLM dialogue ───────────────────────────────────────────
-    mapping = run_update_dialogue(
-        client, old_state, fresh_state, image_rename_map,
-    )
-
-    # ── Step 4: apply mapping and save ─────────────────────────────────
-    if mapping is not None:
-        apply_update_mapping(old_state, fresh_state, mapping, image_rename_map)
-        print("✅  Update complete.\n")
+    if _img_path.exists():
+        try:
+            _shutil.copy2(str(_img_path), str(_img_backup))
+        except Exception as _bk_err:
+            print(f"  ⚠  Could not back up image before update: {_bk_err}")
+            _img_backup = None
     else:
-        print("⚠  Update dialogue was cancelled.\n")
+        _img_backup = None
+
+    try:
+        # ── Image confirmation + recapture loop ────────────────────────────
+        while True:
+            # ── Step 2: auto-match + image re-annotation ───────────────
+            image_rename_map = redraw_image_with_auto_matches(old_state, fresh_state)
+
+            # ── Step 2b: ask user if the captured image is acceptable ──
+            print("\nASSISTANT:\nA new image has been captured. "
+                  "Does the image look okay, or should I take another picture? "
+                  "(Press 'done' to accept the image and apply auto-matching "
+                  "without further dialogue.)\n")
+
+            while True:
+                answer = input("YOU: ").strip()
+                if not answer:
+                    continue
+                # "done" = accept the image and commit using auto-match only,
+                # skipping the LLM override dialogue entirely.
+                if answer.lower() in ("done", "exit", "quit"):
+                    print("── Applying auto-match and updating config … ──\n")
+                    apply_update_mapping(old_state, fresh_state, {}, image_rename_map)
+                    _committed = True
+                    print("✅  Update complete.\n")
+                    return
+                # "cancel" = abort entirely, restore old image + config
+                if answer.lower() == "cancel":
+                    print("⚠  Update cancelled.\n")
+                    return          # finally block restores the old image
+                verdict = _image_ok(answer)
+                if verdict is True:
+                    break
+                elif verdict is False:
+                    # ── Recapture ──────────────────────────────────────
+                    print("\n── Recapturing image … ──\n")
+                    try:
+                        fresh_state = prepare_recapture(old_state)
+                    except RuntimeError as e:
+                        print(f"\n❌  Recapture failed: {e}\n")
+                        print("Continuing with previous scan.\n")
+                    break  # break inner loop, outer loop will re-run step 2
+                else:
+                    # Ambiguous — ask again
+                    print("\nASSISTANT:\nSorry, I didn't understand. "
+                          "Is the image okay? (yes / no)\n")
+
+            if verdict is True:
+                break  # image accepted — proceed to LLM dialogue
+            # verdict is False → outer loop repeats with new fresh_state
+
+        # ── Step 3: LLM dialogue ───────────────────────────────────────
+        mapping = run_update_dialogue(
+            client, old_state, fresh_state, image_rename_map,
+        )
+
+        # ── Step 4: apply mapping and save ─────────────────────────────
+        if mapping is not None:
+            apply_update_mapping(old_state, fresh_state, mapping, image_rename_map)
+            _committed = True
+            print("✅  Update complete.\n")
+        else:
+            print("⚠  Update dialogue was cancelled.\n")
+
+    finally:
+        if not _committed:
+            # The update was cancelled before a new config was committed.
+            # configuration.json was already restored to old_state by
+            # prepare_update().  Restore the image to match it.
+            if _img_backup is not None and _img_backup.exists():
+                try:
+                    _shutil.copy2(str(_img_backup), str(_img_path))
+                except Exception as _re_err:
+                    print(f"  ⚠  Could not restore image after cancelled update: {_re_err}")
+            else:
+                # No backup (image didn't exist before this session) — just
+                # redraw from the base image using the old config names.
+                refresh_annotated_image(old_state)
+        # Always clean up the temp backup regardless of outcome.
+        if _img_backup is not None:
+            try:
+                _img_backup.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

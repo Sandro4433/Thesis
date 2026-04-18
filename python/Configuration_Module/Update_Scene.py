@@ -47,7 +47,10 @@ FILE_EXCHANGE      = PROJECT_DIR / "File_Exchange"
 
 # Parts within this XY distance (metres) AND with the same colour are
 # considered the same physical part and keep their old ID automatically.
-POSITION_MATCH_THRESHOLD_M = 0.025
+# 4 cm gives enough headroom for typical camera-to-workspace positional
+# jitter while staying well below the ~6 cm minimum inter-part spacing
+# seen in normal scenes (so matches remain unambiguous).
+POSITION_MATCH_THRESHOLD_M = 0.040
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -176,7 +179,39 @@ def _match_parts_by_position(
         used_mem.add(mn)
         used_fresh.add(fn)
 
+    # ── Pass 1 diagnostic ────────────────────────────────────────────────
+    # If memory had slotted parts but none matched via slots, the fresh scan
+    # likely did not produce 'at' predicates.  Warn early so the user has
+    # context when they see unexpected new IDs in the update dialogue.
+    if mem_at and not used_mem:
+        n_fresh_at = len(fresh_at)
+        if n_fresh_at == 0:
+            print(
+                f"  ⚠  Auto-match (slot pass): {len(mem_at)} slot(s) in memory "
+                f"but the fresh scan has NO 'at' predicates — slot matching "
+                f"skipped entirely.  Falling back to XY distance matching."
+            )
+        else:
+            print(
+                f"  ⚠  Auto-match (slot pass): {len(mem_at)} slot(s) in memory, "
+                f"{n_fresh_at} slot(s) in fresh scan, but 0 matched "
+                f"(slot names may have changed or colour mismatches).  "
+                f"Falling back to XY distance matching."
+            )
+
     # ── Pass 2: XY-based matching (for remaining unmatched parts) ────────
+    # Diagnostic: if memory had slotted parts but Pass 1 found nothing,
+    # the fresh scan likely didn't produce 'at' predicates — warn loudly
+    # so this is visible in the logs rather than silently giving every
+    # part a new ID.
+    mem_slotted = set(mem_at.values())
+    if not matched and mem_slotted:
+        print(
+            f"  ⚠  [Auto-match] Slot-based pass found 0 matches "
+            f"despite {len(mem_slotted)} slotted part(s) in memory. "
+            f"Fresh scan 'at' entries: {len(fresh_at)}. "
+            f"Falling back to XY-only matching (threshold {threshold_m:.3f} m)."
+        )
     mem_pos   = {n: _part_xy(mem_metric, n) for n in mem_parts if n not in used_mem}
     mem_pos   = {k: v for k, v in mem_pos.items() if v is not None}
     fresh_pos = {n: _part_xy(fresh_metric, n) for n in fresh_parts if n not in used_fresh}
@@ -205,6 +240,25 @@ def _match_parts_by_position(
 
     new_parts     = [n for n in fresh_parts if n not in used_fresh]
     missing_parts = [n for n in mem_parts   if n not in used_mem]
+
+    # ── Overall match diagnostic ──────────────────────────────────────────
+    n_mem   = len(mem_parts)
+    n_fresh = len(fresh_parts)
+    n_match = len(matched)
+    if n_mem > 0 and n_fresh > 0 and n_match == 0:
+        print(
+            f"  ⚠  Auto-match result: 0/{n_mem} memory parts matched "
+            f"({n_fresh} fresh part(s) present).  All fresh detections will "
+            f"be assigned NEW IDs.  If no parts were physically moved, check "
+            f"that the vision module produces consistent slot assignments and "
+            f"XY positions (threshold: {threshold_m*100:.1f} cm)."
+        )
+    elif n_match < min(n_mem, n_fresh) // 2 and min(n_mem, n_fresh) >= 4:
+        print(
+            f"  ⚠  Auto-match result: only {n_match}/{min(n_mem, n_fresh)} "
+            f"part(s) matched — unusually low.  "
+            f"{len(new_parts)} fresh part(s) will get new IDs."
+        )
 
     return matched, new_parts, missing_parts
 
@@ -788,6 +842,21 @@ def apply_update_mapping(
                 rename_map[extra] = f"Part_{next_num}"
                 used_numbers.add(next_num)
                 next_num += 1
+
+    # ── sanity check: warn if every part ended up with a brand-new ID ────────
+    # This normally means the auto-matcher found zero position matches, which
+    # suggests a vision inconsistency (missing 'at' predicates, large positional
+    # drift, or a coordinate system change).  The warning is informational only —
+    # the mapping is still applied, but the user should know to check the IDs.
+    old_parts_in_rename = {v for v in rename_map.values() if v in old_parts_set}
+    fresh_parts_total   = len(fresh_state.get("objects", {}).get("parts", []))
+    if fresh_parts_total > 0 and not old_parts_in_rename:
+        print(
+            f"  ⚠  [Auto-match] All {fresh_parts_total} fresh part(s) received NEW IDs "
+            f"— no position match found for any existing part. "
+            f"Check that the vision scan produced consistent 'at' predicates "
+            f"and that parts have not been physically replaced."
+        )
 
     _rename_parts_in_state(result, rename_map)
 
