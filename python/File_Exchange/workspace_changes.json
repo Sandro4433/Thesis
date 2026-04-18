@@ -1,5 +1,20 @@
 {
-  "workspace": {
-    "batch_size": 4
+  "Part_16": {
+    "fragility": "fragile"
+  },
+  "Part_14": {
+    "fragility": "fragile"
+  },
+  "Part_15": {
+    "fragility": "fragile"
+  },
+  "Part_17": {
+    "fragility": "fragile"
+  },
+  "Part_12": {
+    "fragility": "fragile"
+  },
+  "Part_13": {
+    "fragility": "fragile"
   }
 }

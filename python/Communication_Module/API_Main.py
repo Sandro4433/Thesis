@@ -257,6 +257,154 @@ def is_no(text: str) -> bool:
     )
 
 
+# ── Fuzzy yes/no fallback via LLM ────────────────────────────────────────────
+#
+# The regex-based is_yes / is_no are deterministic but brittle: misspellings
+# like "zes" or "n0", fragments like "k" or "mhm", and other non-canonical
+# confirmations fall through.  When a proposal is pending and regex can't
+# classify the reply, we ask a cheap LLM call to interpret intent before
+# deciding whether to commit, reject, or treat the input as a new instruction.
+#
+# Classifier returns one of:
+#   "yes"     — user clearly wants to confirm the pending proposal
+#   "no"      — user clearly wants to reject the pending proposal
+#   "other"   — user typed a substantive new instruction / follow-up
+#   "unclear" — genuinely ambiguous; ask the user to clarify
+
+def classify_pending_reply(
+    client: OpenAI,
+    model: str,
+    user_input: str,
+    pending_summary: str,
+) -> str:
+    """
+    Classify the user's reply to a 'Confirm?' prompt.
+
+    `pending_summary` is a short human-readable description of what is pending
+    (e.g. "a changes block proposing Container_1 = output") so the classifier
+    can disambiguate replies like "correct" vs "change it".
+
+    Returns one of: "yes", "no", "other", "unclear".
+    On any error, returns "unclear" so the caller falls back to asking the
+    user directly — we never silently guess wrong on a commit-to-disk action.
+    """
+    prompt = f"""You classify a user's reply to a yes/no confirmation prompt.
+
+The assistant just proposed: {pending_summary}
+Then asked the user: "Confirm?"
+
+The user replied: "{user_input}"
+
+Classify the reply as EXACTLY one of these four labels:
+
+  YES      — user wants to confirm / accept / commit the proposal.
+             Includes clear affirmatives and obvious typos/variants:
+             "yes", "yep", "yeah", "yup", "ok", "sure", "correct",
+             "zes" (typo of yes), "yess", "mhm", "go ahead", "do it", "k", etc.
+
+  NO       — user wants to reject / cancel / redo the proposal.
+             Includes clear negatives and obvious typos:
+             "no", "nope", "nah", "n0", "cancel", "wrong", "redo", etc.
+
+  OTHER    — user typed a substantive new instruction or follow-up that is
+             clearly NOT an attempt at yes/no. E.g. "actually, make container 2
+             input instead", "what about green parts?", "change the batch size".
+
+  UNCLEAR  — the reply is short but does NOT clearly mean yes, no, or a new
+             instruction. E.g. "maybe", "idk", "hmm", "?", gibberish, or a
+             typo too far from any known word to be sure.
+
+Rules:
+- If the reply is a plausible typo of yes/no (edit distance 1-2), classify as
+  YES or NO, not UNCLEAR. Be generous with obvious typos.
+- If you are not confident, return UNCLEAR. UNCLEAR is the SAFE default.
+- Never return YES or NO for a reply that contains new content/constraints.
+
+Reply with EXACTLY one word: YES, NO, OTHER, or UNCLEAR."""
+
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=5,
+        )
+        answer = (resp.choices[0].message.content or "").strip().upper()
+        # Strip trailing punctuation the model may add
+        answer = re.sub(r"[^A-Z]", "", answer)
+        if answer == "YES":
+            return "yes"
+        if answer == "NO":
+            return "no"
+        if answer == "OTHER":
+            return "other"
+        return "unclear"
+    except Exception as e:
+        print(f"  (Could not classify reply: {e} — asking user directly)")
+        return "unclear"
+
+
+def resolve_pending_reply(
+    client: OpenAI,
+    model: str,
+    user_input: str,
+    pending_summary: str,
+) -> tuple[str, str]:
+    """
+    Resolve a user reply to a pending 'Confirm?' prompt.
+
+    Pipeline:
+      1. Fast regex path — is_yes / is_no catch the common cases for free.
+      2. If regex is silent, ask the LLM classifier.
+      3. If the classifier returns 'unclear', prompt the user directly in
+         the CLI up to 2 times before giving up and treating as 'other'.
+
+    Returns (decision, final_text) where:
+      - decision is "yes", "no", or "other"
+      - final_text is the text to use if decision == "other"
+        (the original user_input, or the clarified reply)
+    """
+    # 1. Regex fast path
+    if is_yes(user_input):
+        return "yes", user_input
+    if is_no(user_input):
+        return "no", user_input
+
+    # 2. LLM classifier for anything regex didn't catch
+    verdict = classify_pending_reply(client, model, user_input, pending_summary)
+    if verdict in ("yes", "no", "other"):
+        return verdict, user_input
+
+    # 3. Unclear — ask the user directly, without touching the main conversation
+    current_input = user_input
+    for _ in range(2):
+        print(
+            "ASSISTANT:\n"
+            f"I'm not sure I understood \"{current_input}\". "
+            "Did you mean to confirm the proposal (yes), reject it (no), "
+            "or change something else?\n"
+        )
+        clarified = input("YOU: ").strip()
+        if not clarified:
+            continue
+        # Regex pass on the clarified reply
+        if is_yes(clarified):
+            return "yes", clarified
+        if is_no(clarified):
+            return "no", clarified
+        # LLM pass on the clarified reply
+        verdict = classify_pending_reply(client, model, clarified, pending_summary)
+        if verdict in ("yes", "no"):
+            return verdict, clarified
+        if verdict == "other":
+            return "other", clarified
+        # Still unclear — loop once more, then fall through
+        current_input = clarified
+
+    # Gave up — treat as a new instruction so the main LLM can respond.
+    return "other", current_input
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Capacity validation (used mid-conversation)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -504,6 +652,22 @@ def _try_extract_changes(
 # ═══════════════════════════════════════════════════════════════════════════════
 # Session lifecycle helpers
 # ═══════════════════════════════════════════════════════════════════════════════
+
+def _describe_pending(
+    pending_sequence: Optional[List[List]],
+    pending_changes: Optional[Dict[str, Any]],
+) -> str:
+    """Short one-liner describing what's pending, for the reply classifier."""
+    parts = []
+    if pending_changes is not None:
+        keys = ", ".join(sorted(pending_changes.keys())) or "(empty)"
+        parts.append(f"a changes block with keys: {keys}")
+    if pending_sequence is not None:
+        parts.append(f"a sequence block with {len(pending_sequence)} pick-and-place steps")
+    if not parts:
+        return "a proposal awaiting confirmation"
+    return " and ".join(parts)
+
 
 def _confirm_pending(
     client: OpenAI,
@@ -1059,8 +1223,20 @@ def run_update_dialogue(
                     print("\n  No overrides — accepting auto-matches only.")
                 return accumulated_mapping
 
+            # ── Resolve the reply: regex fast path, LLM classifier fallback ──
+            # This catches misspellings like "zes" that the regex would miss
+            # and asks the user directly if the reply is genuinely unclear.
+            pending_summary = (
+                f"a mapping proposal with {len(turn_mapping)} override(s)"
+                if turn_mapping
+                else "a clarifying question about the part mapping"
+            )
+            decision, user = resolve_pending_reply(
+                client, MODEL, user, pending_summary,
+            )
+
             # ── "yes" → validate, accumulate, and let the LLM ask about more.
-            if is_yes(user):
+            if decision == "yes":
                 if not turn_mapping:
                     # The LLM asked a confirmation question (not a clarification)
                     # but submitted an empty mapping — nothing would be saved.
@@ -1120,7 +1296,7 @@ def run_update_dialogue(
                 continue
 
             # ── "no" → reject the proposed mapping ──────────────────────────
-            if is_no(user):
+            if decision == "no":
                 messages.append({"role": "user", "content": "Rejected. Ask me again."})
                 continue
 
@@ -1260,8 +1436,21 @@ def _run_conversation_loop(
 
         has_pending = pending_sequence is not None or pending_changes is not None
 
+        # ── If a proposal is pending, resolve the reply as yes/no/other ──
+        # Regex catches the common cases for free; the LLM classifier
+        # handles typos and non-canonical phrasings; a genuinely unclear
+        # reply prompts the user directly instead of silently dropping
+        # the pending state.
+        if has_pending:
+            pending_summary = _describe_pending(pending_sequence, pending_changes)
+            decision, user_input = resolve_pending_reply(
+                client, MODEL, user_input, pending_summary,
+            )
+        else:
+            decision = "other"
+
         # ── Handle confirmation ──────────────────────────────────────────
-        if has_pending and is_yes(user_input):
+        if decision == "yes":
             accumulated_changes = _confirm_pending(
                 client, messages, accumulated_changes,
                 pending_sequence, pending_changes,
@@ -1298,7 +1487,7 @@ def _run_conversation_loop(
             continue
 
         # ── Handle rejection ─────────────────────────────────────────────
-        if has_pending and is_no(user_input):
+        if decision == "no":
             pending_sequence = None
             pending_changes = None
             messages.append({
@@ -1307,7 +1496,7 @@ def _run_conversation_loop(
             })
             continue
 
-        # ── Regular user message ─────────────────────────────────────────
+        # ── Regular user message (decision == "other") ───────────────────
         # Run background ambiguity detection against the scene
         ambiguity_result = detect_ambiguity(
             client, MODEL, user_input, scene, mode,
