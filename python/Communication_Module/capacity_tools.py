@@ -145,6 +145,15 @@ CAPACITY_TOOL_SCHEMA = {
                         'e.g. ["red", "blue"]. Omit for kitting.'
                     ),
                 },
+                "batch_size": {
+                    "type": "integer",
+                    "description": (
+                        "For kitting: how many kits to fill in this batch. "
+                        "ALWAYS pass this when the user specifies a batch size. "
+                        "Must be ≤ the number of output_receptacles. "
+                        "Defaults to the number of output_receptacles if omitted."
+                    ),
+                },
             },
             "required": ["operation", "input_containers", "output_receptacles"],
         },
@@ -214,10 +223,18 @@ def execute_capacity_check(
     problems: List[str] = []
 
     if operation == "kitting" and kit_recipe:
-        num_kits = len(output_receptacles & all_known)
+        available_kits = len(output_receptacles & all_known)
+        batch_size = args.get("batch_size")
+        if batch_size is not None:
+            num_kits = min(int(batch_size), available_kits)
+        else:
+            num_kits = available_kits
         recipe_per_kit = sum(e.get("quantity", 0) for e in kit_recipe)
 
-        lines.append(f"Kitting check ({num_kits} output kits, {recipe_per_kit} parts per kit):")
+        lines.append(
+            f"Kitting check (batch_size={num_kits} of {available_kits} available kits, "
+            f"{recipe_per_kit} parts per kit):"
+        )
 
         for entry in kit_recipe:
             color = entry.get("color", "").lower()
