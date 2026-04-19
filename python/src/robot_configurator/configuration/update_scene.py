@@ -234,6 +234,21 @@ def prepare_update() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     return old_state, fresh_state
 
 
+def prepare_recapture(old_state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Run vision again to get a fresh scan, keeping old_state as the reference.
+
+    Called when the user rejects the initial image and requests a retake.
+    Returns the new fresh_state dict.
+    """
+    save_atomic(CONFIGURATION_PATH, old_state)
+    _run_vision()
+    fresh_state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
+    # Restore old_state so configuration.json stays consistent until mapping is applied
+    save_atomic(CONFIGURATION_PATH, old_state)
+    return fresh_state
+
+
 def build_update_context(
     old_state: Dict[str, Any],
     fresh_state: Dict[str, Any],

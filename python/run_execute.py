@@ -4,6 +4,7 @@ Called as a subprocess by the GUI so rospy.init_node() gets the main thread.
 """
 import sys
 import json
+from pathlib import Path
 
 # Bootstrap: ensure project root is on sys.path before importing paths.
 _PROJECT_DIR = Path(__file__).resolve().parent
@@ -36,7 +37,7 @@ else:
 # Only apply the steps that were actually executed
 executed_sequence = sequence[:completed]
 
-from Configuration_Module.Apply_Sequence_Changes import apply_and_save  # type: ignore
+from robot_configurator.configuration.apply_sequence_changes import apply_and_save
 if executed_sequence:
     apply_and_save(CONFIGURATION_PATH, executed_sequence, save_memory=True)
 else:

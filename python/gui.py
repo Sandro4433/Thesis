@@ -1592,7 +1592,7 @@ class RobotGUI:
         sys.stderr = _GUIStream(self._out_q)
 
         # Make the cancel event available to API_Main for aborting LLM calls
-        import Communication_Module.API_Main as _api
+        import robot_configurator.communication.api_main as _api
         _api._cancel_event = self._cancel_event
 
         try:
@@ -1605,7 +1605,7 @@ class RobotGUI:
                     if sh.CONFIGURATION_PATH.exists():
                         import json as _json
                         config = _json.loads(sh.CONFIGURATION_PATH.read_text(encoding="utf-8"))
-                        from Configuration_Module.Update_Scene import run_post_execution_rescan  # type: ignore
+                        from robot_configurator.configuration.update_scene import run_post_execution_rescan
                         run_post_execution_rescan(config)
                 except Exception as exc:
                     print(f"  ⚠  Post-execution rescan failed: {exc}")
@@ -1640,7 +1640,7 @@ class RobotGUI:
         except Exception as exc:
             # LLMCancelled is expected when the user presses Done during an
             # LLM call — don't print a scary error for that.
-            from Communication_Module.API_Main import LLMCancelled
+            from robot_configurator.communication.api_main import LLMCancelled
             if not isinstance(exc, LLMCancelled):
                 print(f"\n[ERR] Unexpected error: {exc}\n")
                 print(traceback.format_exc())
