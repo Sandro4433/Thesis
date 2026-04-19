@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Packaging / virtual envs
+.venv/
+venv/
+env/
+.env
+
+# Secrets — never commit
+.env.local
+*.env
+
+# Test / coverage artefacts
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Fast Downward (external dependency — use git submodule instead)
+
+# Runtime outputs — not part of source
+Memory/
+file_exchange/
+*.log
+configuration.json
+sequence.json
+changes.json
