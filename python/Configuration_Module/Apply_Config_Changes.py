@@ -17,28 +17,24 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+
 import json
 import copy
+from pathlib import Path
 from typing import Any, Dict, List
 
-PROJECT_DIR = Path(__file__).resolve().parents[1]
-if str(PROJECT_DIR) not in sys.path:
-    sys.path.insert(0, str(PROJECT_DIR))
+# Bootstrap: resolve project root from this file's location so this module works
+# when run directly (e.g. python Vision_Module/Vision_Main.py) as well as imported.
+_PROJECT_DIR = Path(__file__).resolve().parents[1]
+if str(_PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_DIR))
 
-from paths import CONFIGURATION_JSON, LLM_RESPONSE_JSON
-
-CONFIGURATION_PATH = Path(CONFIGURATION_JSON.resolve())
-CHANGES_PATH   = Path(LLM_RESPONSE_JSON.resolve()).parent / "workspace_changes.json"
+import paths
+from paths import CONFIGURATION_PATH, CHANGES_PATH, parent_of_slot
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-
-def _parent_of(slot_name: str) -> str | None:
-    idx = slot_name.rfind("_Pos_")
-    return slot_name[:idx] if idx != -1 else None
-
 
 def _upsert_list(lst: List[Dict], key_field: str, key_val: Any,
                  update: Dict[str, Any]) -> None:
@@ -133,7 +129,7 @@ def apply_changes(
             continue
 
         # ── slot-level role (backward-compat: "Container_3_Pos_1": {"Role":…}) ─
-        parent = _parent_of(key)
+        parent = parent_of_slot(key)
         if parent is not None and parent in all_receptacles:
             role_val = value.get("role") or value.get("Role")
             if role_val is not None or "role" in value or "Role" in value:

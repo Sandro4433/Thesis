@@ -35,15 +35,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-PROJECT_DIR = Path(__file__).resolve().parents[1]
-if str(PROJECT_DIR) not in sys.path:
-    sys.path.insert(0, str(PROJECT_DIR))
+# Bootstrap: resolve project root from this file's location so this module works
+# when run directly (e.g. python Vision_Module/Vision_Main.py) as well as imported.
+_PROJECT_DIR = Path(__file__).resolve().parents[1]
+if str(_PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_DIR))
 
-from paths import CONFIGURATION_JSON  # type: ignore
+import paths
+from paths import (
+    PROJECT_DIR, CONFIGURATION_PATH, MEMORY_DIR, FILE_EXCHANGE_DIR,
+    save_atomic, save_to_memory, empty_state,
+)
 
-CONFIGURATION_PATH = Path(CONFIGURATION_JSON.resolve())
-MEMORY_DIR         = PROJECT_DIR / "Memory"
-FILE_EXCHANGE      = PROJECT_DIR / "File_Exchange"
+FILE_EXCHANGE = FILE_EXCHANGE_DIR
 
 # Parts within this XY distance (metres) AND with the same colour are
 # considered the same physical part and keep their old ID automatically.
@@ -54,29 +58,6 @@ POSITION_MATCH_THRESHOLD_M = 0.040
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-
-def _empty_state() -> Dict[str, Any]:
-    return {
-        "workspace": {"operation_mode": None, "batch_size": None},
-        "objects":   {"kits": [], "containers": [], "parts": [], "slots": []},
-        "slot_belongs_to": {},
-        "predicates": {
-            "at": [], "slot_empty": [], "role": [],
-            "color": [],
-            "priority": [], "kit_recipe": [], "part_compatibility": [],
-            "fragility": [],
-        },
-        "metric": {},
-    }
-
-
-def _save_atomic(path: Path, state: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = Path(str(path) + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2, ensure_ascii=False)
-    tmp.replace(path)
-
 
 def _part_xy(metric: Dict[str, Any], name: str) -> Optional[Tuple[float, float]]:
     """Extract XY position for a part from the metric section."""
@@ -443,7 +424,7 @@ def prepare_update() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     memory_state: Dict[str, Any] = (
         json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
         if CONFIGURATION_PATH.exists()
-        else _empty_state()
+        else empty_state()
     )
 
     try:
@@ -451,14 +432,14 @@ def prepare_update() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     except Exception as exc:
         print(f"\n❌  Vision failed: {exc}\n")
         # Restore old config so the file is not corrupted
-        _save_atomic(CONFIGURATION_PATH, memory_state)
+        save_atomic(CONFIGURATION_PATH, memory_state)
         raise
 
     fresh_state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
 
     # Restore old config on disk — the fresh state lives only in memory
     # until the user confirms the mapping.
-    _save_atomic(CONFIGURATION_PATH, memory_state)
+    save_atomic(CONFIGURATION_PATH, memory_state)
 
     return memory_state, fresh_state
 
@@ -481,19 +462,19 @@ def prepare_recapture(old_state: Dict[str, Any]) -> Dict[str, Any]:
     fresh_state : the newly captured vision state
     """
     # Save old config so it survives the vision overwrite
-    _save_atomic(CONFIGURATION_PATH, old_state)
+    save_atomic(CONFIGURATION_PATH, old_state)
 
     try:
         _run_vision()
     except Exception as exc:
         print(f"\n❌  Vision failed: {exc}\n")
-        _save_atomic(CONFIGURATION_PATH, old_state)
+        save_atomic(CONFIGURATION_PATH, old_state)
         raise
 
     fresh_state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
 
     # Restore old config on disk
-    _save_atomic(CONFIGURATION_PATH, old_state)
+    save_atomic(CONFIGURATION_PATH, old_state)
 
     return fresh_state
 
@@ -887,19 +868,11 @@ def apply_update_mapping(
     print()
 
     # ── save ──────────────────────────────────────────────────────────────────
-    _save_atomic(CONFIGURATION_PATH, merged)
+    save_atomic(CONFIGURATION_PATH, merged)
     print("✅  Configuration updated.")
 
-    try:
-        from Configuration_Module.Apply_Sequence_Changes import save_to_memory  # type: ignore
-        mem_path = save_to_memory(merged, label="update")
-        print("✅  State archived.")
-    except ImportError:
-        MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-        ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
-        arc_path = MEMORY_DIR / f"configuration_update_{ts}.json"
-        _save_atomic(arc_path, merged)
-        print("✅  State archived.")
+    mem_path = save_to_memory(merged, label="update")
+    print("✅  State archived.")
 
     # ── redraw annotated image with updated IDs + fragility ───────────────
     _redraw_annotated_image(rename_map, merged)
@@ -1042,20 +1015,20 @@ def run_post_execution_rescan(config_state: Dict[str, Any]) -> Dict[str, Any]:
     print("\n── Post-execution vision rescan ──\n")
 
     # Ensure config is on disk before vision runs (vision overwrites it)
-    _save_atomic(CONFIGURATION_PATH, config_state)
+    save_atomic(CONFIGURATION_PATH, config_state)
 
     try:
         _run_vision()
     except Exception as exc:
         print(f"  ⚠  Vision rescan failed: {exc}")
         # Restore config so the post-execution state is not lost
-        _save_atomic(CONFIGURATION_PATH, config_state)
+        save_atomic(CONFIGURATION_PATH, config_state)
         return config_state
 
     fresh_state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
 
     # Restore config on disk — we merge in memory first
-    _save_atomic(CONFIGURATION_PATH, config_state)
+    save_atomic(CONFIGURATION_PATH, config_state)
 
     # ── match fresh detections to config parts ────────────────────────────
     matched, new_fresh, missing_config = _match_parts_by_position(
@@ -1146,19 +1119,11 @@ def run_post_execution_rescan(config_state: Dict[str, Any]) -> Dict[str, Any]:
     print()
 
     # ── save ──────────────────────────────────────────────────────────────
-    _save_atomic(CONFIGURATION_PATH, merged)
+    save_atomic(CONFIGURATION_PATH, merged)
     print("✅  Configuration updated.")
 
-    try:
-        from Configuration_Module.Apply_Sequence_Changes import save_to_memory  # type: ignore
-        mem_path = save_to_memory(merged, label="post_exec_rescan")
-        print("✅  State archived.")
-    except ImportError:
-        MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-        ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
-        arc_path = MEMORY_DIR / f"configuration_post_exec_{ts}.json"
-        _save_atomic(arc_path, merged)
-        print("✅  State archived.")
+    mem_path = save_to_memory(merged, label="post_exec_rescan")
+    print("✅  State archived.")
 
     # ── redraw image with confirmed IDs + fragility ───────────────────────
     _redraw_annotated_image(rename_map, merged)

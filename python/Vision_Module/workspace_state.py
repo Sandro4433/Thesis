@@ -20,19 +20,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-
-# ── helpers ──────────────────────────────────────────────────────────────────
-
-def _parent_of(slot_name: str) -> Optional[str]:
-    """
-    Kit_0_Pos_1  → Kit_0
-    Container_3_Pos_2 → Container_3
-    Returns None if the pattern doesn't match.
-    """
-    idx = slot_name.rfind("_Pos_")
-    if idx == -1:
-        return None
-    return slot_name[:idx]
+from paths import parent_of_slot as _parent_of
 
 
 def _is_slot(name: str) -> bool:
@@ -191,13 +179,10 @@ def entries_to_state(final_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-# ── LLM slim view ─────────────────────────────────────────────────────────────
+# ── LLM slim view ────────────────────────────────────────────────────────────
 
 def _extract_positions_xy(metric: Dict[str, Any]) -> Dict[str, List[float]]:
-    """
-    Build a lightweight {name: [x, y]} dict from the full metric section.
-    Only entries with a valid pos list are included.
-    """
+    """Build a lightweight {name: [x, y]} dict from the full metric section."""
     positions: Dict[str, List[float]] = {}
     for name, entry in sorted(metric.items()):
         pos = entry.get("pos") if isinstance(entry, dict) else None
@@ -207,22 +192,11 @@ def _extract_positions_xy(metric: Dict[str, Any]) -> Dict[str, List[float]]:
 
 
 def _strip_for_llm(state: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Return the workspace state with the full metric section replaced by a
-    lightweight positions_xy dict ({name: [x, y]}).
-
-    This gives the LLM all symbolic facts PLUS enough spatial information to
-    resolve user references like "the container on the left".
-    """
+    """Return the workspace state with the full metric replaced by positions_xy."""
     out = copy.deepcopy(state)
     metric = out.pop("metric", {})
     out["positions_xy"] = _extract_positions_xy(metric)
     return out
-
-
-def state_to_api_payload(state: Dict[str, Any]) -> str:
-    """Minified JSON payload for LLM planning (symbolic facts + positions_xy)."""
-    return json.dumps(_strip_for_llm(state), separators=(",", ":"), ensure_ascii=False)
 
 
 # ── persistence ───────────────────────────────────────────────────────────────
@@ -236,28 +210,6 @@ def save_json_snapshot(path: str, state: Dict[str, Any], pretty: bool = True) ->
         else:
             json.dump(state, f, separators=(",", ":"), ensure_ascii=False)
     os.replace(tmp, path)
-
-
-def load_json_snapshot(path: str) -> Dict[str, Any]:
-    """Load a configuration.json file; return empty skeleton on failure."""
-    _EMPTY: Dict[str, Any] = {
-        "workspace":      {"operation_mode": None, "batch_size": None},
-        "objects":        {"kits": [], "containers": [], "parts": [], "slots": []},
-        "slot_belongs_to": {},
-        "predicates": {
-            "at": [], "slot_empty": [], "role": [],
-            "color": [],
-            "priority": [], "kit_recipe": [], "part_compatibility": [], "fragility": [],
-        },
-        "metric": {},
-    }
-    if not os.path.exists(path):
-        return copy.deepcopy(_EMPTY)
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, dict):
-        return copy.deepcopy(_EMPTY)
-    return data
 
 
 def save_llm_snapshot(path: str, state: Dict[str, Any], pretty: bool = True) -> None:

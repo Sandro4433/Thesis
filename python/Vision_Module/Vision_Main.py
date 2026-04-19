@@ -3,10 +3,14 @@ from pathlib import Path
 import json
 import sys
 
-# Allow running this file directly (by path) as well as importing it from python/Main.py
-PROJECT_DIR = Path(__file__).resolve().parents[1]  # .../python
-if str(PROJECT_DIR) not in sys.path:
-    sys.path.insert(0, str(PROJECT_DIR))
+# Allow running this file directly (by path) as well as importing it from python/Main.py.
+# Bootstrap: add the project root to sys.path before importing paths, so this works
+# regardless of the current working directory.
+_PROJECT_DIR = Path(__file__).resolve().parents[1]
+if str(_PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_DIR))
+
+import paths  # ensures PROJECT_DIR is on sys.path (and sets it for all other imports)
 
 import cv2
 import numpy as np
@@ -66,7 +70,7 @@ if "pyrealsense2" in sys.modules:
 # Set USE_CAMERA = True  → capture live from RealSense (via subprocess worker)
 # Set USE_CAMERA = False → load a PNG from the Images folder
 # =============================================================================
-USE_CAMERA = True
+USE_CAMERA = False
 
 # Only used when USE_CAMERA = False.
 # Path is relative to this file's directory (Vision_Module/Images/).

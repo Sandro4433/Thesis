@@ -1,12 +1,10 @@
 import json
 from pathlib import Path
 
-from paths import LLM_RESPONSE_JSON, CONFIGURATION_JSON
+from paths import SEQUENCE_PATH, CONFIGURATION_PATH, FILE_EXCHANGE_DIR
 from Execution_Module.pick_and_place import pick_and_place
 
-SEQUENCE_PATH      = Path(LLM_RESPONSE_JSON.resolve()).parent / "sequence.json"
-CONFIGURATION_PATH = Path(CONFIGURATION_JSON.resolve())
-CANCEL_SENTINEL    = CONFIGURATION_PATH.parent / ".cancel_execution"
+CANCEL_SENTINEL = FILE_EXCHANGE_DIR / ".cancel_execution"
 
 # Gripper width defaults (fallback if not specified in sequence)
 GRIPPER_OPEN_WIDTH           = 0.075   # never changes

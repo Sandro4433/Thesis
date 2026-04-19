@@ -1,18 +1,12 @@
 {
+  "Container_1": {
+    "role": "input"
+  },
   "Kit_1": {
     "role": "output"
   },
   "Kit_2": {
     "role": "output"
-  },
-  "Container_1": {
-    "role": "input"
-  },
-  "Container_2": {
-    "role": "input"
-  },
-  "Container_3": {
-    "role": "input"
   },
   "workspace": {
     "operation_mode": "kitting",
@@ -20,11 +14,7 @@
   },
   "kit_recipe": [
     {
-      "color": "red",
-      "quantity": 1
-    },
-    {
-      "color": "blue",
+      "color": "green",
       "quantity": 1
     }
   ]

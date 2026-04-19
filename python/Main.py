@@ -1,18 +1,13 @@
-from pathlib import Path
 import sys
+# Bootstrap: ensure project root is on sys.path before importing paths.
+_PROJECT_DIR = Path(__file__).resolve().parent
+if str(_PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_DIR))
 
-
-#This is a github repo test
-
-def _ensure_project_on_syspath() -> None:
-    project_dir = Path(__file__).resolve().parent  # .../python
-    if str(project_dir) not in sys.path:
-        sys.path.insert(0, str(project_dir))
+import paths  # ensures PROJECT_DIR is on sys.path
 
 
 def main() -> None:
-    _ensure_project_on_syspath()
-
     # session_handler orchestrates the pipeline (vision, config, LLM, execution).
     from session_handler import main as session_main
     session_main()

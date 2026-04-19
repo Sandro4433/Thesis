@@ -23,22 +23,24 @@
 
 from __future__ import annotations
 
+import sys
+
 import copy
 import json
-import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-PROJECT_DIR = Path(__file__).resolve().parents[1]
-if str(PROJECT_DIR) not in sys.path:
-    sys.path.insert(0, str(PROJECT_DIR))
+# Bootstrap: resolve project root from this file's location so this module works
+# when run directly (e.g. python Vision_Module/Vision_Main.py) as well as imported.
+_PROJECT_DIR = Path(__file__).resolve().parents[1]
+if str(_PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_DIR))
 
-from paths import CONFIGURATION_JSON, LLM_RESPONSE_JSON
-
-CONFIGURATION_PATH = Path(CONFIGURATION_JSON.resolve())
-SEQUENCE_PATH  = Path(LLM_RESPONSE_JSON.resolve()).parent / "sequence.json"
-MEMORY_DIR     = PROJECT_DIR / "Memory"
+import paths
+from paths import (
+    CONFIGURATION_PATH, SEQUENCE_PATH, MEMORY_DIR,
+    save_atomic, save_to_memory as _paths_save_to_memory,
+)
 
 
 # ── core apply function ───────────────────────────────────────────────────────
@@ -116,26 +118,9 @@ def apply_sequence(
 
 # ── persistence helpers ───────────────────────────────────────────────────────
 
-def _save_atomic(path: Path, state: Dict[str, Any]) -> None:
-    """Write JSON atomically via a .tmp file → os.replace."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = Path(str(path) + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2, ensure_ascii=False)
-    tmp.replace(path)
-
-
 def save_to_memory(state: Dict[str, Any], label: str = "post_exec") -> Path:
-    """
-    Save a timestamped copy to Memory/ so that no prior state is ever lost.
-    Returns the path it was saved to.
-    """
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-    ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
-    name = f"configuration_{label}_{ts}.json"
-    dest = MEMORY_DIR / name
-    _save_atomic(dest, state)
-    return dest
+    """Save a timestamped copy to Memory/. Delegates to paths.save_to_memory."""
+    return _paths_save_to_memory(state, label=label)
 
 
 # ── top-level entry point (called from API_Main) ──────────────────────────────
@@ -169,7 +154,7 @@ def apply_and_save(
     updated = apply_sequence(state, sequence)
 
     # Overwrite configuration.json
-    _save_atomic(positions_path, updated)
+    save_atomic(positions_path, updated)
     print(f"✅  configuration.json updated → {positions_path.resolve()}")
 
     # Archive to Memory/

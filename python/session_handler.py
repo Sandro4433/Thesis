@@ -26,19 +26,11 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
-# ── Project root setup ───────────────────────────────────────────────────────
-
-PROJECT_DIR = Path(__file__).resolve().parent
-if str(PROJECT_DIR) not in sys.path:
-    sys.path.insert(0, str(PROJECT_DIR))
-
-from paths import CONFIGURATION_JSON, LLM_RESPONSE_JSON
-
-CONFIGURATION_PATH = Path(CONFIGURATION_JSON.resolve())
-OUTPUT_DIR         = Path(LLM_RESPONSE_JSON.resolve()).parent
-SEQUENCE_PATH      = OUTPUT_DIR / "sequence.json"
-CHANGES_PATH       = OUTPUT_DIR / "workspace_changes.json"
-MEMORY_DIR         = PROJECT_DIR / "Memory"
+import paths
+from paths import (
+    PROJECT_DIR, CONFIGURATION_PATH, SEQUENCE_PATH, CHANGES_PATH,
+    MEMORY_DIR, save_atomic, save_to_memory,
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -131,18 +123,8 @@ def apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
 
 
 def save_config_to_memory(state: Dict[str, Any]) -> Path:
-    """Save a timestamped configuration to Memory/ using the naming convention
-    configuration_DDMMYYYY_HHMM.json.  Returns the path it was saved to."""
-    from datetime import datetime as _dt
-
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-    ts = _dt.now().strftime("%d%m%Y_%H%M")
-    name = f"configuration_{ts}.json"
-    dest = MEMORY_DIR / name
-    tmp = str(dest) + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2, ensure_ascii=False)
-    Path(tmp).replace(dest)
+    """Save a timestamped configuration to Memory/. Delegates to paths.save_to_memory."""
+    dest = save_to_memory(state, label="session")
     print(f"✅  State archived → {dest.name}")
     return dest
 
@@ -151,39 +133,31 @@ def list_memory_configs() -> List[Dict[str, str]]:
     """List all configuration files in Memory/, sorted newest first.
 
     Returns a list of dicts with keys: name, path, date, time.
-    Recognises multiple naming conventions:
-      - configuration_DDMMYYYY_HHMM.json          (session_handler saves)
-      - configuration_{label}_YYYYMMDD_HHMMSS.json (post_exec / update saves)
+    Recognises:
+      - configuration_{label}_YYYYMMDD_HHMMSS.json (current convention)
+      - configuration_DDMMYYYY_HHMM.json           (legacy convention)
+      - Any other .json file (uses file mtime)
     """
     import re as _re
 
     if not MEMORY_DIR.exists():
         return []
 
-    # Old convention:  configuration_DDMMYYYY_HHMM.json
-    pat_old = _re.compile(
-        r"^configuration_(\d{2})(\d{2})(\d{4})_(\d{2})(\d{2})\.json$"
-    )
-    # New convention:  configuration_{label}_YYYYMMDD_HHMMSS.json
+    # Current convention:  configuration_{label}_YYYYMMDD_HHMMSS.json
     pat_new = _re.compile(
         r"^configuration_[a-z_]+_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.json$"
+    )
+    # Legacy convention:  configuration_DDMMYYYY_HHMM.json
+    pat_old = _re.compile(
+        r"^configuration_(\d{2})(\d{2})(\d{4})_(\d{2})(\d{2})\.json$"
     )
     configs = []
     for f in sorted(MEMORY_DIR.iterdir(), reverse=True):
         if not f.is_file() or not f.name.endswith(".json"):
             continue
-        m_old = pat_old.match(f.name)
         m_new = pat_new.match(f.name)
-        if m_old:
-            dd, mm, yyyy, hh, mi = m_old.groups()
-            configs.append({
-                "name": f.name,
-                "path": str(f),
-                "date": f"{dd}.{mm}.{yyyy}",
-                "time": f"{hh}:{mi}",
-                "sort_key": f"{yyyy}{mm}{dd}{hh}{mi}00",
-            })
-        elif m_new:
+        m_old = pat_old.match(f.name)
+        if m_new:
             yyyy, mm, dd, hh, mi, ss = m_new.groups()
             configs.append({
                 "name": f.name,
@@ -192,8 +166,16 @@ def list_memory_configs() -> List[Dict[str, str]]:
                 "time": f"{hh}:{mi}:{ss}",
                 "sort_key": f"{yyyy}{mm}{dd}{hh}{mi}{ss}",
             })
+        elif m_old:
+            dd, mm, yyyy, hh, mi = m_old.groups()
+            configs.append({
+                "name": f.name,
+                "path": str(f),
+                "date": f"{dd}.{mm}.{yyyy}",
+                "time": f"{hh}:{mi}",
+                "sort_key": f"{yyyy}{mm}{dd}{hh}{mi}00",
+            })
         else:
-            # Include non-standard config files too (old naming, etc.)
             mtime = f.stat().st_mtime
             from datetime import datetime as _dt
             dt = _dt.fromtimestamp(mtime)
@@ -218,10 +200,7 @@ def load_config_from_memory(path: str) -> bool:
         return False
     try:
         state = json.loads(src.read_text(encoding="utf-8"))
-        tmp = str(CONFIGURATION_PATH) + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2, ensure_ascii=False)
-        Path(tmp).replace(CONFIGURATION_PATH)
+        save_atomic(CONFIGURATION_PATH, state)
         return True
     except Exception as exc:
         print(f"⚠  Failed to load config: {exc}")

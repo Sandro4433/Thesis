@@ -3,18 +3,15 @@ run_execute.py — Runs robot execution in a clean main thread.
 Called as a subprocess by the GUI so rospy.init_node() gets the main thread.
 """
 import sys
-from pathlib import Path
-
-PROJECT_DIR = Path(__file__).resolve().parent
-if str(PROJECT_DIR) not in sys.path:
-    sys.path.insert(0, str(PROJECT_DIR))
-
-from paths import CONFIGURATION_JSON, LLM_RESPONSE_JSON
-from pathlib import Path
 import json
 
-CONFIGURATION_PATH = Path(CONFIGURATION_JSON.resolve())
-SEQUENCE_PATH      = Path(LLM_RESPONSE_JSON.resolve()).parent / "sequence.json"
+# Bootstrap: ensure project root is on sys.path before importing paths.
+_PROJECT_DIR = Path(__file__).resolve().parent
+if str(_PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_DIR))
+
+import paths
+from paths import CONFIGURATION_PATH, SEQUENCE_PATH
 
 if not SEQUENCE_PATH.exists():
     print(f"\n[WARN] No sequence.json found at {SEQUENCE_PATH.resolve()}")
