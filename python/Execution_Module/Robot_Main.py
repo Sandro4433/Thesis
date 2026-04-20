@@ -3,14 +3,6 @@ from __future__ import annotations
 
 import sys
 
-# Bootstrap: resolve project root from this file's location so this module works
-# when run directly (e.g. python Vision_Module/Vision_Main.py) as well as imported.
-_PROJECT_DIR = Path(__file__).resolve().parents[1]
-if str(_PROJECT_DIR) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_DIR))
-
-import paths
-
 import rospy
 import moveit_commander
 

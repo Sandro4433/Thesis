@@ -1,4 +1,4 @@
-# Python
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
@@ -9,23 +9,21 @@ dist/
 build/
 .eggs/
 
-# Packaging / virtual envs
+# ── Packaging / virtual envs ──────────────────────────────────────────────────
 .venv/
 venv/
 env/
 .env
-
-# Secrets — never commit
 .env.local
 *.env
 
-# Test / coverage artefacts
+# ── Test / coverage artefacts ─────────────────────────────────────────────────
 .pytest_cache/
 .coverage
 coverage.xml
 htmlcov/
 
-# Editor / OS
+# ── Editor / OS ───────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
@@ -33,12 +31,24 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Fast Downward (external dependency — use git submodule instead)
+# ── Fast Downward (external — register as git submodule instead) ──────────────
+downward/
 
-# Runtime outputs — not part of source
-Memory/
+# ── Runtime outputs — not part of source ─────────────────────────────────────
+Memory/*.json
+File_Exchange/*.png
+File_Exchange/*.jpg
+File_Exchange/latest_image*
+File_Exchange/latest_pixel*
 file_exchange/
 *.log
-configuration.json
-sequence.json
-changes.json
+
+# ── Temporary / test images ───────────────────────────────────────────────────
+image_original.png
+image_undistorted.png
+
+# ── Camera calibration binary (regenerate with calibrate_camera.py) ───────────
+Utilities/camera_calibration.npz
+
+# ── Vision test images (large, not needed in source control) ─────────────────
+Vision_Module/Images/

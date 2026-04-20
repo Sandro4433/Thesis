@@ -2,7 +2,8 @@
 from typing import Dict, List, Any
 
 # Output (stable paths; independent of current working directory)
-from paths import CONFIGURATION_JSON, LLM_INPUT_JSON
+from robot_configurator.core.paths import CONFIGURATION_PATH as CONFIGURATION_JSON, FILE_EXCHANGE_DIR as _FE_DIR
+LLM_INPUT_JSON = _FE_DIR / "llm_input.json"
 
 CONFIGURATION_PATH = str(CONFIGURATION_JSON.resolve())
 LLM_INPUT_PATH     = str(LLM_INPUT_JSON.resolve())
@@ -111,4 +112,11 @@ USE_PDDL_PLANNER: bool = True
 #
 # If set, Fast Downward is used with PDDL 2.1 action costs (enforces priority
 # ordering as a hard constraint). If empty, pyperplan is used as a fallback.
-FAST_DOWNWARD_PATH: str = "/home/hv/Master_Thesis_Sandro_Gabl/python/downward/fast-downward.py"
+# Resolved relative to this file: python/downward/fast-downward.py
+# Override with the DOWNWARD_PATH environment variable if your layout differs.
+import os as _os
+FAST_DOWNWARD_PATH: str = _os.environ.get(
+    "DOWNWARD_PATH",
+    str(Path(__file__).resolve().parents[1] / "downward" / "fast-downward.py"),
+)
+del _os

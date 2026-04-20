@@ -3,14 +3,6 @@ from pathlib import Path
 import json
 import sys
 
-# Allow running this file directly (by path) as well as importing it from python/Main.py.
-# Bootstrap: add the project root to sys.path before importing paths, so this works
-# regardless of the current working directory.
-_PROJECT_DIR = Path(__file__).resolve().parents[1]
-if str(_PROJECT_DIR) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_DIR))
-
-import paths  # ensures PROJECT_DIR is on sys.path (and sets it for all other imports)
 
 import cv2
 import numpy as np

@@ -33,13 +33,8 @@ import tkinter as tk
 from tkinter import font as tkfont
 
 # ── project root ──────────────────────────────────────────────────────────────
-# Bootstrap: ensure project root is on sys.path before importing paths.
-_PROJECT_DIR = Path(__file__).resolve().parent
-if str(_PROJECT_DIR) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_DIR))
 
-import paths
-from paths import PROJECT_DIR
+from robot_configurator.core.paths import PROJECT_DIR
 
 # ── PIL (optional but recommended) ────────────────────────────────────────────
 try:

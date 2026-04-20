@@ -6,13 +6,8 @@ import sys
 import json
 from pathlib import Path
 
-# Bootstrap: ensure project root is on sys.path before importing paths.
-_PROJECT_DIR = Path(__file__).resolve().parent
-if str(_PROJECT_DIR) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_DIR))
 
-import paths
-from paths import CONFIGURATION_PATH, SEQUENCE_PATH
+from robot_configurator.core.paths import CONFIGURATION_PATH, SEQUENCE_PATH
 
 if not SEQUENCE_PATH.exists():
     print(f"\n[WARN] No sequence.json found at {SEQUENCE_PATH.resolve()}")

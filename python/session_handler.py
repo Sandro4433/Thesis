@@ -26,10 +26,9 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
-import paths
-from paths import (
+from robot_configurator.core.paths import (
     PROJECT_DIR, CONFIGURATION_PATH, SEQUENCE_PATH, CHANGES_PATH,
-    MEMORY_DIR, save_atomic, save_to_memory,
+    MEMORY_DIR, FILE_EXCHANGE_DIR, save_atomic, save_to_memory,
 )
 
 

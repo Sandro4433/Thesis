@@ -15,6 +15,11 @@ authors = [
 dependencies = [
     "openai>=1.0",
     "python-dotenv>=1.0",
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "pupil-apriltags>=1.0",
+    # pyrealsense2 must be installed separately (hardware SDK, not on PyPI for all platforms)
+    # pip install pyrealsense2  — or install via Intel RealSense SDK
 ]
 
 [project.optional-dependencies]
@@ -23,6 +28,13 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.4",
 ]
+ros = [
+    # ROS 1 (Noetic) Python bindings — installed by rosdep, not pip
+    # rospy, moveit_commander, geometry_msgs
+]
+
+[project.scripts]
+robot-configurator = "session_handler:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/robot_configurator"]
