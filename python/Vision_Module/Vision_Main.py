@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 
-# Ensure python/ is on sys.path regardless of how this file is invoked
+# Ensure python/ is on sys.path regardless of how this file is invoked.
 # (directly, as a subprocess, or as a module).
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
