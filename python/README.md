@@ -56,7 +56,7 @@ python/
 ├── Vision_Module/             Camera, AprilTag & ChArUco detection, RealSense
 ├── Execution_Module/          ROS/MoveIt robot motion control
 ├── Utilities/                 Camera calibration & diagnostic scripts
-├── File_Exchange/             Runtime JSON exchange between modules
+├── workspace/             Runtime JSON exchange between modules
 └── Memory/                    Timestamped configuration snapshots
 ```
 
@@ -169,6 +169,24 @@ USE_PDDL_PLANNER = False  # use LLM dialogue
 ```
 
 ---
+
+
+## Adapting to a different robot
+
+All robot-specific names are in one place: `Execution_Module/Robot_Main.py`.
+
+```python
+ROBOT_CONFIG = {
+    "arm_group":      "panda_arm",        # MoveIt planning group for the arm
+    "hand_group":     "panda_hand",       # MoveIt planning group for the gripper
+    "finger_joint_1": "panda_finger_joint1",  # URDF name of gripper finger 1
+    "finger_joint_2": "panda_finger_joint2",  # URDF name of gripper finger 2
+}
+```
+
+Change these four strings to match your robot's MoveIt configuration.  
+The motion profiles (PTP/LIN, velocity/acceleration scaling) are in `robot.py`
+and may also need tuning for a different manipulator.
 
 ## Running tests
 

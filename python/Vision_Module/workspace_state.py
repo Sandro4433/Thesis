@@ -191,16 +191,6 @@ def _extract_positions_xy(metric: Dict[str, Any]) -> Dict[str, List[float]]:
     return positions
 
 
-def _strip_for_llm(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Return the workspace state with the full metric replaced by positions_xy."""
-    out = copy.deepcopy(state)
-    metric = out.pop("metric", {})
-    out["positions_xy"] = _extract_positions_xy(metric)
-    return out
-
-
-# ── persistence ───────────────────────────────────────────────────────────────
-
 def save_json_snapshot(path: str, state: Dict[str, Any], pretty: bool = True) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     tmp = path + ".tmp"
@@ -212,14 +202,3 @@ def save_json_snapshot(path: str, state: Dict[str, Any], pretty: bool = True) ->
     os.replace(tmp, path)
 
 
-def save_llm_snapshot(path: str, state: Dict[str, Any], pretty: bool = True) -> None:
-    """Save the LLM input file (state with positions_xy instead of full metric)."""
-    data = _strip_for_llm(state)
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        if pretty:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        else:
-            json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
-    os.replace(tmp, path)

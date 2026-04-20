@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from robot_configurator.core.config import settings
 from robot_configurator.core.paths import (
     CONFIGURATION_PATH,
-    FILE_EXCHANGE_DIR,
+    WORKSPACE_DIR,
     PROJECT_DIR,
     empty_state,
     save_atomic,
@@ -47,7 +47,7 @@ from robot_configurator.core.paths import (
 
 logger = logging.getLogger(__name__)
 
-FILE_EXCHANGE = FILE_EXCHANGE_DIR
+WORKSPACE = WORKSPACE_DIR
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -402,9 +402,9 @@ def _redraw_annotated_image(
     merged_state: Dict[str, Any],
 ) -> None:
     """Redraw latest_image.png with updated part names and fragility labels."""
-    base_path = FILE_EXCHANGE / "latest_image_base.png"
-    pmap_path = FILE_EXCHANGE / "latest_pixel_map.json"
-    out_path = FILE_EXCHANGE / "latest_image.png"
+    base_path = WORKSPACE / "latest_image_base.png"
+    pmap_path = WORKSPACE / "latest_pixel_map.json"
+    out_path = WORKSPACE / "latest_image.png"
 
     if not base_path.exists() or not pmap_path.exists():
         logger.debug("Base image or pixel map not found — skipping re-annotation.")

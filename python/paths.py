@@ -28,19 +28,17 @@ if str(PROJECT_DIR) not in sys.path:
 
 
 # ── Shared exchange folder ────────────────────────────────────────────────────
-FILE_EXCHANGE_DIR = PROJECT_DIR / "File_Exchange"
+WORKSPACE_DIR = PROJECT_DIR / "workspace"
 
 
 # ── Common file paths ────────────────────────────────────────────────────────
-CONFIGURATION_JSON    = FILE_EXCHANGE_DIR / "configuration.json"
-LLM_INPUT_JSON        = FILE_EXCHANGE_DIR / "llm_input.json"
-LLM_RESPONSE_JSON     = FILE_EXCHANGE_DIR / "llm_response.json"
-POSITIONS_FIXED_JSONL = FILE_EXCHANGE_DIR / "positions_fixed.jsonl"
+CONFIGURATION_JSON    = WORKSPACE_DIR / "configuration.json"
+POSITIONS_FIXED_JSONL = WORKSPACE_DIR / "positions_fixed.jsonl"
 
 # Derived paths used by multiple modules
 CONFIGURATION_PATH = CONFIGURATION_JSON   # Path object — ready to use
-SEQUENCE_PATH      = FILE_EXCHANGE_DIR / "sequence.json"
-CHANGES_PATH       = FILE_EXCHANGE_DIR / "workspace_changes.json"
+SEQUENCE_PATH      = WORKSPACE_DIR / "sequence.json"
+CHANGES_PATH       = WORKSPACE_DIR / "workspace_changes.json"
 MEMORY_DIR         = PROJECT_DIR / "Memory"
 
 

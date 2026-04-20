@@ -1,12 +1,11 @@
 # config.py
+import os
+from pathlib import Path
 from typing import Dict, List, Any
 
 # Output (stable paths; independent of current working directory)
-from robot_configurator.core.paths import CONFIGURATION_PATH as CONFIGURATION_JSON, FILE_EXCHANGE_DIR as _FE_DIR
-LLM_INPUT_JSON = _FE_DIR / "llm_input.json"
-
+from src.robot_configurator.core.paths import CONFIGURATION_PATH as CONFIGURATION_JSON, WORKSPACE_DIR as _FE_DIR
 CONFIGURATION_PATH = str(CONFIGURATION_JSON.resolve())
-LLM_INPUT_PATH     = str(LLM_INPUT_JSON.resolve())
 
 # Define the Charuco origin in the ROBOT BASE FRAME. (METERS)
 CHARUCO_ORIGIN_IN_ROBOT_M: Dict[str, float] = {
@@ -110,8 +109,8 @@ USE_PDDL_PLANNER: bool = True
 # Set this to the full path of the fast-downward script, e.g.:
 #   FAST_DOWNWARD_PATH = "/home/user/downward/fast-downward.py"
 #
-# If set, Fast Downward is used with PDDL 2.1 action costs (enforces priority
-# ordering as a hard constraint). If empty, pyperplan is used as a fallback.
+# Fast Downward is used with PDDL 2.1 action costs (enforces priority
+# ordering as a hard constraint via numeric fluents).
 # Resolved relative to this file: python/downward/fast-downward.py
 # Override with the DOWNWARD_PATH environment variable if your layout differs.
 import os as _os

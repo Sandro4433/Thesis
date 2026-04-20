@@ -37,7 +37,14 @@ def main() -> None:
 
         rospy.init_node("franka_camera_home")
         moveit_commander.roscpp_initialize([])
-        robot = Robot("panda_arm", "panda_hand", moveit_commander)
+        from Execution_Module.Robot_Main import ROBOT_CONFIG
+        robot = Robot(
+            ROBOT_CONFIG["arm_group"],
+            ROBOT_CONFIG["hand_group"],
+            moveit_commander,
+            finger_joint_1=ROBOT_CONFIG["finger_joint_1"],
+            finger_joint_2=ROBOT_CONFIG["finger_joint_2"],
+        )
     finally:
         # Restore everything
         os.dup2(_fd_stdout, 1)

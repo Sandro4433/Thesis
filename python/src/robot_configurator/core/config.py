@@ -45,7 +45,7 @@ class Settings:
     sequence_path: Path
     changes_path: Path
     memory_dir: Path
-    file_exchange_dir: Path
+    workspace_dir: Path
     downward_path: Path
 
     def __init__(self) -> None:
@@ -75,8 +75,8 @@ class Settings:
             "RC_CHANGES_PATH", "changes.json"
         )
         self.memory_dir = root / os.environ.get("RC_MEMORY_DIR", "Memory")
-        self.file_exchange_dir = root / os.environ.get(
-            "RC_FILE_EXCHANGE_DIR", "file_exchange"
+        self.workspace_dir = root / os.environ.get(
+            "RC_WORKSPACE_DIR", "workspace"
         )
         self.downward_path = root / os.environ.get(
             "DOWNWARD_PATH", "downward/fast-downward.py"

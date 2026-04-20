@@ -1,7 +1,14 @@
 # Vision_Main.py
-from pathlib import Path
-import json
 import sys
+from pathlib import Path
+
+# Ensure python/ is on sys.path regardless of how this file is invoked
+# (directly, as a subprocess, or as a module).
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+import json
 
 
 import cv2
@@ -11,7 +18,6 @@ from Vision_Module.config import (
     CONTAINER_TAG_IDS,
     KIT_TAG_IDS,
     CONFIGURATION_PATH,
-    LLM_INPUT_PATH,
     CHARUCO_ORIGIN_IN_ROBOT_M,
     CAMERA_HOME,
     KIT_POINTS,
@@ -32,7 +38,7 @@ from Vision_Module.config import (
 from Vision_Module.vision_charuco import detect_board_homography, choose_origin_and_axes, draw_origin_and_axes
 from Vision_Module.pipeline import compute_tag_targets_and_annotate, targets_to_robot_entries, annotate_parts
 from Vision_Module.assign_parts import assign_parts_to_slots
-from Vision_Module.workspace_state import entries_to_state, save_json_snapshot, save_llm_snapshot
+from Vision_Module.workspace_state import entries_to_state, save_json_snapshot
 
 # ── Safety guard ──────────────────────────────────────────────────────────────
 # pyrealsense2 and libapriltag corrupt each other's heap when loaded in the
@@ -302,9 +308,9 @@ def main() -> None:
     # Save base image (tags + slots annotated, NO part labels) for re-annotation
     # after config updates.  This image serves as a clean starting point when
     # part IDs change during an "Update Config" session.
-    _file_exchange = Path(__file__).resolve().parents[1] / "File_Exchange"
-    _file_exchange.mkdir(parents=True, exist_ok=True)
-    _base_image_path = _file_exchange / "latest_image_base.png"
+    _workspace = Path(__file__).resolve().parents[1] / "workspace"
+    _workspace.mkdir(parents=True, exist_ok=True)
+    _base_image_path = _workspace / "latest_image_base.png"
     cv2.imwrite(str(_base_image_path), img_vis)
 
     # Build part annotation list from tag_targets and draw onto img_vis
@@ -321,7 +327,7 @@ def main() -> None:
     annotate_parts(img_vis, _part_annotations)
 
     # Save pixel map for re-annotation after config updates
-    _pixel_map_path = _file_exchange / "latest_pixel_map.json"
+    _pixel_map_path = _workspace / "latest_pixel_map.json"
     with open(str(_pixel_map_path), "w", encoding="utf-8") as f:
         json.dump(_part_annotations, f, indent=2, ensure_ascii=False)
 
@@ -350,13 +356,11 @@ def main() -> None:
     state = entries_to_state(final_entries)
     save_json_snapshot(CONFIGURATION_PATH, state, pretty=True)
     print(f"Wrote JSON snapshot to: {CONFIGURATION_PATH}")
-    save_llm_snapshot(LLM_INPUT_PATH, state, pretty=True)
-    print(f"Wrote LLM input snapshot to: {LLM_INPUT_PATH}")
 
     # ------------------------------------------------------------------
     # Save annotated image
     # ------------------------------------------------------------------
-    _latest_image_path = Path(__file__).resolve().parents[1] / "File_Exchange" / "latest_image.png"
+    _latest_image_path = Path(__file__).resolve().parents[1] / "workspace" / "latest_image.png"
     cv2.imwrite(str(_latest_image_path), img_vis)
     print(f"Saved annotated image to: {_latest_image_path}")
 

@@ -4,13 +4,17 @@ import numpy as np
 from geometry_msgs.msg import Pose
 from moveit_commander.exception import MoveItCommanderException
 
-from robot_configurator.core.paths import CONFIGURATION_PATH as CONFIGURATION_JSON, FILE_EXCHANGE_DIR as _FE_DIR
+from robot_configurator.core.paths import CONFIGURATION_PATH as CONFIGURATION_JSON, WORKSPACE_DIR as _FE_DIR
 POSITIONS_FIXED_JSONL = _FE_DIR / 'positions_fixed.jsonl'
 
 class Robot:
-    def __init__(self, arm_name, hand_name, moveit_commander):
+    def __init__(self, arm_name, hand_name, moveit_commander,
+                 finger_joint_1: str = "panda_finger_joint1",
+                 finger_joint_2: str = "panda_finger_joint2"):
         self.arm = moveit_commander.MoveGroupCommander(arm_name)
         self.gripper = moveit_commander.MoveGroupCommander(hand_name)
+        self._finger_joint_1 = finger_joint_1
+        self._finger_joint_2 = finger_joint_2
 
         self.arm.set_goal_orientation_tolerance(0.02)
         self.arm.set_goal_position_tolerance(0.02)
@@ -92,7 +96,7 @@ class Robot:
 
     def MoveJointDelta(self, joint_index: int = 6, delta_deg: float = 0.0, target_name: str = ""):
         if joint_index < 0 or joint_index > 6:
-            raise ValueError("joint_index must be between 0 and 6 (panda has 7 joints).")
+            raise ValueError("joint_index must be between 0 and 6 for a 7-DOF arm.")
 
         if target_name:
             entry = self._positions.get(target_name)
@@ -174,8 +178,8 @@ class Robot:
 
     def set_width(self, width):
         target = width / 2.0
-        self.gripper.set_joint_value_target("panda_finger_joint1", target)
-        self.gripper.set_joint_value_target("panda_finger_joint2", target)
+        self.gripper.set_joint_value_target(self._finger_joint_1, target)
+        self.gripper.set_joint_value_target(self._finger_joint_2, target)
         self.gripper.go(wait=True)
 
     # --------------------------

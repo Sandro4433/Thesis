@@ -43,8 +43,8 @@ try:
 except ImportError:
     HAS_PIL = False
 
-LATEST_IMAGE_PATH = PROJECT_DIR / "File_Exchange" / "latest_image.png"
-CANCEL_SENTINEL   = PROJECT_DIR / "File_Exchange" / ".cancel_execution"
+LATEST_IMAGE_PATH = PROJECT_DIR / "workspace" / "latest_image.png"
+CANCEL_SENTINEL   = PROJECT_DIR / "workspace" / ".cancel_execution"
 
 # ── Tell Vision_Main to skip cv2.imshow (GUI shows the image instead) ─────────
 os.environ["ROBOT_GUI_MODE"] = "1"
@@ -1959,7 +1959,7 @@ class RobotGUI:
         self._split_mode = True
 
         # Save a copy of the current image so it survives vision overwriting
-        self._split_old_path = PROJECT_DIR / "File_Exchange" / "latest_image_old.png"
+        self._split_old_path = PROJECT_DIR / "workspace" / "latest_image_old.png"
         try:
             if LATEST_IMAGE_PATH.exists():
                 import shutil

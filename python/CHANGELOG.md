@@ -57,3 +57,26 @@ All notable changes to this project are documented here.
 - `Communication_Module/` and `Configuration_Module/` directory names
 - `__pycache__/` and `.pyc` files from version control
 - `rules.txt` from inside the Python package (content folded into `prompts.py`)
+
+---
+
+## [Unreleased] — Priority_New branch (continued)
+
+### Changed
+- `File_Exchange/` renamed to `workspace/` — better reflects its purpose as
+  the live workspace state directory (configuration, sequence, images, pixel map)
+- `FILE_EXCHANGE_DIR` constant renamed to `WORKSPACE_DIR` throughout
+- `RC_FILE_EXCHANGE_DIR` env variable renamed to `RC_WORKSPACE_DIR`
+- `Robot.__init__` now accepts `finger_joint_1` / `finger_joint_2` parameters
+  (default: Panda values) — all Panda-specific joint names are configurable
+- `ROBOT_CONFIG` dict added to `Robot_Main.py` as the single place to adapt
+  the system to a different robot manipulator
+- `pddl_planner.py` simplified: pyperplan fallback removed entirely;
+  Fast Downward is now the only supported backend (1848 → 811 lines)
+
+### Removed
+- `llm_input.json` — was written by Vision_Main as a debug dump but never
+  read back by any code; `save_llm_snapshot()` and `_strip_for_llm()` removed
+- `pyperplan` fallback: `run_pyperplan()`, `DOMAIN_PDDL_BASIC`,
+  `PROBLEM_PDDL_BASIC`, `_sort_sequence_by_priority()`, and all fallback
+  branches in `plan_sequence()`

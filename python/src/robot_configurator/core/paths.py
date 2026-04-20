@@ -8,7 +8,7 @@ Public API
 ----------
     from robot_configurator.core.paths import (
         PROJECT_DIR, CONFIGURATION_PATH, SEQUENCE_PATH,
-        CHANGES_PATH, MEMORY_DIR, FILE_EXCHANGE_DIR,
+        CHANGES_PATH, MEMORY_DIR, WORKSPACE_DIR,
         save_atomic, save_to_memory, empty_state, parent_of_slot,
     )
 """
@@ -30,7 +30,7 @@ CONFIGURATION_PATH: Path = settings.configuration_path
 SEQUENCE_PATH: Path = settings.sequence_path
 CHANGES_PATH: Path = settings.changes_path
 MEMORY_DIR: Path = settings.memory_dir
-FILE_EXCHANGE_DIR: Path = settings.file_exchange_dir
+WORKSPACE_DIR: Path = settings.workspace_dir
 
 
 # ── Atomic write helper ──────────────────────────────────────────────────────
@@ -103,18 +103,9 @@ def empty_state() -> Dict[str, Any]:
 
 # ── PDDL helpers ─────────────────────────────────────────────────────────────
 
-def parent_of_slot(slot_name: str, slot_belongs_to: Dict[str, str]) -> Optional[str]:
-    """
-    Return the receptacle that owns *slot_name*, or None.
-
-    Strips a trailing ``_Pos_N`` suffix as a fallback for slot names that
-    follow the ``<Receptacle>_Pos_<N>`` convention, in case the
-    ``slot_belongs_to`` mapping is incomplete.
-    """
-    if slot_name in slot_belongs_to:
-        return slot_belongs_to[slot_name]
-    # Fallback: strip _Pos_N suffix
-    parts = slot_name.rsplit("_Pos_", maxsplit=1)
-    if len(parts) == 2:
-        return parts[0]
-    return None
+def parent_of_slot(slot_name: str) -> Optional[str]:
+    """Return the receptacle name that owns *slot_name*, or None."""
+    idx = slot_name.rfind("_Pos_")
+    if idx == -1:
+        return None
+    return slot_name[:idx]

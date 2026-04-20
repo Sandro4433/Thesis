@@ -28,7 +28,7 @@ from openai import OpenAI
 
 from robot_configurator.core.paths import (
     PROJECT_DIR, CONFIGURATION_PATH, SEQUENCE_PATH, CHANGES_PATH,
-    MEMORY_DIR, FILE_EXCHANGE_DIR, save_atomic, save_to_memory,
+    MEMORY_DIR, WORKSPACE_DIR, save_atomic, save_to_memory,
 )
 
 
@@ -208,10 +208,10 @@ def load_config_from_memory(path: str) -> bool:
 
 def refresh_annotated_image(state: Dict[str, Any]) -> None:
     """Redraw latest_image.png with current part names and FRAGILE labels."""
-    file_exchange = PROJECT_DIR / "File_Exchange"
-    base_path = file_exchange / "latest_image_base.png"
-    pmap_path = file_exchange / "latest_pixel_map.json"
-    out_path  = file_exchange / "latest_image.png"
+    workspace_dir = WORKSPACE_DIR
+    base_path = workspace_dir / "latest_image_base.png"
+    pmap_path = workspace_dir / "latest_pixel_map.json"
+    out_path  = workspace_dir / "latest_image.png"
 
     if not base_path.exists() or not pmap_path.exists():
         return
@@ -409,7 +409,7 @@ def run_update_pipeline(client: OpenAI) -> None:
     # config would still be out of sync after "restoration".  A straight file
     # copy is the only reliable way to get back the pre-update image.
     import shutil as _shutil
-    _fe         = PROJECT_DIR / "File_Exchange"
+    _fe         = PROJECT_DIR / "workspace"
     _img_path   = _fe / "latest_image.png"
     _img_backup = _fe / "latest_image_pre_update.png"
 
