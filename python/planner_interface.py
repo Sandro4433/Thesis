@@ -38,7 +38,7 @@ def generate_sequence(
     if str(PROJECT_DIR) not in sys.path:
         sys.path.insert(0, str(PROJECT_DIR))
 
-    from Vision_Module.config import USE_PDDL_PLANNER, FAST_DOWNWARD_PATH  # type: ignore
+    from Vision_Module.config import USE_PDDL_PLANNER  # type: ignore
 
     if not USE_PDDL_PLANNER:
         # LLM dialogue flow — sequence already written by API_Main.py
@@ -50,7 +50,6 @@ def generate_sequence(
     print("\n── PDDL Planner ──")
     sequence = plan_sequence(
         state,
-        fd_path=FAST_DOWNWARD_PATH,
         output_path=sequence_path,
         keep_pddl=True,
     )

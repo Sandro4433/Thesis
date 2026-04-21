@@ -13,6 +13,7 @@
 #     post-processing.
 #     Install: git clone https://github.com/aibasel/downward && python build.py
 #
+#   pyperplan (fallback, pip install pyperplan)
 #     Does not support numeric fluents, so priority is enforced by
 #     post-sorting the plan (soft enforcement).
 
@@ -27,9 +28,961 @@ from typing import Any, Dict, List, Optional, Tuple
 
 GRIPPER_CLOSE_STANDARD = 0.05
 
+# ── pyperplan availability check ──────────────────────────────────────────────
+try:
+    import pyperplan  # noqa: F401
+    _PYPERPLAN_AVAILABLE = True
+except ImportError:
+    _PYPERPLAN_AVAILABLE = False
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PDDL domain builders
 # ─────────────────────────────────────────────────────────────────────────────
+
+# ── Basic domain (pyperplan / no action costs) ────────────────────────────────
+
+DOMAIN_PDDL_BASIC = """\
+(define (domain pick-and-place)
+  (:requirements :typing :negative-preconditions)
+
+  (:types
+    part slot receptacle - object
+    kit container - receptacle
+  )
+
+  (:predicates
+    (at ?p - part ?s - slot)
+    (slot-empty ?s - slot)
+    (slot-of ?s - slot ?r - receptacle)
+    (role-input ?r - receptacle)
+    (role-output ?r - receptacle)
+    (compatible ?p - part ?r - receptacle)
+    (color-red ?p - part)
+    (color-blue ?p - part)
+    (color-green ?p - part)
+    (hand-empty)
+    (holding ?p - part)
+  )
+
+  (:action pick
+    :parameters (?p - part ?s - slot ?r - receptacle)
+    :precondition (and
+      (at ?p ?s)
+      (slot-of ?s ?r)
+      (role-input ?r)
+      (hand-empty)
+    )
+    :effect (and
+      (not (at ?p ?s))
+      (slot-empty ?s)
+      (holding ?p)
+      (not (hand-empty))
+    )
+  )
+
+  (:action place
+    :parameters (?p - part ?s - slot ?r - receptacle)
+    :precondition (and
+      (holding ?p)
+      (slot-empty ?s)
+      (slot-of ?s ?r)
+      (role-output ?r)
+      (compatible ?p ?r)
+    )
+    :effect (and
+      (at ?p ?s)
+      (not (slot-empty ?s))
+      (not (holding ?p))
+      (hand-empty)
+    )
+  )
+)
+"""
+
+
+# ── Action-costs domain (Fast Downward) ───────────────────────────────────────
+
+def build_domain_pddl_costs(num_priorities: int, num_kit_priorities: int = 0,
+                            kit_scoped_priority: bool = False) -> str:
+    """
+    Generate a PDDL domain with action costs + derived predicates that enforces
+    priority ordering as a hard constraint.
+
+    For each priority level K, a derived predicate (priority-K-available) is
+    true while any priority-K part still sits in an input receptacle.
+    pick-priority-(K+1) requires (not (priority-K-available)), so the planner
+    cannot legally pick a lower-priority part while a higher-priority one
+    remains.
+
+    Kit/receptacle priority (num_kit_priorities > 0):
+    For each receptacle priority level K, a derived predicate
+    (rec_priority_K_needs_filling) is true while any goal slot in a
+    receptacle at that level is still empty.  place-rec-priority-(K+1)
+    requires (not (rec_priority_K_needs_filling)), so the planner must
+    fill higher-priority receptacles before lower-priority ones.
+    Works for both kits AND containers.
+
+    Kit-scoped priority (kit_scoped_priority=True):
+    When BOTH pick priorities and receptacle priorities are active (e.g.
+    kitting with "pick green first" + multiple kits), the pick-priority
+    derived predicates are scoped to the currently-fillable kit using a
+    (for-kit ?p - part ?r - receptacle) predicate.  This means
+    "priority-1-available" only fires for priority-1 parts whose target
+    kit still has empty goal slots AND is not blocked by a higher
+    receptacle priority.  This avoids deadlock (where globally-required
+    priority-1 parts destined for later kits block priority-2 picks for
+    the current kit) and achieves the desired "within each kit, pick
+    green first" behavior.
+
+    Requirements: :typing :negative-preconditions :existential-preconditions
+                  :derived-predicates :action-costs
+    All supported by Fast Downward's translator (no :numeric-fluents needed).
+    """
+    NL = "\n"
+
+    pred_lines = [
+        "    (at ?p - part ?s - slot)",
+        "    (slot-empty ?s - slot)",
+        "    (slot-of ?s - slot ?r - receptacle)",
+        "    (role-input ?r - receptacle)",
+        "    (role-output ?r - receptacle)",
+        "    (compatible ?p - part ?r - receptacle)",
+        "    (color-red ?p - part)",
+        "    (color-blue ?p - part)",
+        "    (color-green ?p - part)",
+        "    (hand-empty)",
+        "    (holding ?p - part)",
+    ]
+    for k in range(1, num_priorities + 1):
+        pred_lines.append(f"    (priority-{k} ?p - part)")
+    pred_lines.append("    (no-priority ?p - part)")
+    # priority_K_available derived predicates enforce hard pick ordering.
+    # Deadlock from excess stock is prevented upstream: only goal-bound parts
+    # receive priority-K tags (see goal_parts filter below), so once all
+    # needed priority-K parts are picked, priority_K_available drops to False
+    # and priority-(K+1) picks are unblocked immediately.
+    for k in range(1, num_priorities + 1):
+        pred_lines.append(f"    (priority_{k}_available)")
+
+    # ── Kit-scoped priority predicate ──
+    if kit_scoped_priority:
+        pred_lines.append("    (for-kit ?p - part ?r - receptacle)")
+        pred_lines.append("    (kit-fillable ?r - receptacle)")
+
+    # ── Receptacle priority predicates ──
+    if num_kit_priorities > 0:
+        pred_lines.append("    (is-goal-slot ?s - slot)")
+        for k in range(1, num_kit_priorities + 1):
+            pred_lines.append(f"    (rec-priority-{k} ?r - receptacle)")
+        for k in range(1, num_kit_priorities + 1):
+            pred_lines.append(f"    (rec_priority_{k}_needs_filling)")
+
+    # ── Derived predicates ──
+    derived_blocks = []
+
+    # ── Receptacle priority derived predicates (generated FIRST because
+    #    kit-scoped pick priority depends on them) ──
+    for k in range(1, num_kit_priorities + 1):
+        block = (
+            f"  (:derived (rec_priority_{k}_needs_filling)" + NL +
+            f"    (exists (?s - slot ?r - receptacle)" + NL +
+            f"      (and (rec-priority-{k} ?r) (slot-of ?s ?r)" + NL +
+            f"           (is-goal-slot ?s) (slot-empty ?s))))" + NL
+        )
+        derived_blocks.append(block)
+
+    # ── Kit-fillable derived predicates (one per receptacle priority level) ──
+    # A kit at rec-priority-K is fillable when it still has empty goal slots
+    # AND all higher-priority (lower-K) receptacles are already filled.
+    if kit_scoped_priority:
+        for k in range(1, num_kit_priorities + 1):
+            higher_filled = "".join(
+                NL + f"           (not (rec_priority_{j}_needs_filling))"
+                for j in range(1, k)
+            )
+            block = (
+                f"  (:derived (kit-fillable ?r - receptacle)" + NL +
+                f"    (and (rec-priority-{k} ?r)" + NL +
+                f"         (exists (?s - slot)" + NL +
+                f"           (and (slot-of ?s ?r) (is-goal-slot ?s) (slot-empty ?s){higher_filled}))))" + NL
+            )
+            derived_blocks.append(block)
+
+    # ── Pick-priority derived predicates ──
+    if kit_scoped_priority and num_kit_priorities > 0:
+        # Kit-scoped: priority_K_available only fires for parts whose
+        # target kit is currently fillable.  This prevents parts destined
+        # for later kits from blocking picks for the current kit.
+        for k in range(1, num_priorities + 1):
+            block = (
+                f"  (:derived (priority_{k}_available)" + NL +
+                f"    (exists (?p - part ?s - slot ?r - receptacle ?rk - receptacle)" + NL +
+                f"      (and (priority-{k} ?p) (at ?p ?s)" + NL +
+                f"           (slot-of ?s ?r) (role-input ?r)" + NL +
+                f"           (for-kit ?p ?rk) (kit-fillable ?rk))))" + NL
+            )
+            derived_blocks.append(block)
+    else:
+        # Global (original): priority_K_available fires for any priority-K
+        # part still in an input receptacle.
+        for k in range(1, num_priorities + 1):
+            block = (
+                f"  (:derived (priority_{k}_available)" + NL +
+                f"    (exists (?p - part ?s - slot ?r - receptacle)" + NL +
+                f"      (and (priority-{k} ?p) (at ?p ?s)" + NL +
+                f"           (slot-of ?s ?r) (role-input ?r))))" + NL
+            )
+            derived_blocks.append(block)
+
+    # Pick actions — one per priority level with hard blocking preconditions.
+    # pick-priority-K requires (not priority_J_available) for all J < K, so the
+    # planner cannot legally pick a lower-priority part while a higher-priority
+    # one remains in an input receptacle.
+    # Safe from deadlock because only goal-bound parts carry priority tags.
+    pick_actions = []
+    for k in range(1, num_priorities + 1):
+        blocking = "".join(
+            NL + f"      (not (priority_{j}_available))"
+            for j in range(1, k)
+        )
+        action = (
+            f"  (:action pick-priority-{k}" + NL +
+            f"    :parameters (?p - part ?s - slot ?r - receptacle)" + NL +
+            f"    :precondition (and" + NL +
+            f"      (at ?p ?s)" + NL +
+            f"      (slot-of ?s ?r)" + NL +
+            f"      (role-input ?r)" + NL +
+            f"      (hand-empty)" + NL +
+            f"      (priority-{k} ?p){blocking}" + NL +
+            f"    )" + NL +
+            f"    :effect (and" + NL +
+            f"      (not (at ?p ?s))" + NL +
+            f"      (slot-empty ?s)" + NL +
+            f"      (holding ?p)" + NL +
+            f"      (not (hand-empty))" + NL +
+            f"      (increase (total-cost) {k})" + NL +
+            f"    )" + NL +
+            f"  )"
+        )
+        pick_actions.append(action)
+
+    # Unprioritised pick — only fires once all priority levels are exhausted
+    all_blocking = "".join(
+        NL + f"      (not (priority_{k}_available))"
+        for k in range(1, num_priorities + 1)
+    )
+    pick_actions.append(
+        "  (:action pick-no-priority" + NL +
+        "    :parameters (?p - part ?s - slot ?r - receptacle)" + NL +
+        "    :precondition (and" + NL +
+        "      (at ?p ?s)" + NL +
+        "      (slot-of ?s ?r)" + NL +
+        "      (role-input ?r)" + NL +
+        "      (hand-empty)" + NL +
+        "      (no-priority ?p)" + all_blocking + NL +
+        "    )" + NL +
+        "    :effect (and" + NL +
+        "      (not (at ?p ?s))" + NL +
+        "      (slot-empty ?s)" + NL +
+        "      (holding ?p)" + NL +
+        "      (not (hand-empty))" + NL +
+        f"      (increase (total-cost) {num_priorities + 1})" + NL +
+        "    )" + NL +
+        "  )"
+    )
+
+    # ── Place actions ──
+    place_actions = []
+    if num_kit_priorities > 0:
+        # Split place into per-receptacle-priority actions (hard constraint)
+        for k in range(1, num_kit_priorities + 1):
+            rec_blocking = "".join(
+                NL + f"      (not (rec_priority_{j}_needs_filling))"
+                for j in range(1, k)
+            )
+            place_actions.append(
+                f"  (:action place-rec-priority-{k}" + NL +
+                f"    :parameters (?p - part ?s - slot ?r - receptacle)" + NL +
+                f"    :precondition (and" + NL +
+                f"      (holding ?p)" + NL +
+                f"      (slot-empty ?s)" + NL +
+                f"      (slot-of ?s ?r)" + NL +
+                f"      (role-output ?r)" + NL +
+                f"      (compatible ?p ?r)" + NL +
+                f"      (rec-priority-{k} ?r){rec_blocking}" + NL +
+                f"    )" + NL +
+                f"    :effect (and" + NL +
+                f"      (at ?p ?s)" + NL +
+                f"      (not (slot-empty ?s))" + NL +
+                f"      (not (holding ?p))" + NL +
+                f"      (hand-empty)" + NL +
+                f"      (increase (total-cost) 0)" + NL +
+                f"    )" + NL +
+                f"  )"
+            )
+
+        # Place for receptacles with no priority — fires only when all
+        # prioritised receptacles are filled
+        all_rec_blocking = "".join(
+            NL + f"      (not (rec_priority_{k}_needs_filling))"
+            for k in range(1, num_kit_priorities + 1)
+        )
+        place_actions.append(
+            "  (:action place-no-rec-priority" + NL +
+            "    :parameters (?p - part ?s - slot ?r - receptacle)" + NL +
+            "    :precondition (and" + NL +
+            "      (holding ?p)" + NL +
+            "      (slot-empty ?s)" + NL +
+            "      (slot-of ?s ?r)" + NL +
+            "      (role-output ?r)" + NL +
+            "      (compatible ?p ?r)" + all_rec_blocking + NL +
+            "    )" + NL +
+            "    :effect (and" + NL +
+            "      (at ?p ?s)" + NL +
+            "      (not (slot-empty ?s))" + NL +
+            "      (not (holding ?p))" + NL +
+            "      (hand-empty)" + NL +
+            "      (increase (total-cost) 0)" + NL +
+            "    )" + NL +
+            "  )"
+        )
+    else:
+        # No kit priority — single place action (original behaviour)
+        place_actions.append(
+            "  (:action place" + NL +
+            "    :parameters (?p - part ?s - slot ?r - receptacle)" + NL +
+            "    :precondition (and" + NL +
+            "      (holding ?p)" + NL +
+            "      (slot-empty ?s)" + NL +
+            "      (slot-of ?s ?r)" + NL +
+            "      (role-output ?r)" + NL +
+            "      (compatible ?p ?r)" + NL +
+            "    )" + NL +
+            "    :effect (and" + NL +
+            "      (at ?p ?s)" + NL +
+            "      (not (slot-empty ?s))" + NL +
+            "      (not (holding ?p))" + NL +
+            "      (hand-empty)" + NL +
+            "      (increase (total-cost) 0)" + NL +
+            "    )" + NL +
+            "  )"
+        )
+
+    return (
+        "(define (domain pick-and-place)" + NL +
+        "  (:requirements :typing :negative-preconditions" + NL +
+        "                 :existential-preconditions :derived-predicates" + NL +
+        "                 :action-costs)" + NL + NL +
+        "  (:types" + NL +
+        "    part slot receptacle - object" + NL +
+        "    kit container - receptacle" + NL +
+        "  )" + NL + NL +
+        "  (:predicates" + NL +
+        NL.join(pred_lines) + NL +
+        "  )" + NL + NL +
+        "  (:functions" + NL +
+        "    (total-cost)" + NL +
+        "  )" + NL + NL +
+        "".join(derived_blocks) + NL +
+        (NL + NL).join(pick_actions) + NL + NL +
+        (NL + NL).join(place_actions) + NL +
+        ")" + NL
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _to_pddl_name(name: str) -> str:
+    return name.replace(" ", "_")
+
+
+def _role_map(preds: Dict[str, Any]) -> Tuple[set, set]:
+    inputs, outputs = set(), set()
+    for entry in preds.get("role", []):
+        role = (entry.get("role") or "").lower()
+        if role == "input":
+            inputs.add(entry["object"])
+        elif role == "output":
+            outputs.add(entry["object"])
+    return inputs, outputs
+
+
+def _color_map(preds: Dict[str, Any]) -> Dict[str, str]:
+    return {e["part"]: (e.get("color") or "").lower() for e in preds.get("color", [])}
+
+
+def _compute_part_score(part: str, color: str, preds: Dict[str, Any],
+                        part_to_receptacle: Optional[Dict[str, str]] = None,
+                        fragility_map: Optional[Dict[str, str]] = None) -> int:
+    """
+    Additive priority score for a part.
+    Each applicable rule in the priority list contributes to the score.
+    LOWER user-facing order = HIGHER priority = picked FIRST (order 1 = top priority).
+
+    Internally the score is negated so that the rest of the planner can
+    keep its "higher internal score = higher priority" convention.
+
+    Supported priority rule types (all additive):
+      - {"color": "green", "order": 1}           → all green parts get highest priority
+      - {"part": "Part_3", "order": 2}            → Part_3 gets second-highest
+      - {"fragility": "fragile", "order": 1}      → all fragile parts get highest
+      - {"container": "Container_2", "order": 1}  → all parts in Container_2 get highest
+
+    Kit/container fill priority uses "kit"/"container" key and is handled
+    separately. It does NOT contribute to pick scores.
+
+    Legacy keys ("part_name", "source", "destination") are also supported.
+    """
+    score = 0
+    part_frag = (fragility_map or {}).get(part, "normal")
+    part_rec  = (part_to_receptacle or {}).get(part, "")
+
+    for e in preds.get("priority", []):
+        # Skip kit/container fill priorities — they control place ordering, not pick scoring
+        if "kit" in e or "destination" in e:
+            continue
+        # Negate: user order 1 (highest priority) → large internal score
+        order_val = int(e.get("order", 0))
+        if order_val <= 0:
+            continue
+        contribution = 1000 - order_val  # order 1 → 999, order 2 → 998, etc.
+        if "color" in e and (e["color"] or "").lower() == color:
+            score += contribution
+        elif ("part" in e and e["part"] == part) or \
+             ("part_name" in e and e["part_name"] == part):
+            score += contribution
+        elif "fragility" in e and (e["fragility"] or "").lower() == part_frag:
+            score += contribution
+        elif ("container" in e and e["container"] == part_rec) or \
+             ("source" in e and e["source"] == part_rec):
+            score += contribution
+    return score
+
+
+def _priority_key(preds: Dict[str, Any]):
+    """Sort key for colors: lower user order = higher priority = sorted first."""
+    score = {}
+    for e in preds.get("priority", []):
+        if "color" in e:
+            # Lower order = higher priority; use order directly for ascending sort
+            score[(e["color"] or "").lower()] = int(e.get("order", 0))
+    # Default 999 so unmentioned colors sort last
+    return lambda color: score.get((color or "").lower(), 999)
+
+
+def _destination_priority_key(preds: Dict[str, Any]):
+    """Return sort key for output receptacles (kits/containers) based on priority list.
+    
+    Uses 'kit' and 'container' keys in priority entries.
+    LOWER order = HIGHER priority = filled first (order 1 = top priority).
+    Falls back to legacy 'destination' and 'receptacle' keys for backward compatibility.
+    """
+    order = {}
+    for e in preds.get("priority", []):
+        if "kit" in e:
+            order[e["kit"]] = e.get("order", 999)
+        elif "container" in e:
+            order[e["container"]] = e.get("order", 999)
+        elif "destination" in e:
+            # Legacy format
+            order[e["destination"]] = e.get("order", 999)
+        elif "receptacle" in e and "destination" not in e and "source" not in e:
+            # Legacy format
+            order[e["receptacle"]] = e.get("order", 999)
+    # Lower order sorts first (ascending); default 999 = lowest priority
+    return lambda rec: (order.get(rec, 999), rec)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Problem generation
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_standalone_structures(state: Dict[str, Any]) -> Tuple[List[str], List[str], str]:
+    preds         = state.get("predicates", {})
+    objs          = state.get("objects",    {})
+    parts_in_slot = {entry["part"] for entry in preds.get("at", [])}
+    standalone    = [p for p in objs.get("parts", []) if p not in parts_in_slot]
+    virtual_slots = [f"ws_slot_{_to_pddl_name(p)}" for p in standalone]
+    return standalone, virtual_slots, "workspace_floor"
+
+
+def _build_common_init(state, standalone, virtual_slots, VIRTUAL):
+    preds        = state.get("predicates",    {})
+    slot_belongs = state.get("slot_belongs_to", {})
+
+    init = ["    (hand-empty)"]
+
+    for entry in preds.get("at", []):
+        init.append(f"    (at {_to_pddl_name(entry['part'])} {_to_pddl_name(entry['slot'])})")
+    for s in preds.get("slot_empty", []):
+        init.append(f"    (slot-empty {_to_pddl_name(s)})")
+    for slot_name, receptacle in slot_belongs.items():
+        init.append(f"    (slot-of {_to_pddl_name(slot_name)} {_to_pddl_name(receptacle)})")
+    for p_orig, vs in zip(standalone, virtual_slots):
+        p_pddl = _to_pddl_name(p_orig)
+        init.append(f"    (at {p_pddl} {vs})")
+        init.append(f"    (slot-of {vs} {VIRTUAL})")
+    for entry in preds.get("role", []):
+        obj  = _to_pddl_name(entry["object"])
+        role = (entry.get("role") or "").lower()
+        if role == "input":
+            init.append(f"    (role-input {obj})")
+        elif role == "output":
+            init.append(f"    (role-output {obj})")
+    if virtual_slots:
+        init.append(f"    (role-input {VIRTUAL})")
+    for entry in preds.get("color", []):
+        part  = _to_pddl_name(entry["part"])
+        color = (entry.get("color") or "").lower()
+        if color == "red":
+            init.append(f"    (color-red {part})")
+        elif color == "blue":
+            init.append(f"    (color-blue {part})")
+        elif color == "green":
+            init.append(f"    (color-green {part})")
+    return init
+
+
+def _build_compat_init(state, kits, containers):
+    """
+    Build PDDL compatibility predicates from flexible rules.
+    
+    Rule format supports multiple selectors (AND logic for part selectors):
+      Part selectors:
+        - part_color: "blue" | "red" | "green"
+        - part_fragility: "fragile" | "normal"  
+        - part_name: "Part_1" (specific part)
+      
+      Receptacle selectors (mutually exclusive):
+        - allowed_in: ["Container_1", "Kit_2"] — specific receptacles
+        - allowed_in_role: "output" | "input" — all receptacles with that role
+        - not_allowed_in: ["Kit_1"] — exclusion (applied AFTER all inclusions)
+    
+    IMPORTANT: Exclusion rules (not_allowed_in without allowed_in/allowed_in_role)
+    are processed LAST so they override any inclusions from other rules.
+    This ensures "fragile parts not allowed in Kit_1" overrides "green parts allowed in Kit_1"
+    even if a part is both green AND fragile.
+    """
+    preds     = state.get("predicates", {})
+    workspace = state.get("workspace",  {})
+    objs      = state.get("objects", {})
+    mode      = (workspace.get("operation_mode") or "sorting").lower()
+
+    all_parts_raw = objs.get("parts", [])
+    all_receptacles = kits + containers
+
+    # Build part lookup maps
+    color_to_parts: Dict[str, set] = {}
+    for entry in preds.get("color", []):
+        c = (entry.get("color") or "").lower()
+        color_to_parts.setdefault(c, set()).add(_to_pddl_name(entry["part"]))
+
+    fragility_to_parts: Dict[str, set] = {"normal": set(), "fragile": set()}
+    for entry in preds.get("fragility", []):
+        f = (entry.get("fragility") or "normal").lower()
+        fragility_to_parts.setdefault(f, set()).add(_to_pddl_name(entry["part"]))
+    # Parts without explicit fragility are "normal"
+    all_parts_pddl = {_to_pddl_name(p) for p in all_parts_raw}
+    explicitly_set = fragility_to_parts["normal"] | fragility_to_parts["fragile"]
+    fragility_to_parts["normal"] |= (all_parts_pddl - explicitly_set)
+
+    # Build receptacle role map
+    inputs, outputs = _role_map(preds)
+    role_to_receptacles: Dict[str, set] = {
+        "input": {_to_pddl_name(r) for r in inputs},
+        "output": {_to_pddl_name(r) for r in outputs},
+    }
+
+    compat_entries = preds.get("part_compatibility", [])
+    use_compat = bool(compat_entries)
+
+    init: List[str] = []
+    
+    if use_compat:
+        # Separate inclusion rules from pure exclusion rules
+        inclusion_rules = []
+        exclusion_rules = []
+        
+        for rule in compat_entries:
+            has_inclusion = "allowed_in" in rule or "allowed_in_role" in rule
+            has_exclusion = "not_allowed_in" in rule
+            
+            if has_exclusion and not has_inclusion:
+                # Pure exclusion rule — process last
+                exclusion_rules.append(rule)
+            else:
+                # Inclusion rule (may also have not_allowed_in as a filter)
+                inclusion_rules.append(rule)
+        
+        # Track all (part, receptacle) pairs that are compatible
+        compatible_pairs: set = set()
+        
+        # FIRST PASS: Process inclusion rules
+        for rule in inclusion_rules:
+            # ── Find matching parts (AND logic) ──
+            matching_parts = all_parts_pddl.copy()
+            
+            if "part_color" in rule:
+                color = (rule["part_color"] or "").lower()
+                matching_parts &= color_to_parts.get(color, set())
+            
+            if "part_fragility" in rule:
+                frag = (rule["part_fragility"] or "").lower()
+                matching_parts &= fragility_to_parts.get(frag, set())
+            
+            if "part_name" in rule:
+                part_name = _to_pddl_name(rule["part_name"])
+                matching_parts &= {part_name}
+            
+            if not matching_parts:
+                continue
+            
+            # ── Find matching receptacles ──
+            matching_receptacles: set = set()
+            
+            if "allowed_in" in rule:
+                # Specific receptacles
+                matching_receptacles = {_to_pddl_name(r) for r in rule["allowed_in"]}
+            elif "allowed_in_role" in rule:
+                # All receptacles with specified role
+                role = (rule["allowed_in_role"] or "").lower()
+                matching_receptacles = role_to_receptacles.get(role, set()).copy()
+            else:
+                # No positive selector — start with all receptacles
+                matching_receptacles = set(all_receptacles)
+            
+            # Apply exclusions (as a filter for this rule)
+            if "not_allowed_in" in rule:
+                excluded = {_to_pddl_name(r) for r in rule["not_allowed_in"]}
+                matching_receptacles -= excluded
+            
+            # Add compatible pairs
+            for part in matching_parts:
+                for rec in matching_receptacles:
+                    compatible_pairs.add((part, rec))
+        
+        # If no inclusion rules produced any pairs, default to all-compatible
+        # (same as the no-rules case) so that exclusion-only rules work correctly.
+        if not compatible_pairs and exclusion_rules:
+            for part in all_parts_pddl:
+                for rec in all_receptacles:
+                    compatible_pairs.add((part, rec))
+
+        # SECOND PASS: Process pure exclusion rules (override inclusions)
+        for rule in exclusion_rules:
+            # ── Find matching parts (AND logic) ──
+            matching_parts = all_parts_pddl.copy()
+            
+            if "part_color" in rule:
+                color = (rule["part_color"] or "").lower()
+                matching_parts &= color_to_parts.get(color, set())
+            
+            if "part_fragility" in rule:
+                frag = (rule["part_fragility"] or "").lower()
+                matching_parts &= fragility_to_parts.get(frag, set())
+            
+            if "part_name" in rule:
+                part_name = _to_pddl_name(rule["part_name"])
+                matching_parts &= {part_name}
+            
+            if not matching_parts:
+                continue
+            
+            # Get excluded receptacles
+            excluded = {_to_pddl_name(r) for r in rule.get("not_allowed_in", [])}
+            
+            # REMOVE these pairs from compatible_pairs
+            for part in matching_parts:
+                for rec in excluded:
+                    compatible_pairs.discard((part, rec))
+        
+        # Generate PDDL predicates
+        for part, rec in sorted(compatible_pairs):
+            init.append(f"    (compatible {part} {rec})")
+    else:
+        # No rules defined — all parts compatible with all output receptacles
+        parts = [_to_pddl_name(p) for p in all_parts_raw]
+        for part in parts:
+            for rec in all_receptacles:
+                init.append(f"    (compatible {part} {rec})")
+    
+    return init
+
+
+# ── Basic problem (pyperplan) ─────────────────────────────────────────────────
+
+def state_to_pddl_problem(state: Dict[str, Any]) -> str:
+    objs = state.get("objects", {})
+
+    kits       = [_to_pddl_name(k) for k in objs.get("kits",       [])]
+    containers = [_to_pddl_name(c) for c in objs.get("containers", [])]
+    parts      = [_to_pddl_name(p) for p in objs.get("parts",      [])]
+    slots      = [_to_pddl_name(s) for s in objs.get("slots",      [])]
+
+    standalone, virtual_slots, VIRTUAL = _build_standalone_structures(state)
+    all_containers = containers + ([VIRTUAL] if virtual_slots else [])
+    all_slots      = slots + virtual_slots
+
+    obj_lines: List[str] = []
+    if kits:           obj_lines.append("    " + " ".join(kits)            + " - kit")
+    if all_containers: obj_lines.append("    " + " ".join(all_containers)  + " - container")
+    if parts:          obj_lines.append("    " + " ".join(parts)           + " - part")
+    if all_slots:      obj_lines.append("    " + " ".join(all_slots)       + " - slot")
+
+    init  = _build_common_init(state, standalone, virtual_slots, VIRTUAL)
+    init += _build_compat_init(state, kits, containers)
+
+    mode = (state.get("workspace", {}).get("operation_mode") or "sorting").lower()
+    goal_lines = _generate_goal(state, mode)
+    if not goal_lines:
+        raise ValueError("Could not generate a PDDL goal. Check roles and operation_mode.")
+
+    return (
+        "(define (problem workspace)\n"
+        "  (:domain pick-and-place)\n"
+        "  (:objects\n"    + "\n".join(obj_lines) + "\n  )\n"
+        "  (:init\n"       + "\n".join(init)      + "\n  )\n"
+        "  (:goal (and\n"  + "\n".join(f"    {g}" for g in goal_lines) + "\n  ))\n"
+        ")\n"
+    )
+
+
+# ── Action-costs problem (Fast Downward) ──────────────────────────────────────
+
+def state_to_pddl_problem_costs(state: Dict[str, Any]) -> Tuple[str, int, int, bool]:
+    """
+    Generate a PDDL 2.1 problem with numeric fluents and a minimize metric.
+    Returns (problem_str, num_priorities, num_kit_priorities, kit_scoped_priority).
+    """
+    objs  = state.get("objects",    {})
+    preds = state.get("predicates", {})
+    inputs, outputs = _role_map(preds)
+
+    kits       = [_to_pddl_name(k) for k in objs.get("kits",       [])]
+    containers = [_to_pddl_name(c) for c in objs.get("containers", [])]
+    parts      = [_to_pddl_name(p) for p in objs.get("parts",      [])]
+    slots      = [_to_pddl_name(s) for s in objs.get("slots",      [])]
+
+    standalone, virtual_slots, VIRTUAL = _build_standalone_structures(state)
+    all_containers = containers + ([VIRTUAL] if virtual_slots else [])
+    all_slots      = slots + virtual_slots
+
+    obj_lines: List[str] = []
+    if kits:           obj_lines.append("    " + " ".join(kits)            + " - kit")
+    if all_containers: obj_lines.append("    " + " ".join(all_containers)  + " - container")
+    if parts:          obj_lines.append("    " + " ".join(parts)           + " - part")
+    if all_slots:      obj_lines.append("    " + " ".join(all_slots)       + " - slot")
+
+    init  = _build_common_init(state, standalone, virtual_slots, VIRTUAL)
+    init += _build_compat_init(state, kits, containers)
+
+    # ── priority assignments ─────────────────────────────────────────────────
+    # ALL priorities use: LOWER order number = HIGHER priority (order 1 = top).
+    #
+    # Pick priorities are additive: a part matching multiple rules gets the
+    # combined effect.  Internally, user order values are converted to high
+    # internal scores (order 1 → 999, order 2 → 998, …) so the rest of the
+    # planner's "higher internal score = pick first" logic works unchanged.
+    #
+    # Supported pick-priority types:
+    #   {"color": "green", "order": 1}           → green parts = top priority
+    #   {"part": "Part_3", "order": 2}            → Part_3 = second priority
+    #   {"fragility": "fragile", "order": 1}     → fragile = top priority
+    #   {"container": "Container_2", "order": 1}  → parts in Container_2 = top
+    #
+    # Kit/container fill priority (order maps directly to PDDL level):
+    #   {"kit": "Kit_1", "order": 1}              → fill Kit_1 first
+    #   {"container": "Container_3", "order": 2}  → fill Container_3 second
+    #
+    # Legacy keys ("part_name", "source", "destination", "receptacle") are
+    # also supported for backward compatibility.
+
+    priority_entries = preds.get("priority", [])
+    slot_belongs     = state.get("slot_belongs_to", {})
+    color_map_raw    = {e["part"]: (e.get("color") or "").lower()
+                        for e in preds.get("color", [])}
+
+    # Build part → container lookup for source-priority expansion
+    part_to_receptacle: Dict[str, str] = {}
+    for entry in preds.get("at", []):
+        parent = slot_belongs.get(entry["slot"], "")
+        part_to_receptacle[entry["part"]] = parent
+
+    # Build fragility lookup
+    fragility_map: Dict[str, str] = {}
+    for entry in preds.get("fragility", []):
+        fragility_map[entry["part"]] = (entry.get("fragility") or "normal").lower()
+
+    # Compute additive score for every part (all pick-priority types)
+    part_scores: Dict[str, int] = {}
+    for p_orig in objs.get("parts", []):
+        color = color_map_raw.get(p_orig, "")
+        part_scores[p_orig] = _compute_part_score(
+            p_orig, color, preds,
+            part_to_receptacle=part_to_receptacle,
+            fragility_map=fragility_map,
+        )
+
+    has_pick_order = any(s > 0 for s in part_scores.values())
+
+    # Map distinct non-zero total scores → contiguous PDDL priority levels.
+    # Highest score → level 1 (lowest cost to pick), etc.
+    distinct_scores = sorted({s for s in part_scores.values() if s > 0}, reverse=True)
+    score_to_level: Dict[int, int] = {s: i + 1 for i, s in enumerate(distinct_scores)}
+    num_priorities  = len(distinct_scores)
+
+    # ── goal (generated BEFORE priority tags) ────────────────────────────────
+    # Priority tags are only applied to goal-bound parts.  Excess stock of a
+    # priority colour that the kit recipe doesn't need stays at no-priority and
+    # can never block the planner's pick ordering.
+    mode = (state.get("workspace", {}).get("operation_mode") or "sorting").lower()
+    goal_lines = _generate_goal(state, mode)
+    if not goal_lines:
+        raise ValueError("Could not generate a PDDL goal. Check roles and operation_mode.")
+
+    import re as _re
+    goal_parts: set = set()
+    # Build part → target kit mapping from goal lines (for kit-scoped priority)
+    goal_part_to_kit: Dict[str, str] = {}
+    for g in goal_lines:
+        m = _re.search(r'\(at\s+(\S+)\s+(\S+)\)', g)
+        if m:
+            p_name = m.group(1)
+            s_name = m.group(2)
+            goal_parts.add(p_name)
+            parent = slot_belongs.get(s_name, "")
+            if parent:
+                goal_part_to_kit[p_name] = _to_pddl_name(parent)
+
+    # Initialise total-cost to zero (required by :action-costs)
+    init.append("    (= (total-cost) 0)")
+
+    # ── kit/container (output) priority assignments ────────────────────
+    # Kit/container priorities control fill order.
+    # User-facing: LOWER order = HIGHER priority = filled FIRST (order 1 = top).
+    # PDDL-internal: LOWER level = filled FIRST.
+    # Since both use lower = first, user order maps directly to PDDL level.
+    _user_rec_order: Dict[str, int] = {}
+    for e in priority_entries:
+        if "kit" in e:
+            rec_name = _to_pddl_name(e["kit"])
+            if e["kit"] in outputs:
+                _user_rec_order[rec_name] = int(e["order"])
+        elif "container" in e:
+            rec_name_raw = e["container"]
+            if rec_name_raw in outputs:
+                _user_rec_order[_to_pddl_name(rec_name_raw)] = int(e["order"])
+        elif "destination" in e:
+            # Legacy format
+            rec_name = _to_pddl_name(e["destination"])
+            if e["destination"] in outputs:
+                _user_rec_order[rec_name] = int(e["order"])
+        elif "receptacle" in e and "source" not in e:
+            # Legacy format: bare "receptacle" key → auto-classify
+            rec_name_raw = e["receptacle"]
+            if rec_name_raw in outputs:
+                _user_rec_order[_to_pddl_name(rec_name_raw)] = int(e["order"])
+
+    # User order maps directly to PDDL level (both use lower = first)
+    rec_to_level: Dict[str, int] = {}
+    if _user_rec_order:
+        for rec_name, user_order in _user_rec_order.items():
+            rec_to_level[rec_name] = user_order
+
+    workspace_cfg = state.get("workspace", {})
+    fill_order = (workspace_cfg.get("fill_order") or "").lower()
+
+    # ── Sequential kit filling is the DEFAULT behaviour ──────────────────
+    # When no explicit kit priorities are configured AND the user has not
+    # asked for parallel filling, auto-assign rec-priority-K levels to all
+    # output kits in alphabetical order.  This makes "finish one kit before
+    # starting the next" work out of the box for any number of kits without
+    # requiring the user to list every kit in the priority array.
+    #
+    # The auto-assignment is skipped when:
+    #   - fill_order == "parallel"  → user explicitly wants interleaved fills
+    #   - explicit kit priorities already exist (_user_rec_order is non-empty)
+    #   - there is only one output kit  → ordering is trivially sequential
+    #
+    # Pick order (which part to grab) and place destination (where it goes)
+    # remain independent — auto-assignment only affects place ordering.
+    if not rec_to_level and fill_order != "parallel" and mode == "kitting":
+        output_kit_list = sorted([k for k in kits if k in outputs])
+        if len(output_kit_list) > 1:
+            for i, kit_name in enumerate(output_kit_list, 1):
+                rec_to_level[kit_name] = i
+
+    num_kit_priorities = max(rec_to_level.values(), default=0)
+
+    # ── Determine whether to use kit-scoped priority ─────────────────────
+    # When kitting with color priorities AND sequential kit filling, scope
+    # the pick-priority derived predicates to the currently-fillable kit.
+    # This prevents parts destined for later kits from blocking picks for
+    # the current kit.
+    # Explicit fill_order="sequential" without pick priorities suppresses
+    # priorities entirely (legacy behavior).
+    _fill_order_early = (workspace_cfg.get("fill_order") or "").lower()
+    kit_scoped = (
+        has_pick_order
+        and num_kit_priorities >= 2
+        and mode == "kitting"
+        and fill_order != "parallel"
+    )
+
+    if _fill_order_early == "sequential" and not has_pick_order:
+        # Legacy: explicit sequential without pick priorities → suppress all
+        num_priorities = 0
+        score_to_level = {}
+        has_pick_order = False
+        part_scores    = {p: 0 for p in part_scores}
+
+    # Assign PDDL priority-K tags from additive scores (goal-bound parts only)
+    for p_orig in objs.get("parts", []):
+        p_pddl = _to_pddl_name(p_orig)
+        score  = part_scores.get(p_orig, 0)
+        if score > 0 and p_pddl in goal_parts:
+            init.append(f"    (priority-{score_to_level[score]} {p_pddl})")
+        else:
+            init.append(f"    (no-priority {p_pddl})")
+
+    # ── for-kit predicates (kit-scoped priority only) ────────────────────
+    if kit_scoped:
+        for p_pddl, kit_pddl in goal_part_to_kit.items():
+            init.append(f"    (for-kit {p_pddl} {kit_pddl})")
+
+    if num_kit_priorities > 0:
+        all_receptacles = kits + containers
+        for rec_name in all_receptacles:
+            level = rec_to_level.get(rec_name)
+            if level is not None:
+                init.append(f"    (rec-priority-{level} {rec_name})")
+
+    # ── mark goal slots (needed for receptacle priority derived predicates) ──
+    if num_kit_priorities > 0:
+        slot_belongs = state.get("slot_belongs_to", {})
+        all_output_receptacles = set(kits + containers) & {_to_pddl_name(r) for r in outputs}
+        for g in goal_lines:
+            m = _re.search(r'\(at\s+\S+\s+(\S+)\)', g)
+            if m:
+                slot_name = m.group(1)
+                parent = slot_belongs.get(slot_name, "")
+                if _to_pddl_name(parent) in all_output_receptacles:
+                    init.append(f"    (is-goal-slot {_to_pddl_name(slot_name)})")
+
+    problem = (
+        "(define (problem workspace)\n"
+        "  (:domain pick-and-place)\n"
+        "  (:objects\n"    + "\n".join(obj_lines) + "\n  )\n"
+        "  (:init\n"       + "\n".join(init)      + "\n  )\n"
+        "  (:goal (and\n"  + "\n".join(f"    {g}" for g in goal_lines) + "\n  ))\n"
+        "  (:metric minimize (total-cost))\n"
+        ")\n"
+    )
+    return problem, num_priorities, num_kit_priorities, kit_scoped
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Goal generators
@@ -618,6 +1571,46 @@ def run_fast_downward(
     return plan_text
 
 
+def run_pyperplan(
+    domain_path: str,
+    problem_path: str,
+    plan_path: str,
+) -> Optional[str]:
+    """Run pyperplan (A* + hFF). Fallback when Fast Downward is not configured."""
+    if not _PYPERPLAN_AVAILABLE:
+        print("\n❌ pyperplan is not installed.  pip install pyperplan\n")
+        return None
+
+    from pyperplan import grounding, search      # type: ignore
+    from pyperplan.pddl.parser import Parser     # type: ignore
+
+    try:
+        parser  = Parser(domain_path, problem_path)
+        domain  = parser.parse_domain()
+        problem = parser.parse_problem(domain)
+    except Exception as e:
+        print(f"❌ pyperplan parse error: {e}"); return None
+
+    try:
+        task = grounding.ground(problem)
+    except Exception as e:
+        print(f"❌ pyperplan grounding error: {e}"); return None
+
+    try:
+        from pyperplan.heuristics.relaxation import hFFHeuristic  # type: ignore
+        plan = search.astar_search(task, hFFHeuristic(task))
+    except Exception as e:
+        print(f"❌ pyperplan search error: {e}"); return None
+
+    if plan is None:
+        print("❌ pyperplan found no plan."); return None
+
+    plan_text = "\n".join(f"({op.name})" for op in plan) + "\n"
+    with open(plan_path, "w") as f:
+        f.write(plan_text)
+    return plan_text
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Plan → sequence
 # ─────────────────────────────────────────────────────────────────────────────
@@ -633,7 +1626,7 @@ def parse_plan_to_sequence(plan_text: str, state: Dict[str, Any]) -> List[List]:
       (pick-priority-1 part_3 ws_slot_part_3 workspace_floor) [1]
       (place part_3 container_1_pos_2 container_1) [0]
 
-    Also handles compact concatenated format (action+args joined by underscores):
+    And pyperplan concatenated format:
       (pick-priority-1_part_3_ws_slot_part_3_workspace_floor)
     """
     preds = state.get("predicates", {})
@@ -684,7 +1677,7 @@ def parse_plan_to_sequence(plan_text: str, state: Dict[str, Any]) -> List[List]:
                 sequence.append([pick_name, slot_orig])
                 continue
 
-        # ── Compact concatenated format (fallback) ───────────────────────────
+        # ── pyperplan concatenated format ─────────────────────────────────────
         line_lower = line.lower()
         if line_lower.startswith("pick"):
             action    = "pick"
@@ -744,6 +1737,30 @@ def parse_plan_to_sequence(plan_text: str, state: Dict[str, Any]) -> List[List]:
     return sequence
 
 
+# ── Priority sort (pyperplan fallback only) ───────────────────────────────────
+
+def _sort_sequence_by_priority(sequence: List[List], state: Dict[str, Any]) -> List[List]:
+    """Soft priority enforcement for pyperplan (no action costs)."""
+    preds     = state.get("predicates", {})
+    color_map = _color_map(preds)
+    slot_belongs = state.get("slot_belongs_to", {})
+    frag_map = {e["part"]: e.get("fragility", "normal") for e in preds.get("fragility", [])}
+    part_to_rec: Dict[str, str] = {}
+    for entry in preds.get("at", []):
+        parent = slot_belongs.get(entry["slot"], "")
+        part_to_rec[entry["part"]] = parent
+
+    return sorted(sequence, key=lambda s: -_compute_part_score(
+        s[0], color_map.get(s[0], ""), preds,
+        part_to_receptacle=part_to_rec,
+        fragility_map=frag_map,
+    ))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Top-level entry point
+# ─────────────────────────────────────────────────────────────────────────────
+
 def plan_sequence(
     state: Dict[str, Any],
     output_path: Optional[str] = None,
@@ -754,24 +1771,24 @@ def plan_sequence(
 
     Uses Fast Downward if FAST_DOWNWARD_PATH is set in config.py
     (PDDL 2.1 action costs — priority is a hard constraint in the domain).
-    Requires FAST_DOWNWARD_PATH to be set in Vision_Module/config.py or DOWNWARD_PATH env variable.
+    Falls back to pyperplan otherwise (priority is post-sorted).
     """
+    fd_path: str = ""
     try:
         from Vision_Module.config import FAST_DOWNWARD_PATH  # type: ignore
         fd_path = (FAST_DOWNWARD_PATH or "").strip()
     except ImportError:
-        fd_path = ""
+        pass
 
-    if not fd_path:
-        print("❌ FAST_DOWNWARD_PATH is not configured. Set it in Vision_Module/config.py or via the DOWNWARD_PATH env variable.")
-        return None
+    use_fd = bool(fd_path)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         domain_path  = os.path.join(tmpdir, "domain.pddl")
         problem_path = os.path.join(tmpdir, "problem.pddl")
         plan_path    = os.path.join(tmpdir, "plan.txt")
 
-        # ── Fast Downward: PDDL 2.1 action costs ─────────────────────────────
+        if use_fd:
+            # ── Fast Downward: PDDL 2.1 action costs ─────────────────────────
             try:
                 problem, num_priorities, num_kit_priorities, kit_scoped = state_to_pddl_problem_costs(state)
             except ValueError as e:
@@ -797,11 +1814,32 @@ def plan_sequence(
                   f"{', kit-scoped' if kit_scoped else ''})")
             plan_text = run_fast_downward(domain_path, problem_path, plan_path, fd_path)
 
+        else:
+            # ── pyperplan fallback ────────────────────────────────────────────
+            try:
+                problem = state_to_pddl_problem(state)
+            except ValueError as e:
+                print(f"❌ PDDL problem generation failed: {e}")
+                return None
+
+            with open(domain_path,  "w") as f: f.write(DOMAIN_PDDL_BASIC)
+            with open(problem_path, "w") as f: f.write(problem)
+
+            if keep_pddl:
+                print("\n── Generated PDDL problem ──")
+                print(problem)
+                print("────────────────────────────\n")
+
+            print("  backend        : pyperplan  (fallback — no action costs)")
+            plan_text = run_pyperplan(domain_path, problem_path, plan_path)
+
         if plan_text is None:
             return None
 
         sequence = parse_plan_to_sequence(plan_text, state)
 
+        if not use_fd:
+            sequence = _sort_sequence_by_priority(sequence, state)
 
         if output_path:
             os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

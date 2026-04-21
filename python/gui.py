@@ -35,6 +35,25 @@ from tkinter import font as tkfont
 # ── project root ──────────────────────────────────────────────────────────────
 
 from robot_configurator.core.paths import PROJECT_DIR
+from dotenv import load_dotenv
+load_dotenv(PROJECT_DIR / ".env", override=False)
+
+# ── ROS workspace path (required for robot subprocess) ────────────────────────
+# Read from .env so each machine can point to its own catkin workspace.
+# Fail loudly at startup rather than silently at button-press time.
+_ROS_WS_PATH = os.environ.get("ROS_WS_PATH", "")
+
+def _get_ros_source_cmd() -> str:
+    """Return the bash source command for ROS + the catkin workspace."""
+    if not _ROS_WS_PATH:
+        raise EnvironmentError(
+            "ROS_WS_PATH is not set in your .env file.\n"
+            "Add: ROS_WS_PATH=/path/to/your/ws_franka/devel/setup.bash"
+        )
+    return (
+        "source /opt/ros/noetic/setup.bash && "
+        f"source {_ROS_WS_PATH}"
+    )
 
 # ── PIL (optional but recommended) ────────────────────────────────────────────
 try:
@@ -1657,8 +1676,14 @@ class RobotGUI:
         import subprocess as _sp
         script = PROJECT_DIR / "run_execute.py"
         try:
+            ros_cmd = _get_ros_source_cmd()
+        except EnvironmentError as exc:
+            self._out_q.put(("print", f"\n[ERR] {exc}\n"))
+            self._out_q.put(("done", None))
+            return
+        try:
             proc = _sp.Popen(
-                [sys.executable, str(script)],
+                ["bash", "-c", f"{ros_cmd} && {sys.executable} {str(script)}"],
                 cwd=str(PROJECT_DIR),
                 stdout=_sp.PIPE,
                 stderr=_sp.STDOUT,
@@ -1692,8 +1717,14 @@ class RobotGUI:
         import subprocess as _sp
         script = PROJECT_DIR / "Execution_Module" / "move_camera_home.py"
         try:
+            ros_cmd = _get_ros_source_cmd()
+        except EnvironmentError as exc:
+            self._out_q.put(("print", f"\n[ERR] {exc}\n"))
+            self._out_q.put(("done", None))
+            return
+        try:
             proc = _sp.Popen(
-                [sys.executable, str(script)],
+                ["bash", "-c", f"{ros_cmd} && {sys.executable} {str(script)}"],
                 cwd=str(PROJECT_DIR),
                 stdout=_sp.PIPE,
                 stderr=_sp.STDOUT,
@@ -2375,3 +2406,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+

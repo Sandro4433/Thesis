@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
 
-from src.robot_configurator.core.paths import SEQUENCE_PATH, CONFIGURATION_PATH, FILE_EXCHANGE_DIR
+from robot_configurator.core.paths import SEQUENCE_PATH, CONFIGURATION_PATH, WORKSPACE_DIR
 from Execution_Module.pick_and_place import pick_and_place
 
-CANCEL_SENTINEL = FILE_EXCHANGE_DIR / ".cancel_execution"
+CANCEL_SENTINEL = WORKSPACE_DIR / ".cancel_execution"
 
 # Gripper width defaults (fallback if not specified in sequence)
 GRIPPER_OPEN_WIDTH           = 0.075   # never changes
@@ -97,3 +97,4 @@ def execute_sequence(robot):
 
     print(f"\n✅  Sequence complete ({len(entries)} step(s)).")
     return completed
+
