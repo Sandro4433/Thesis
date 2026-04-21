@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 # Load .env from the project root (two levels above this file:
 # src/robot_configurator/core/config.py → project root).
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
-load_dotenv(_PROJECT_ROOT / ".env", override=False)
+load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
 
 class Settings:

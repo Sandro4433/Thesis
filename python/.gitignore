@@ -31,8 +31,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# ── Fast Downward (external — register as git submodule instead) ──────────────
-downward/
 
 # ── Runtime outputs — not part of source ─────────────────────────────────────
 Memory/*.json
