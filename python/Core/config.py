@@ -72,7 +72,7 @@ class Settings:
             "RC_SEQUENCE_PATH", "sequence.json"
         )
         self.changes_path = root / os.environ.get(
-            "RC_CHANGES_PATH", "changes.json"
+            "RC_CHANGES_PATH", "workspace/changes.json"
         )
         self.memory_dir = root / os.environ.get("RC_MEMORY_DIR", "Memory")
         self.workspace_dir = root / os.environ.get(
