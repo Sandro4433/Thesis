@@ -1,3 +1,13 @@
+"""
+pick_and_place.py — Single pick-and-place cycle for the Franka Panda arm.
+
+Each call performs one complete pick-and-place in the following order:
+  Home → approach pick (PTP) → rotate gripper → open → descend (LIN) →
+  close → retreat (LIN) → Home → approach place (PTP) → rotate gripper →
+  descend (LIN) → open → retreat (LIN) → Home
+"""
+
+
 def pick_and_place(
     robot,
     pick_name: str,
@@ -7,7 +17,34 @@ def pick_and_place(
     gripper_open_width: float = 0.075,
     gripper_close_width: float = 0.05,
     fragile: bool = False,
-):
+) -> bool:
+    """Execute one pick-and-place cycle between two named positions.
+
+    Parameters
+    ----------
+    robot:
+        :class:`Execution_Module.robot.Robot` instance.
+    pick_name:
+        Named position of the part to pick.
+    place_name:
+        Named position of the destination slot.
+    home_name:
+        Named safe-transit position used between every major move.
+    approach_z_offset:
+        Vertical offset (metres) applied when descending to pick/place.
+        Negative = downward.
+    gripper_open_width:
+        Finger spread (metres) used when opening the gripper.
+    gripper_close_width:
+        Finger spread (metres) used when gripping the part.
+    fragile:
+        If True, all moves use reduced velocity/acceleration limits.
+
+    Returns
+    -------
+    bool
+        Always ``True``; exceptions from the robot layer propagate unchanged.
+    """
     # Home
     robot.MoveJ_J(home_name)
 

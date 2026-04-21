@@ -1,3 +1,21 @@
+"""
+sequence_executor.py — Read sequence.json and drive the robot through each step.
+
+Loads the pick-and-place sequence produced by either the PDDL planner or the
+LLM dialogue, then executes each step using the Robot motion primitives.
+
+Cancellation
+------------
+The GUI writes a ``.cancel_execution`` sentinel file to the workspace directory
+to request a mid-sequence abort.  ``execute_sequence`` checks for this file
+before every step and stops cleanly when it is found.
+
+Fragility
+---------
+Per-part fragility is read from ``configuration.json`` at execution time.
+Fragile parts automatically trigger reduced velocity/acceleration limits for
+the full pick-and-place cycle (see :func:`Execution_Module.robot.Robot.MoveL`).
+"""
 import json
 from pathlib import Path
 

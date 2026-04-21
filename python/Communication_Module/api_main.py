@@ -23,6 +23,7 @@ from openai import OpenAI
 
 from Core.config import settings
 from Core.paths import CONFIGURATION_PATH
+from Core.io_helpers import save_sequence, save_changes, save_config_to_memory
 from Communication_Module.block_parsing import (
     extract_changes_block,
     extract_mapping_block,
@@ -37,7 +38,6 @@ from Communication_Module.change_management import (
     merge_changes,
     resolve_conflicts,
 )
-from Communication_Module.scene_helpers import slim_scene
 from Communication_Module.prompts import build_system_prompt
 from Communication_Module.user_intent import (
     classify_pending_reply,
@@ -410,10 +410,8 @@ def _confirm_pending(
     pending_changes: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Handle confirmation of pending sequence and/or changes. Returns updated accumulated."""
-    import Orchestration.session_handler as sh  # late import — lives outside this package
-
     if pending_sequence is not None:
-        sh.save_sequence(pending_sequence)
+        save_sequence(pending_sequence)
         print("✅  Sequence confirmed.\n")
         messages.append({"role": "user", "content": "Confirmed the sequence."})
         messages.append({"role": "assistant", "content": "Sequence saved."})
@@ -434,22 +432,24 @@ def _finalize_session(
     pending_changes: Optional[Dict[str, Any]],
 ) -> None:
     """Save any pending work and end the session."""
-    import Orchestration.session_handler as sh  # late import — lives outside this package
+    # apply_and_save_config lives in session_handler (it orchestrates vision +
+    # config modules) — imported late to avoid the circular import chain.
+    from Orchestration.session_handler import apply_and_save_config
 
     if pending_sequence is not None:
-        sh.save_sequence(pending_sequence)
+        save_sequence(pending_sequence)
         print("✅  Sequence saved.")
 
     if pending_changes is not None:
         accumulated = _handle_conflicts(client, accumulated, pending_changes)
 
     if accumulated:
-        sh.save_changes(accumulated)
-        sh.apply_and_save_config(accumulated)
+        save_changes(accumulated)
+        apply_and_save_config(accumulated)
     else:
-        if sh.CONFIGURATION_PATH.exists():
-            state = json.loads(sh.CONFIGURATION_PATH.read_text(encoding="utf-8"))
-            sh.save_config_to_memory(state)
+        if CONFIGURATION_PATH.exists():
+            state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
+            save_config_to_memory(state)
 
     print("\n── Configuration complete. ──\n")
 
@@ -812,7 +812,7 @@ def _run_conversation_loop(
     scene: Dict[str, Any],
 ) -> None:
     """Inner loop extracted so LLMCancelled can be caught cleanly."""
-    import Orchestration.session_handler as sh  # late import — lives outside this package
+    from Orchestration.session_handler import apply_and_save_config  # only orchestration fn still needed here
 
     pending_sequence: Optional[List[List]] = None
     pending_changes: Optional[Dict[str, Any]] = None
@@ -903,12 +903,12 @@ def _run_conversation_loop(
             user_input = input("YOU: ").strip()
             if is_finish(user_input):
                 if accumulated_changes:
-                    sh.save_changes(accumulated_changes)
-                    sh.apply_and_save_config(accumulated_changes)
+                    save_changes(accumulated_changes)
+                    apply_and_save_config(accumulated_changes)
                 else:
-                    if sh.CONFIGURATION_PATH.exists():
-                        state = json.loads(sh.CONFIGURATION_PATH.read_text(encoding="utf-8"))
-                        sh.save_config_to_memory(state)
+                    if CONFIGURATION_PATH.exists():
+                        state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
+                        save_config_to_memory(state)
                 print("\n── Configuration complete. ──\n")
                 return
             if user_input:

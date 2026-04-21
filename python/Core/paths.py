@@ -74,7 +74,12 @@ def save_to_memory(state: Dict[str, Any], label: str = "config") -> Path:
 # ── Empty state factory ──────────────────────────────────────────────────────
 
 def empty_state() -> Dict[str, Any]:
-    """Return a blank PDDL-friendly configuration state."""
+    """Return a blank PDDL-friendly configuration state.
+
+    Intended as a convenience factory for callers that need to build a
+    configuration from scratch (e.g. tests, one-off scripts, or a future
+    "new workspace" wizard).  Not called internally by the main pipeline.
+    """
     return {
         "workspace": {
             "operation_mode": None,
@@ -103,8 +108,20 @@ def empty_state() -> Dict[str, Any]:
 
 # ── PDDL helpers ─────────────────────────────────────────────────────────────
 
-def parent_of_slot(slot_name: str) -> Optional[str]:
-    """Return the receptacle name that owns *slot_name*, or None."""
+def parent_of_slot(
+    slot_name: str,
+    slot_belongs_to: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Return the receptacle name that owns *slot_name*, or None.
+
+    If *slot_belongs_to* is provided (the mapping from configuration.json),
+    it is used for an exact lookup first.  Falls back to the ``_Pos_``
+    string heuristic so callers without the mapping still work.
+    """
+    if slot_belongs_to:
+        parent = slot_belongs_to.get(slot_name)
+        if parent is not None:
+            return parent
     idx = slot_name.rfind("_Pos_")
     if idx == -1:
         return None

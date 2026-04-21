@@ -1,16 +1,51 @@
-# robot.py
+"""
+robot.py — High-level robot motion interface for the Franka Panda arm.
+
+Wraps MoveIt Commander to expose named-position pick-and-place primitives.
+All target positions are loaded at construction time from:
+  - configuration.json  (slot + part positions from the vision pipeline)
+  - positions_fixed.jsonl  (fixed named positions: Home, Camera_Home, etc.)
+
+Motion modes
+------------
+  PTP  (point-to-point)  — fast joint-space moves for approach / retreat
+  LIN  (linear)          — Cartesian straight-line moves for pick / place
+
+Fragile mode halves the velocity and acceleration limits for both PTP and LIN.
+"""
 import json
 import numpy as np
 from geometry_msgs.msg import Pose
 from moveit_commander.exception import MoveItCommanderException
 
 from Core.paths import CONFIGURATION_PATH as CONFIGURATION_JSON, WORKSPACE_DIR as _FE_DIR
-POSITIONS_FIXED_JSONL = _FE_DIR / 'positions_fixed.jsonl'
+
+POSITIONS_FIXED_JSONL = _FE_DIR / "positions_fixed.jsonl"
+
 
 class Robot:
-    def __init__(self, arm_name, hand_name, moveit_commander,
-                 finger_joint_1="panda_finger_joint1",
-                 finger_joint_2="panda_finger_joint2"):
+    def __init__(
+        self,
+        arm_name: str,
+        hand_name: str,
+        moveit_commander,
+        finger_joint_1: str = "panda_finger_joint1",
+        finger_joint_2: str = "panda_finger_joint2",
+    ) -> None:
+        """Initialise MoveIt move groups and load all named positions.
+
+        Parameters
+        ----------
+        arm_name:
+            MoveIt planning group name for the arm (e.g. ``"panda_arm"``).
+        hand_name:
+            MoveIt planning group name for the hand (e.g. ``"panda_hand"``).
+        moveit_commander:
+            The ``moveit_commander`` module (passed in so the caller controls
+            ROS node initialisation order).
+        finger_joint_1 / finger_joint_2:
+            URDF names of the two gripper finger joints.
+        """
         self.arm = moveit_commander.MoveGroupCommander(arm_name)
         self.gripper = moveit_commander.MoveGroupCommander(hand_name)
 
@@ -21,59 +56,120 @@ class Robot:
         self._finger_joint_1 = finger_joint_1
         self._finger_joint_2 = finger_joint_2
 
-        self._positions = {}
-        self._positions.update(self.load_points_snapshot_json(str(CONFIGURATION_JSON.resolve())))
-        self._positions.update(self.load_points_jsonl(str(POSITIONS_FIXED_JSONL.resolve())))
+        self._positions: dict = {}
+        self._positions.update(
+            self.load_points_snapshot_json(str(CONFIGURATION_JSON.resolve()))
+        )
+        self._positions.update(
+            self.load_points_jsonl(str(POSITIONS_FIXED_JSONL.resolve()))
+        )
 
         print("Loaded positions:", list(self._positions.keys()))
 
-    # --------------------------
-    #       PLANNERS
-    # --------------------------
-    def set_mode_ptp(self):
+    # ── Motion planners ───────────────────────────────────────────────────────
+
+    def set_mode_ptp(self) -> None:
+        """Configure the arm for fast joint-space (PTP) moves."""
         self.arm.set_planner_id("PTP")
         self.arm.set_planning_pipeline_id("pilz_industrial_motion_planner")
         self.arm.set_max_velocity_scaling_factor(0.5)
         self.arm.set_max_acceleration_scaling_factor(0.5)
 
-    def set_mode_lin(self):
+    def set_mode_lin(self) -> None:
+        """Configure the arm for Cartesian straight-line (LIN) moves."""
         self.arm.set_planner_id("LIN")
         self.arm.set_planning_pipeline_id("pilz_industrial_motion_planner")
         self.arm.set_max_velocity_scaling_factor(0.1)
         self.arm.set_max_acceleration_scaling_factor(0.1)
 
-    def set_mode_ptp_fragile(self):
+    def set_mode_ptp_fragile(self) -> None:
+        """PTP at reduced speed — used when handling fragile parts."""
         self.arm.set_planner_id("PTP")
         self.arm.set_planning_pipeline_id("pilz_industrial_motion_planner")
         self.arm.set_max_velocity_scaling_factor(0.2)
         self.arm.set_max_acceleration_scaling_factor(0.2)
 
-    def set_mode_lin_fragile(self):
+    def set_mode_lin_fragile(self) -> None:
+        """LIN at reduced speed — used when handling fragile parts."""
         self.arm.set_planner_id("LIN")
         self.arm.set_planning_pipeline_id("pilz_industrial_motion_planner")
         self.arm.set_max_velocity_scaling_factor(0.05)
         self.arm.set_max_acceleration_scaling_factor(0.05)
 
-    # --------------------------
-    #     MOTION FUNCTIONS
-    # --------------------------
-    def MoveL(self, name, positions=None, offset=None, use_current_orientation: bool = False,
-              fragile: bool = False):
+    # ── High-level motion commands ────────────────────────────────────────────
+
+    def MoveL(
+        self,
+        name: str,
+        positions: dict = None,
+        offset: tuple = None,
+        use_current_orientation: bool = False,
+        fragile: bool = False,
+    ) -> bool:
+        """Cartesian straight-line move to the named position.
+
+        Parameters
+        ----------
+        name:
+            Key in *positions* to move to.
+        positions:
+            Position registry; defaults to ``self._positions``.
+        offset:
+            (dx, dy, dz) in metres applied on top of the target position.
+        use_current_orientation:
+            If True, keep the arm's current end-effector orientation instead
+            of the stored target orientation.
+        fragile:
+            If True, use reduced velocity/acceleration limits.
+        """
         if positions is None:
             positions = self._positions
         self.set_mode_lin_fragile() if fragile else self.set_mode_lin()
         return self.go_to_point_pose_only(
             name, positions, offset=offset,
-            use_current_orientation=use_current_orientation
+            use_current_orientation=use_current_orientation,
         )
 
-    def MoveJ(self, name, positions=None, offset=None, fragile: bool = False):
+    def MoveJ(
+        self,
+        name: str,
+        positions: dict = None,
+        offset: tuple = None,
+        fragile: bool = False,
+    ) -> None:
+        """Joint-space move to the named position (pose target, PTP planner).
+
+        Parameters
+        ----------
+        name:
+            Key in *positions* to move to.
+        positions:
+            Position registry; defaults to ``self._positions``.
+        offset:
+            (dx, dy, dz) in metres applied on top of the target position.
+        fragile:
+            If True, use reduced velocity/acceleration limits.
+        """
         if positions is None:
             positions = self._positions
         self.set_mode_ptp_fragile() if fragile else self.set_mode_ptp()
         self.go_to_point_pose_only(name, positions, offset)
 
-    def MoveJ_J(self, name, positions=None):
+    def MoveJ_J(self, name: str, positions: dict = None) -> bool:
+        """Joint-space move using stored joint values (most accurate PTP).
+
+        Unlike :meth:`MoveJ`, this drives the arm directly to the recorded
+        joint configuration rather than planning to a Cartesian pose target.
+        Use this for fixed named poses such as ``"Home"`` and ``"Camera_Home"``
+        where repeatability matters more than Cartesian precision.
+
+        Parameters
+        ----------
+        name:
+            Key in *positions* whose ``"joints"`` field is used.
+        positions:
+            Position registry; defaults to ``self._positions``.
+        """
         if positions is None:
             positions = self._positions
         entry = positions.get(name)
@@ -95,7 +191,28 @@ class Robot:
             raise MoveItCommanderException("❌ Joint PTP failed.")
         return success
 
-    def MoveJointDelta(self, joint_index: int = 6, delta_deg: float = 0.0, target_name: str = ""):
+    def MoveJointDelta(
+        self,
+        joint_index: int = 6,
+        delta_deg: float = 0.0,
+        target_name: str = "",
+    ) -> bool:
+        """Rotate a single joint by a delta angle (degrees).
+
+        If *target_name* is provided, the delta is read from the target's
+        stored ``orientation_deg`` field (negated), which is used to align
+        the gripper with the part's grip angle.  Otherwise *delta_deg* is
+        applied directly.
+
+        Parameters
+        ----------
+        joint_index:
+            0-based joint index (0–6 for the 7-DOF Panda).
+        delta_deg:
+            Degrees to rotate when *target_name* is not given.
+        target_name:
+            Named position whose ``orientation_deg`` drives the rotation.
+        """
         if joint_index < 0 or joint_index > 6:
             raise ValueError("joint_index must be between 0 and 6 (panda has 7 joints).")
 
@@ -126,10 +243,22 @@ class Robot:
             raise MoveItCommanderException("❌ Joint delta move failed.")
         return success
 
-    # --------------------------
-    # For PTP/LIN movement
-    # --------------------------
-    def go_to_point_pose_only(self, name, positions, offset=None, use_current_orientation: bool = False):
+    # ── Internal pose execution ───────────────────────────────────────────────
+
+    def go_to_point_pose_only(
+        self,
+        name: str,
+        positions: dict,
+        offset: tuple = None,
+        use_current_orientation: bool = False,
+    ) -> bool:
+        """Execute a pose-target move (PTP or LIN depending on current mode).
+
+        Copies position and orientation from the stored entry, applies any
+        offset, normalises the quaternion, then calls ``arm.go()``.
+
+        Raises :exc:`MoveItCommanderException` on planning/execution failure.
+        """
         entry = positions.get(name)
         if entry is None:
             print(f"⚠ Position '{name}' not found.")
@@ -162,45 +291,43 @@ class Robot:
             raise MoveItCommanderException("❌ Pose-PTP/LIN failed.")
         return success
 
-    # --------------------------
-    #      GRIPPER
-    # --------------------------
-    def gripper_open(self, width=None):
-        if width is None:
-            width = 0.075
-        self.set_width(width)
-        self.gripper.go(wait=True)
+    # ── Gripper control ───────────────────────────────────────────────────────
 
-    def gripper_close(self, width=None):
-        if width is None:
-            width = 0.06
+    def gripper_open(self, width: float = 0.075) -> None:
+        """Open the gripper to *width* metres (finger spread, not gap)."""
         self.set_width(width)
-        self.gripper.go(wait=True)
 
-    def set_width(self, width):
+    def gripper_close(self, width: float = 0.06) -> None:
+        """Close the gripper to *width* metres."""
+        self.set_width(width)
+
+    def set_width(self, width: float) -> None:
+        """Set both finger joints symmetrically and execute the move."""
         target = width / 2.0
         self.gripper.set_joint_value_target(self._finger_joint_1, target)
         self.gripper.set_joint_value_target(self._finger_joint_2, target)
         self.gripper.go(wait=True)
 
-    # --------------------------
-    #   UTILITIES
-    # --------------------------
-    def normalize_quaternion(self, pose):
+    # ── Utilities ─────────────────────────────────────────────────────────────
+
+    def normalize_quaternion(self, pose: Pose) -> None:
+        """Normalise the quaternion in *pose* in-place to avoid MoveIt warnings."""
         q = np.array([
             pose.orientation.x, pose.orientation.y,
-            pose.orientation.z, pose.orientation.w
+            pose.orientation.z, pose.orientation.w,
         ])
         norm = np.linalg.norm(q)
         if norm > 0:
             q /= norm
-            pose.orientation.x, pose.orientation.y, \
-            pose.orientation.z, pose.orientation.w = q
+            (
+                pose.orientation.x, pose.orientation.y,
+                pose.orientation.z, pose.orientation.w,
+            ) = q
 
-    # --------------------------
-    #   LOADERS
-    # --------------------------
+    # ── Position loaders ──────────────────────────────────────────────────────
+
     def _entry_to_pose_record(self, name: str, data: dict) -> dict:
+        """Convert a raw JSON position entry into a Pose + metadata record."""
         pose = Pose()
         pose.position.x = data["pos"][0]
         pose.position.y = data["pos"][1]

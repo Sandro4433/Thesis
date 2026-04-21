@@ -18,6 +18,12 @@ CHANGES_BLOCK_RE = re.compile(
     r"```changes\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE
 )
 CHANGES_BLOCK_FALLBACK_RE = re.compile(
+    # Fallback for LLM responses where the closing ``` is absent.
+    # The lookahead stops at "Confirm", a new fence, or end-of-string.
+    # NOTE: "Confirm" is hardcoded because GPT models consistently follow
+    # their changes block with a confirmation prompt starting with that word.
+    # If the model changes phrasing this fallback may silently fail — the
+    # primary CHANGES_BLOCK_RE (which requires a closing ```) is preferred.
     r"```changes\s*(.*?)\s*(?=Confirm|```|\Z)", re.DOTALL | re.IGNORECASE
 )
 MAPPING_BLOCK_RE = re.compile(

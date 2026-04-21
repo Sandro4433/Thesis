@@ -12,7 +12,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
@@ -33,12 +32,7 @@ def generate_sequence(
     Returns the sequence list, or None if skipped / failed.
     """
     # Import here to avoid circular imports at module load time
-    import sys
-    PROJECT_DIR = Path(__file__).resolve().parents[1]
-    if str(PROJECT_DIR) not in sys.path:
-        sys.path.insert(0, str(PROJECT_DIR))
-
-    from Vision_Module.config import USE_PDDL_PLANNER  # type: ignore
+    from Vision_Module.config import USE_PDDL_PLANNER
 
     if not USE_PDDL_PLANNER:
         # LLM dialogue flow — sequence already written by API_Main.py

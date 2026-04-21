@@ -60,7 +60,7 @@ def is_finish(text: str) -> bool:
 def is_yes(text: str) -> bool:
     t = text.strip().lower()
     if t in (
-        "yes", "y", "yep", "yeah", "yep", "yup", "sure", "ok", "okay",
+        "yes", "y", "yep", "yeah", "yup", "sure", "ok", "okay",
         "correct", "right", "good", "confirm", "confirmed", "go",
         "go ahead", "proceed", "approve", "approved", "great", "perfect",
         "looks good", "that's right", "thats right", "that's correct",

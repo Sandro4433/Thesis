@@ -79,12 +79,18 @@ TAG_AXIS_DRAW_LEN_M = 0.04            # meters
 Z_ROBOT_M = 0.2
 
 # ── Pick offset correction ────────────────────────────────────────────────────
-# X: linear left/right correction.  0 at image center, ±mm at edges.
-#   Set to 0 to disable.
-# Y: varies with vertical position in the image.
-#   BOTTOM: mm offset at the bottom of the image
-#   TOP:    mm offset at the top of the image
-#   Interpolates linearly between them.  Set both to 0 to disable.
+# These constants compensate for perspective distortion introduced by the
+# overhead camera viewing the workspace at a slight angle.
+#
+# PERSPECTIVE_X_OFFSET_MM: lateral (left/right) correction that varies
+#   linearly with the part's horizontal position in the image.  0 at the
+#   image centre, ±mm at the edges.  Set to 0 to disable.
+#
+# Y_OFFSET_BOTTOM_MM / Y_OFFSET_TOP_MM: vertical correction that varies
+#   linearly with the part's vertical position in the image (bottom → top).
+#   Tune by placing a known part at the top and bottom of the workspace,
+#   measuring the pick error, and adjusting until errors are < 2 mm.
+#   Set both to 0 to disable.
 PERSPECTIVE_X_OFFSET_MM = 5.0
 Y_OFFSET_BOTTOM_MM      = 3.0
 Y_OFFSET_TOP_MM          = 15.0
@@ -113,9 +119,7 @@ USE_PDDL_PLANNER: bool = True
 # ordering as a hard constraint via numeric fluents).
 # Resolved relative to this file: python/downward/fast-downward.py
 # Override with the DOWNWARD_PATH environment variable if your layout differs.
-import os as _os
-FAST_DOWNWARD_PATH: str = _os.environ.get(
+FAST_DOWNWARD_PATH: str = os.environ.get(
     "DOWNWARD_PATH",
     str(Path(__file__).resolve().parents[1] / "downward" / "fast-downward.py"),
 )
-del _os

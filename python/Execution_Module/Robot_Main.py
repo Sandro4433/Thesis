@@ -22,7 +22,7 @@ ROBOT_CONFIG = {
 }
 
 
-def main() -> None:
+def main() -> int:
     rospy.init_node("franka_go_points")
     moveit_commander.roscpp_initialize([])
 

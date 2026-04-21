@@ -18,7 +18,10 @@ orchestration.
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
+import re
 import subprocess as _sp
 import sys
 from pathlib import Path
@@ -33,8 +36,9 @@ from openai import OpenAI
 
 from Core.paths import (
     PROJECT_DIR, CONFIGURATION_PATH, SEQUENCE_PATH, CHANGES_PATH,
-    MEMORY_DIR, WORKSPACE_DIR, save_atomic, save_to_memory,
+    MEMORY_DIR, WORKSPACE_DIR, save_atomic,
 )
+from Core.io_helpers import save_sequence, save_changes, save_config_to_memory
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -103,7 +107,6 @@ def run_vision() -> None:
 def apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
     """Apply accumulated LLM changes to configuration.json, save to Memory, and redraw image."""
     from Configuration_Module.apply_config_changes import apply_changes
-    import io, contextlib
 
     if not CONFIGURATION_PATH.exists():
         print("⚠  configuration.json not found — cannot apply changes.")
@@ -114,23 +117,13 @@ def apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
     with contextlib.redirect_stdout(io.StringIO()):
         updated = apply_changes(scene, accumulated_changes)
 
-    tmp = str(CONFIGURATION_PATH) + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(updated, f, indent=2, ensure_ascii=False)
-    Path(tmp).replace(CONFIGURATION_PATH)
+    save_atomic(CONFIGURATION_PATH, updated)
     print("✅  Configuration updated.")
 
     # Save timestamped copy to Memory/
     save_config_to_memory(updated)
 
     refresh_annotated_image(updated)
-
-
-def save_config_to_memory(state: Dict[str, Any]) -> Path:
-    """Save a timestamped configuration to Memory/. Delegates to paths.save_to_memory."""
-    dest = save_to_memory(state, label="session")
-    print(f"✅  State archived → {dest.name}")
-    return dest
 
 
 def list_memory_configs() -> List[Dict[str, str]]:
@@ -142,17 +135,14 @@ def list_memory_configs() -> List[Dict[str, str]]:
       - configuration_DDMMYYYY_HHMM.json           (legacy convention)
       - Any other .json file (uses file mtime)
     """
-    import re as _re
-
-    if not MEMORY_DIR.exists():
-        return []
+    
 
     # Current convention:  configuration_{label}_YYYYMMDD_HHMMSS.json
-    pat_new = _re.compile(
+    pat_new = re.compile(
         r"^configuration_[a-z_]+_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.json$"
     )
     # Legacy convention:  configuration_DDMMYYYY_HHMM.json
-    pat_old = _re.compile(
+    pat_old = re.compile(
         r"^configuration_(\d{2})(\d{2})(\d{4})_(\d{2})(\d{2})\.json$"
     )
     configs = []
@@ -561,26 +551,6 @@ def run_pddl_sequence() -> None:
         print(json.dumps(sequence, indent=2))
 
     print("\n── PDDL planning complete. ──\n")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# File I/O helpers (used by the LLM conversation loop in API_Main)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def save_sequence(sequence: List[List]) -> Path:
-    SEQUENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SEQUENCE_PATH.write_text(
-        json.dumps(sequence, indent=2, ensure_ascii=False), encoding="utf-8",
-    )
-    return SEQUENCE_PATH
-
-
-def save_changes(changes: Dict[str, Any]) -> Path:
-    CHANGES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CHANGES_PATH.write_text(
-        json.dumps(changes, indent=2, ensure_ascii=False), encoding="utf-8",
-    )
-    return CHANGES_PATH
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
