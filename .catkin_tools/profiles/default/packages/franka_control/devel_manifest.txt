@@ -1,7 +1,0 @@
-franka_ros/franka_control
-/home/hv/ws_moveit/devel/.private/franka_control/lib/libfranka_state_controller.so /home/hv/ws_moveit/devel/lib/libfranka_state_controller.so
-/home/hv/ws_moveit/devel/.private/franka_control/lib/pkgconfig/franka_control.pc /home/hv/ws_moveit/devel/lib/pkgconfig/franka_control.pc
-/home/hv/ws_moveit/devel/.private/franka_control/lib/franka_control/franka_control_node /home/hv/ws_moveit/devel/lib/franka_control/franka_control_node
-/home/hv/ws_moveit/devel/.private/franka_control/lib/franka_control/franka_combined_control_node /home/hv/ws_moveit/devel/lib/franka_control/franka_combined_control_node
-/home/hv/ws_moveit/devel/.private/franka_control/share/franka_control/cmake/franka_controlConfig-version.cmake /home/hv/ws_moveit/devel/share/franka_control/cmake/franka_controlConfig-version.cmake
-/home/hv/ws_moveit/devel/.private/franka_control/share/franka_control/cmake/franka_controlConfig.cmake /home/hv/ws_moveit/devel/share/franka_control/cmake/franka_controlConfig.cmake

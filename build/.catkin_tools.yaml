@@ -1,6 +1,0 @@
-devel_space: /home/hv/ws_moveit/devel
-install: false
-install_space: /home/hv/ws_moveit/install
-profile: default
-source_space: /home/hv/ws_moveit/src
-workspace: /home/hv/ws_moveit

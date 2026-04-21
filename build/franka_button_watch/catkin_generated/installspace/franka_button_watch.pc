@@ -1,8 +1,0 @@
-prefix=/home/hv/ws_moveit/install
-
-Name: franka_button_watch
-Description: Description of franka_button_watch
-Version: 0.0.1
-Cflags: 
-Libs: -L${prefix}/lib 
-Requires: 
