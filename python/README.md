@@ -11,7 +11,7 @@ This is the software artefact for the Master's Thesis:
 
 ## System Requirements
 
-This project runs on **Ubuntu 22.04** and requires the following to be installed on the system before proceeding:
+This project runs on **Ubuntu 22.04** and requires the following to be installed before proceeding:
 
 | Dependency | Version | Install guide |
 |---|---|---|
@@ -32,35 +32,64 @@ This project runs on **Ubuntu 22.04** and requires the following to be installed
 
 ```
 python/
-├── Main.py                    Entry point (CLI)
-├── gui.py                     Tkinter GUI entry point
-├── session_handler.py         Pipeline orchestrator
-├── run_execute.py             Robot execution subprocess
-├── planner_interface.py       PDDL / LLM planner selector
-├── paths.py                   Legacy path shim (compatibility)
+├── Main.py                          Entry point — launches the GUI
 │
-├── src/robot_configurator/    Installable Python package
-│   ├── core/
-│   │   ├── config.py          Settings loaded from environment variables
-│   │   └── paths.py           Path constants + atomic file I/O helpers
-│   ├── communication/
-│   │   ├── api_main.py        LLM conversation loop (OpenAI)
-│   │   ├── prompts.py         System prompts
-│   │   ├── capacity_tools.py  Deterministic capacity checks
-│   │   └── ...
-│   └── configuration/
-│       ├── apply_config_changes.py
-│       ├── apply_sequence_changes.py
-│       └── update_scene.py
+├── Communication_Module/            LLM conversation layer (OpenAI)
+│   ├── api_main.py                  Main conversation loop
+│   ├── prompts.py                   System prompts
+│   ├── ambiguity_detection.py       Detects ambiguous user instructions
+│   ├── block_parsing.py             Parses structured LLM output blocks
+│   ├── capacity_tools.py            Deterministic capacity checks
+│   ├── change_management.py         Tracks and validates proposed changes
+│   ├── scene_helpers.py             Scene description utilities
+│   ├── user_intent.py               Classifies user intent
+│   └── tests/                       Unit tests for this module
 │
-├── Vision_Module/             Camera, AprilTag & ChArUco detection, RealSense
-├── Execution_Module/          ROS/MoveIt robot motion control
-├── Utilities/                 Camera calibration & diagnostic scripts
-├── workspace/             Runtime JSON exchange between modules
-└── Memory/                    Timestamped configuration snapshots
+├── Configuration_Module/            Applies validated changes to scene state
+│   ├── apply_config_changes.py      Merges LLM changes into configuration
+│   ├── apply_sequence_changes.py    Applies sequence-level changes
+│   ├── update_scene.py              Full scene update pipeline
+│   └── tests/                       Unit tests for this module
+│
+├── Planning_Module/                 Motion sequence planning
+│   ├── pddl_planner.py              PDDL 2.1 planner (Fast Downward backend)
+│   └── planner_interface.py         Unified planner entry point
+│
+├── Orchestration/                   Pipeline coordination and UI
+│   ├── gui.py                       Tkinter GUI
+│   ├── session_handler.py           Orchestrates all modules end-to-end
+│   └── run_execute.py               Robot execution subprocess entry point
+│
+├── Vision_Module/                   Camera pipeline
+│   ├── Vision_Main.py               Entry point for vision subprocess
+│   ├── pipeline.py                  Full detection pipeline
+│   ├── vision_circles.py            Colour-based part detection
+│   ├── vision_charuco.py            ChArUco board detection
+│   ├── vision_apriltag.py           AprilTag detection
+│   ├── workspace_state.py           Converts detections to scene state
+│   └── ...
+│
+├── Execution_Module/                ROS / MoveIt robot motion control
+│   ├── Robot_Main.py                Robot configuration and entry point
+│   ├── robot.py                     MoveIt robot interface
+│   ├── sequence_executor.py         Executes pick-and-place sequences
+│   ├── pick_and_place.py            Low-level pick and place primitives
+│   └── move_camera_home.py          Moves robot to camera home position
+│
+├── Core/                            Shared settings and path constants
+│   ├── config.py                    All settings loaded from environment variables
+│   └── paths.py                     Path constants and atomic file I/O helpers
+│
+├── workspace/                       Runtime data exchanged between modules
+│   ├── configuration.json           Active scene state
+│   ├── sequence.json                Current pick-and-place sequence
+│   ├── positions.json               Detected part positions
+│   └── ...
+│
+├── Memory/                          Timestamped configuration snapshots
+├── downward/                        Fast Downward PDDL planner (git submodule)
+└── .env                             Local secrets and path overrides (git-ignored)
 ```
-
-The Fast Downward PDDL planner is used as a **git submodule** at `downward/`.
 
 ---
 
@@ -85,91 +114,75 @@ cd ..
 > Fast Downward requires a C++17 compiler, CMake ≥ 3.16, and Python ≥ 3.6.  
 > See `downward/BUILD.md` for details.
 
-### 3. Create and activate a virtual environment
+### 3. Install Python dependencies
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+pip install openai python-dotenv numpy opencv-python pupil-apriltags --break-system-packages
 ```
 
-### 4. Install the Python package
+Install the RealSense Python bindings separately:
 
 ```bash
-pip install -e ".[dev]"
-```
-
-This installs `robot_configurator` in editable mode along with:
-`openai`, `python-dotenv`, `numpy`, `opencv-python`, `pupil-apriltags`
-
-Install the RealSense Python bindings separately (not on PyPI for all platforms):
-
-```bash
-pip install pyrealsense2
+pip install pyrealsense2 --break-system-packages
 ```
 
 > If `pip install pyrealsense2` fails, install via the Intel RealSense SDK instead:  
 > [github.com/IntelRealSense/librealsense/tree/master/wrappers/python](https://github.com/IntelRealSense/librealsense/tree/master/wrappers/python)
 
-### 5. Set your OpenAI API key
+### 4. Set your OpenAI API key and paths
 
 ```bash
-cp .env.example .env
+cp env.example .env
 # Edit .env and set OPENAI_API_KEY=sk-...
 ```
 
-### 6. Source ROS
+### 5. Source ROS
 
 ```bash
 source /opt/ros/noetic/setup.bash
-source ~/ws_moveit/devel/setup.bash   # your catkin workspace
+source ~/ws_franka/devel/setup.bash   # your catkin workspace
 ```
 
 ---
 
 ## Running the system
 
-### GUI (recommended)
+### Start the GUI
 
 ```bash
-python gui.py
+python3 Main.py
 ```
 
-### CLI
-
-```bash
-python Main.py
-```
-
-### Execution only (move robot using existing sequence.json)
-
-```bash
-python run_execute.py
-```
+This launches the Tkinter GUI. All other modules (Vision, Communication, Configuration, Planning, Execution) are started from within the GUI as needed.
 
 ---
 
 ## Configuration
 
 All tuneable parameters are set through environment variables in your `.env` file.  
-See `.env.example` for the full list. Key variables:
+See `env.example` for the full list. Key variables:
 
 | Variable | Default | Description |
 |---|---|---|
 | `OPENAI_API_KEY` | — | **Required.** Your OpenAI API key. |
-| `RC_MODEL` | `gpt-4.1` | LLM model for all API calls. |
+| `RC_MODEL` | `gpt-4.1` | LLM model used for all API calls. |
 | `RC_MAX_TOOL_ROUNDS` | `3` | Max tool-call rounds per LLM turn. |
-| `RC_POSITION_MATCH_THRESHOLD_M` | `0.040` | XY auto-match threshold (metres). |
+| `RC_POSITION_MATCH_THRESHOLD_M` | `0.040` | XY auto-match threshold in metres. |
+| `RC_CONFIGURATION_PATH` | `workspace/configuration.json` | Active scene state file. |
+| `RC_SEQUENCE_PATH` | `workspace/sequence.json` | Active sequence file. |
+| `RC_CHANGES_PATH` | `workspace/changes.json` | Pending changes file. |
+| `RC_MEMORY_DIR` | `Memory` | Directory for timestamped snapshots. |
 | `DOWNWARD_PATH` | `downward/fast-downward.py` | Path to Fast Downward entry point. |
+| `ROS_WS_PATH` | — | Absolute path to your catkin `devel/setup.bash`. Required for robot execution. |
 
-Toggle between LLM-based and PDDL-based sequence planning in `Vision_Module/config.py`:
+Toggle between PDDL-based and LLM-based sequence planning in `Vision_Module/config.py`:
 
 ```python
-USE_PDDL_PLANNER = True   # use Fast Downward
+USE_PDDL_PLANNER = True   # use Fast Downward (recommended)
 USE_PDDL_PLANNER = False  # use LLM dialogue
 ```
 
 ---
-
 
 ## Adapting to a different robot
 
@@ -177,34 +190,26 @@ All robot-specific names are in one place: `Execution_Module/Robot_Main.py`.
 
 ```python
 ROBOT_CONFIG = {
-    "arm_group":      "panda_arm",        # MoveIt planning group for the arm
-    "hand_group":     "panda_hand",       # MoveIt planning group for the gripper
-    "finger_joint_1": "panda_finger_joint1",  # URDF name of gripper finger 1
-    "finger_joint_2": "panda_finger_joint2",  # URDF name of gripper finger 2
+    "arm_group":      "panda_arm",
+    "hand_group":     "panda_hand",
+    "finger_joint_1": "panda_finger_joint1",
+    "finger_joint_2": "panda_finger_joint2",
 }
 ```
 
-Change these four strings to match your robot's MoveIt configuration.  
-The motion profiles (PTP/LIN, velocity/acceleration scaling) are in `robot.py`
-and may also need tuning for a different manipulator.
-
-## Running tests
-
-```bash
-pytest              # all unit tests
-pytest -v           # verbose
-pytest --cov        # with coverage report
-```
+Change these four strings to match your robot's MoveIt configuration. Motion profiles (velocity/acceleration scaling) are in `Execution_Module/robot.py` and may also need tuning for a different manipulator.
 
 ---
 
-## Branching strategy
+## Running tests
 
-| Branch | Purpose |
-|---|---|
-| `main` | Stable releases |
-| `refactored-cleanup` | Package restructuring |
-| `Priority_New` | Priority-handling experiments |
+Tests live inside each module alongside the code they test.
+
+```bash
+pytest Communication_Module/tests/
+pytest Configuration_Module/tests/
+pytest -v   # verbose output
+```
 
 ---
 
