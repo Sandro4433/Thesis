@@ -1,6 +1,0 @@
-Symlinking /home/hv/ws_moveit/devel/lib/libfranka_state_controller.so
-Symlinking /home/hv/ws_moveit/devel/lib/pkgconfig/franka_control.pc
-Symlinking /home/hv/ws_moveit/devel/lib/franka_control/franka_control_node
-Symlinking /home/hv/ws_moveit/devel/lib/franka_control/franka_combined_control_node
-Symlinking /home/hv/ws_moveit/devel/share/franka_control/cmake/franka_controlConfig-version.cmake
-Symlinking /home/hv/ws_moveit/devel/share/franka_control/cmake/franka_controlConfig.cmake

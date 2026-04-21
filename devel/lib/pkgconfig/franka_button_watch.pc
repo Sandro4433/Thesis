@@ -1,1 +1,0 @@
-/home/hv/ws_moveit/devel/.private/franka_button_watch/lib/pkgconfig/franka_button_watch.pc

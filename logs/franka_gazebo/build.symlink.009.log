@@ -1,5 +1,0 @@
-Symlinking /home/hv/ws_moveit/devel/lib/libfranka_hw_sim.so
-Symlinking /home/hv/ws_moveit/devel/lib/libfranka_gripper_sim.so
-Symlinking /home/hv/ws_moveit/devel/lib/pkgconfig/franka_gazebo.pc
-Symlinking /home/hv/ws_moveit/devel/share/franka_gazebo/cmake/franka_gazeboConfig.cmake
-Symlinking /home/hv/ws_moveit/devel/share/franka_gazebo/cmake/franka_gazeboConfig-version.cmake
