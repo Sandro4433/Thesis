@@ -35,8 +35,8 @@ import subprocess
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
-from robot_configurator.core.config import settings
-from robot_configurator.core.paths import (
+from Core.config import settings
+from Core.paths import (
     CONFIGURATION_PATH,
     WORKSPACE_DIR,
     PROJECT_DIR,

@@ -24,9 +24,14 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+# Ensure project root is on sys.path when imported or run directly.
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 from openai import OpenAI
 
-from robot_configurator.core.paths import (
+from Core.paths import (
     PROJECT_DIR, CONFIGURATION_PATH, SEQUENCE_PATH, CHANGES_PATH,
     MEMORY_DIR, WORKSPACE_DIR, save_atomic, save_to_memory,
 )
@@ -97,7 +102,7 @@ def run_vision() -> None:
 
 def apply_and_save_config(accumulated_changes: Dict[str, Any]) -> None:
     """Apply accumulated LLM changes to configuration.json, save to Memory, and redraw image."""
-    from robot_configurator.configuration.apply_config_changes import apply_changes
+    from Configuration_Module.apply_config_changes import apply_changes
     import io, contextlib
 
     if not CONFIGURATION_PATH.exists():
@@ -244,7 +249,7 @@ def refresh_annotated_image(state: Dict[str, Any]) -> None:
 
 def select_scene() -> dict:
     """Menu for motion-planning mode: live vision or stored config."""
-    from robot_configurator.communication.scene_helpers import slim_scene
+    from Communication_Module.scene_helpers import slim_scene
 
     options = [
         "Live vision  (capture new image with camera)",
@@ -274,7 +279,7 @@ def select_scene() -> dict:
 
 def load_scene(client: OpenAI, mode: str) -> Optional[dict]:
     """Load the scene for the current mode. Returns slim scene dict or None."""
-    from robot_configurator.communication.scene_helpers import slim_scene
+    from Communication_Module.scene_helpers import slim_scene
 
     if mode == "reconfig":
         sub = select_reconfig_source()
@@ -299,7 +304,7 @@ def load_scene(client: OpenAI, mode: str) -> Optional[dict]:
             # conversation that follows would be killed on its very first LLM
             # call.  Clear it now so the conversation starts cleanly.
             try:
-                from robot_configurator.communication import api_main as _api_mod
+                from Communication_Module import api_main as _api_mod
                 if _api_mod._cancel_event is not None:
                     _api_mod._cancel_event.clear()
             except Exception:
@@ -376,13 +381,13 @@ def run_update_pipeline(client: OpenAI) -> None:
     match the current configuration.json on any early exit — whether the user
     typed "done", pressed Done, or the LLM call was aborted.
     """
-    from robot_configurator.configuration.update_scene import (
+    from Configuration_Module.update_scene import (
         prepare_update,
         prepare_recapture,
         apply_update_mapping,
         redraw_image_with_auto_matches,
     )
-    from robot_configurator.communication.api_main import run_update_dialogue
+    from Communication_Module.api_main import run_update_dialogue
 
     # ── Step 1: initial vision + state capture ─────────────────────────────
     try:
@@ -512,7 +517,7 @@ def run_update_pipeline(client: OpenAI) -> None:
 
 def run_execution() -> None:
     """Spawn robot execution in a subprocess."""
-    run_script = PROJECT_DIR / "run_execute.py"
+    run_script = PROJECT_DIR / "Orchestration" / "run_execute.py"
     if not run_script.exists():
         print(f"❌  run_execute.py not found: {run_script.resolve()}")
         return
@@ -532,7 +537,7 @@ def run_execution() -> None:
 
 def run_pddl_sequence() -> None:
     """Run the PDDL planner on the current configuration."""
-    from pddl_planner import plan_sequence
+    from Planning_Module.pddl_planner import plan_sequence
 
     if not CONFIGURATION_PATH.exists():
         print(f"❌ configuration.json not found: {CONFIGURATION_PATH.resolve()}")
@@ -605,7 +610,7 @@ def run_session(client: OpenAI, mode: str) -> None:
         return
 
     # ── Hand off to the LLM conversation loop ────────────────────────────
-    from robot_configurator.communication.api_main import run_conversation
+    from Communication_Module.api_main import run_conversation
     run_conversation(client, mode, scene)
 
 

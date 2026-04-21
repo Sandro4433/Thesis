@@ -4,7 +4,7 @@ import numpy as np
 from geometry_msgs.msg import Pose
 from moveit_commander.exception import MoveItCommanderException
 
-from robot_configurator.core.paths import CONFIGURATION_PATH as CONFIGURATION_JSON, WORKSPACE_DIR as _FE_DIR
+from Core.paths import CONFIGURATION_PATH as CONFIGURATION_JSON, WORKSPACE_DIR as _FE_DIR
 POSITIONS_FIXED_JSONL = _FE_DIR / 'positions_fixed.jsonl'
 
 class Robot:

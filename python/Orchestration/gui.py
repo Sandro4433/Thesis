@@ -33,8 +33,13 @@ import tkinter as tk
 from tkinter import font as tkfont
 
 # ── project root ──────────────────────────────────────────────────────────────
+# Ensure the project root is on sys.path regardless of how/where this script
+# is invoked (directly, as a subprocess, or from a different cwd).
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
-from robot_configurator.core.paths import PROJECT_DIR
+from Core.paths import PROJECT_DIR
 from dotenv import load_dotenv
 load_dotenv(PROJECT_DIR / ".env", override=False)
 
@@ -658,7 +663,7 @@ class RobotGUI:
         Typing "done" / "cancel" at a menu prompt cancels the session cleanly.
         """
         try:
-            import session_handler as sh  # type: ignore
+            import Orchestration.session_handler as sh  # type: ignore
             gui = self
 
             def _patched(prompt: str, options: List[str]) -> int:
@@ -896,7 +901,7 @@ class RobotGUI:
         """Build scene summary as a clean table from config file."""
         try:
             import json
-            import session_handler as sh  # type: ignore
+            import Orchestration.session_handler as sh  # type: ignore
             if not sh.CONFIGURATION_PATH.exists():
                 return
             state = json.loads(sh.CONFIGURATION_PATH.read_text(encoding="utf-8"))
@@ -1235,7 +1240,7 @@ class RobotGUI:
         """Show a config file browser as an overlay covering the entire right
         panel (scene description + image).  The underlying widgets are untouched
         and reappear when the overlay is destroyed."""
-        import session_handler as sh
+        import Orchestration.session_handler as sh
 
         configs = sh.list_memory_configs()
 
@@ -1484,7 +1489,7 @@ class RobotGUI:
         if not self._browser_selected_path:
             return  # no selection — do nothing
 
-        import session_handler as sh
+        import Orchestration.session_handler as sh
 
         # Check if the selected config is the current one (no reload needed)
         is_current = False
@@ -1606,7 +1611,7 @@ class RobotGUI:
         sys.stderr = _GUIStream(self._out_q)
 
         # Make the cancel event available to API_Main for aborting LLM calls
-        import robot_configurator.communication.api_main as _api
+        import Communication_Module.api_main as _api
         _api._cancel_event = self._cancel_event
 
         try:
@@ -1615,11 +1620,11 @@ class RobotGUI:
                 # After execution, take a fresh picture and update the config
                 # with actual part positions.  The config is truth for identity.
                 try:
-                    import session_handler as sh  # type: ignore
+                    import Orchestration.session_handler as sh  # type: ignore
                     if sh.CONFIGURATION_PATH.exists():
                         import json as _json
                         config = _json.loads(sh.CONFIGURATION_PATH.read_text(encoding="utf-8"))
-                        from robot_configurator.configuration.update_scene import run_post_execution_rescan
+                        from Configuration_Module.update_scene import run_post_execution_rescan
                         run_post_execution_rescan(config)
                 except Exception as exc:
                     print(f"  ⚠  Post-execution rescan failed: {exc}")
@@ -1627,7 +1632,7 @@ class RobotGUI:
 
             self._patch_pick_from_list()
 
-            import session_handler as sh  # type: ignore
+            import Orchestration.session_handler as sh  # type: ignore
 
             # If a reconfig sub-option was pre-selected via the GUI buttons,
             # bypass the interactive select_reconfig_source() call entirely.
@@ -1654,7 +1659,7 @@ class RobotGUI:
         except Exception as exc:
             # LLMCancelled is expected when the user presses Done during an
             # LLM call — don't print a scary error for that.
-            from robot_configurator.communication.api_main import LLMCancelled
+            from Communication_Module.api_main import LLMCancelled
             if not isinstance(exc, LLMCancelled):
                 print(f"\n[ERR] Unexpected error: {exc}\n")
                 print(traceback.format_exc())
@@ -1674,7 +1679,7 @@ class RobotGUI:
         Output is streamed line-by-line into the GUI chat panel.
         """
         import subprocess as _sp
-        script = PROJECT_DIR / "run_execute.py"
+        script = PROJECT_DIR / "Orchestration" / "run_execute.py"
         try:
             ros_cmd = _get_ros_source_cmd()
         except EnvironmentError as exc:
@@ -2406,5 +2411,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

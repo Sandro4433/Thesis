@@ -6,7 +6,7 @@ magic strings — import from this module instead.
 
 Usage
 -----
-    from robot_configurator.core.config import settings
+    from Core.config import settings
 
     client = OpenAI(api_key=settings.openai_api_key)
     resp = client.chat.completions.create(model=settings.model, ...)
@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 # Load .env from the project root (two levels above this file:
 # src/robot_configurator/core/config.py → project root).
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
 

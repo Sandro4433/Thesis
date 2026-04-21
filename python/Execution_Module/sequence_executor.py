@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from robot_configurator.core.paths import SEQUENCE_PATH, CONFIGURATION_PATH, WORKSPACE_DIR
+from Core.paths import SEQUENCE_PATH, CONFIGURATION_PATH, WORKSPACE_DIR
 from Execution_Module.pick_and_place import pick_and_place
 
 CANCEL_SENTINEL = WORKSPACE_DIR / ".cancel_execution"

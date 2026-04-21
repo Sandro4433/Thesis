@@ -22,7 +22,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from robot_configurator.core.paths import (
+from Core.paths import (
     CONFIGURATION_PATH,
     SEQUENCE_PATH,
     save_atomic,

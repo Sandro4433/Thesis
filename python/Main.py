@@ -1,6 +1,13 @@
-"""Main entry point — starts the robot configurator pipeline."""
+"""Main entry point — launches the Robot Configuration GUI."""
 
-from session_handler import main as session_main
+import sys
+from pathlib import Path
+
+_PROJECT_ROOT = Path(__file__).resolve().parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from Orchestration.gui import main
 
 if __name__ == "__main__":
-    session_main()
+    main()

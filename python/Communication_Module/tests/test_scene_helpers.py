@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from robot_configurator.communication.scene_helpers import slim_scene
+from Communication_Module.scene_helpers import slim_scene
 
 
 class TestSlimScene:

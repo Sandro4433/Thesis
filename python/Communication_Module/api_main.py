@@ -21,14 +21,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
-from robot_configurator.core.config import settings
-from robot_configurator.core.paths import CONFIGURATION_PATH
-from robot_configurator.communication.block_parsing import (
+from Core.config import settings
+from Core.paths import CONFIGURATION_PATH
+from Communication_Module.block_parsing import (
     extract_changes_block,
     extract_mapping_block,
     extract_sequence_block,
 )
-from robot_configurator.communication.change_management import (
+from Communication_Module.change_management import (
     detect_conflicts,
     detect_priority_ambiguity,
     format_conflicts_for_user,
@@ -37,20 +37,20 @@ from robot_configurator.communication.change_management import (
     merge_changes,
     resolve_conflicts,
 )
-from robot_configurator.communication.scene_helpers import slim_scene
-from robot_configurator.communication.prompts import build_system_prompt
-from robot_configurator.communication.user_intent import (
+from Communication_Module.scene_helpers import slim_scene
+from Communication_Module.prompts import build_system_prompt
+from Communication_Module.user_intent import (
     classify_pending_reply,
     is_finish,
     is_no,
     is_yes,
     resolve_pending_reply,
 )
-from robot_configurator.communication.ambiguity_detection import (
+from Communication_Module.ambiguity_detection import (
     detect_ambiguity,
     format_ambiguity_hint,
 )
-from robot_configurator.communication.capacity_tools import (
+from Communication_Module.capacity_tools import (
     CAPACITY_TOOL_SCHEMA,
     DESCRIBE_SCENE_TOOL_SCHEMA,
     execute_capacity_check,
@@ -410,7 +410,7 @@ def _confirm_pending(
     pending_changes: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Handle confirmation of pending sequence and/or changes. Returns updated accumulated."""
-    import session_handler as sh  # late import — lives outside this package
+    import Orchestration.session_handler as sh  # late import — lives outside this package
 
     if pending_sequence is not None:
         sh.save_sequence(pending_sequence)
@@ -434,7 +434,7 @@ def _finalize_session(
     pending_changes: Optional[Dict[str, Any]],
 ) -> None:
     """Save any pending work and end the session."""
-    import session_handler as sh  # late import — lives outside this package
+    import Orchestration.session_handler as sh  # late import — lives outside this package
 
     if pending_sequence is not None:
         sh.save_sequence(pending_sequence)
@@ -463,7 +463,7 @@ def _build_update_prompt(
     fresh_state: Dict,
     image_rename_map: Optional[Dict[str, str]] = None,
 ) -> str:
-    from robot_configurator.configuration.update_scene import build_update_context
+    from Configuration_Module.update_scene import build_update_context
 
     context = build_update_context(old_state, fresh_state, image_rename_map)
     if not isinstance(context, str):
@@ -593,7 +593,7 @@ def _validate_mapping_proposal(
     image_rename_map: Dict[str, str],
 ) -> List[str]:
     """Validate a proposed mapping batch. Returns a list of issue strings."""
-    from robot_configurator.configuration.update_scene import _match_parts_by_position
+    from Configuration_Module.update_scene import _match_parts_by_position
 
     issues: List[str] = []
     old_parts = set(old_state.get("objects", {}).get("parts", []))
@@ -812,7 +812,7 @@ def _run_conversation_loop(
     scene: Dict[str, Any],
 ) -> None:
     """Inner loop extracted so LLMCancelled can be caught cleanly."""
-    import session_handler as sh  # late import — lives outside this package
+    import Orchestration.session_handler as sh  # late import — lives outside this package
 
     pending_sequence: Optional[List[List]] = None
     pending_changes: Optional[Dict[str, Any]] = None

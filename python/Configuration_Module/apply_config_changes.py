@@ -23,7 +23,7 @@ import json
 import logging
 from typing import Any, Dict, List
 
-from robot_configurator.core.paths import (
+from Core.paths import (
     CHANGES_PATH,
     CONFIGURATION_PATH,
     parent_of_slot,

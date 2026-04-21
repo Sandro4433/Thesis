@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from robot_configurator.configuration.apply_config_changes import apply_changes
+from Configuration_Module.apply_config_changes import apply_changes
 
 
 class TestApplyChanges:

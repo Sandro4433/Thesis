@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 
-from robot_configurator.core.paths import CONFIGURATION_PATH, SEQUENCE_PATH
+from Core.paths import CONFIGURATION_PATH, SEQUENCE_PATH
 
 if not SEQUENCE_PATH.exists():
     print(f"\n[WARN] No sequence.json found at {SEQUENCE_PATH.resolve()}")
@@ -32,7 +32,7 @@ else:
 # Only apply the steps that were actually executed
 executed_sequence = sequence[:completed]
 
-from robot_configurator.configuration.apply_sequence_changes import apply_and_save
+from Configuration_Module.apply_sequence_changes import apply_and_save
 if executed_sequence:
     apply_and_save(CONFIGURATION_PATH, executed_sequence, save_memory=True)
 else:

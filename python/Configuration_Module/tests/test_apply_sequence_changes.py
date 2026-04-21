@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from robot_configurator.configuration.apply_sequence_changes import apply_sequence
+from Configuration_Module.apply_sequence_changes import apply_sequence
 
 
 class TestApplySequence:

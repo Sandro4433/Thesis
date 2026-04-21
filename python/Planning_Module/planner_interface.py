@@ -45,7 +45,7 @@ def generate_sequence(
         return None
 
     # ── PDDL path ─────────────────────────────────────────────────────────────
-    from pddl_planner import plan_sequence  # type: ignore
+    from Planning_Module.pddl_planner import plan_sequence  # type: ignore
 
     print("\n── PDDL Planner ──")
     sequence = plan_sequence(
@@ -66,7 +66,7 @@ def load_state_and_plan(positions_path: str, sequence_path: str) -> Optional[Lis
     Typical usage (called from API_Main.py after workspace reconfiguration
     is confirmed and the user requests execution):
 
-        from planner_interface import load_state_and_plan
+        from Planning_Module.planner_interface import load_state_and_plan
         load_state_and_plan(str(POSITIONS_PATH), str(SEQUENCE_PATH))
     """
     try:

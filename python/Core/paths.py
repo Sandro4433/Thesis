@@ -6,7 +6,7 @@ via environment variables without touching source code.
 
 Public API
 ----------
-    from robot_configurator.core.paths import (
+    from Core.paths import (
         PROJECT_DIR, CONFIGURATION_PATH, SEQUENCE_PATH,
         CHANGES_PATH, MEMORY_DIR, WORKSPACE_DIR,
         save_atomic, save_to_memory, empty_state, parent_of_slot,
@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from robot_configurator.core.config import settings
+from Core.config import settings
 
 # ── Re-exported path constants ───────────────────────────────────────────────
 

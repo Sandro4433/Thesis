@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
-from robot_configurator.communication.capacity_tools import compute_position_labels
+from Communication_Module.capacity_tools import compute_position_labels
 
 logger = logging.getLogger(__name__)
 

@@ -20,7 +20,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-from robot_configurator.core.paths import parent_of_slot as _parent_of
+from Core.paths import parent_of_slot as _parent_of
 
 
 def _is_slot(name: str) -> bool:

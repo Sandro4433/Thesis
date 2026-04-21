@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import pytest
 
-from robot_configurator.communication.block_parsing import (
+from Communication_Module.block_parsing import (
     extract_changes_block,
     extract_mapping_block,
     extract_sequence_block,

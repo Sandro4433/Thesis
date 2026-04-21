@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from robot_configurator.communication.change_management import (
+from Communication_Module.change_management import (
     detect_conflicts,
     detect_priority_ambiguity,
     format_priority_ambiguities,

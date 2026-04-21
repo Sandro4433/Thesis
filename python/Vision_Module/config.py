@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Any
 
 # Output (stable paths; independent of current working directory)
-from src.robot_configurator.core.paths import CONFIGURATION_PATH as CONFIGURATION_JSON, WORKSPACE_DIR as _FE_DIR
+from Core.paths import CONFIGURATION_PATH as CONFIGURATION_JSON, WORKSPACE_DIR as _FE_DIR
 CONFIGURATION_PATH = str(CONFIGURATION_JSON.resolve())
 
 # Define the Charuco origin in the ROBOT BASE FRAME. (METERS)
