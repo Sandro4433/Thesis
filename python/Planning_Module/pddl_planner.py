@@ -5,7 +5,7 @@
 #
 # Two planner backends:
 #
-#   Fast Downward (recommended, set FAST_DOWNWARD_PATH in config.py)
+#   Fast Downward (recommended, set DOWNWARD_PATH in .env)
 #     Uses PDDL 2.1 with action costs and numeric fluents.
 #     Priority ordering is enforced as a HARD CONSTRAINT in the domain:
 #     a part at priority level K cannot be picked until all parts at levels
@@ -1769,18 +1769,18 @@ def plan_sequence(
     """
     Full pipeline: state → PDDL files → planner → sequence.
 
-    Uses Fast Downward if FAST_DOWNWARD_PATH is set in config.py
+    Uses Fast Downward if DOWNWARD_PATH is set in .env
     (PDDL 2.1 action costs — priority is a hard constraint in the domain).
     Falls back to pyperplan otherwise (priority is post-sorted).
     """
     fd_path: str = ""
     try:
-        from Vision_Module.config import FAST_DOWNWARD_PATH  # type: ignore
-        fd_path = (FAST_DOWNWARD_PATH or "").strip()
-    except ImportError:
+        from Core.config import settings
+        fd_path = str(settings.downward_path).strip()
+    except Exception:
         pass
 
-    use_fd = bool(fd_path)
+    use_fd = bool(fd_path) and Path(fd_path).is_file()
 
     with tempfile.TemporaryDirectory() as tmpdir:
         domain_path  = os.path.join(tmpdir, "domain.pddl")

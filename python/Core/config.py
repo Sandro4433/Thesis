@@ -35,6 +35,14 @@ class Settings:
     model: str
     max_tool_rounds: int
 
+    # ── Hardware / mode toggles ────────────────────────────────────────────
+    use_pddl_planner: bool
+    """True → Fast Downward; False → LLM dialogue for sequence generation."""
+    use_camera: bool
+    """True → capture live from RealSense; False → load test image from disk."""
+    test_image_name: str
+    """Filename inside Vision_Module/Images/ used when use_camera is False."""
+
     # ── Physical thresholds ────────────────────────────────────────────────
     position_match_threshold_m: float
     """XY distance threshold (metres) for auto-matching parts across scans."""
@@ -59,6 +67,13 @@ class Settings:
 
         self.model = os.environ.get("RC_MODEL", "gpt-4.1")
         self.max_tool_rounds = int(os.environ.get("RC_MAX_TOOL_ROUNDS", "3"))
+        self.use_pddl_planner = os.environ.get(
+            "RC_USE_PDDL_PLANNER", "true"
+        ).lower() in ("1", "true", "yes")
+        self.use_camera = os.environ.get(
+            "RC_USE_CAMERA", "false"
+        ).lower() in ("1", "true", "yes")
+        self.test_image_name = os.environ.get("RC_TEST_IMAGE", "Scenario_1.png")
         self.position_match_threshold_m = float(
             os.environ.get("RC_POSITION_MATCH_THRESHOLD_M", "0.040")
         )

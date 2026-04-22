@@ -101,25 +101,3 @@ REALSENSE_HEIGHT = 1080
 REALSENSE_FPS = 30
 REALSENSE_WARMUP_FRAMES = 5
 
-# ── Planner toggle ────────────────────────────────────────────────────────────
-# Set USE_PDDL_PLANNER = True  to use Fast Downward for sequence generation.
-# Set USE_PDDL_PLANNER = False to use the LLM dialogue for sequence generation.
-#
-# NOTE: Workspace reconfiguration (attribute changes, role assignment, etc.)
-# always goes through the LLM regardless of this setting.
-# Only the SEQUENCE PLANNING step (Scenarios 4–6) is affected.
-USE_PDDL_PLANNER: bool = True
-
-# Path to the Fast Downward executable.
-# After cloning and building: https://github.com/aibasel/downward
-# Set this to the full path of the fast-downward script, e.g.:
-#   FAST_DOWNWARD_PATH = "/home/user/downward/fast-downward.py"
-#
-# Fast Downward is used with PDDL 2.1 action costs (enforces priority
-# ordering as a hard constraint via numeric fluents).
-# Resolved relative to this file: python/downward/fast-downward.py
-# Override with the DOWNWARD_PATH environment variable if your layout differs.
-FAST_DOWNWARD_PATH: str = os.environ.get(
-    "DOWNWARD_PATH",
-    str(Path(__file__).resolve().parents[1] / "downward" / "fast-downward.py"),
-)

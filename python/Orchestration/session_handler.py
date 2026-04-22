@@ -58,12 +58,12 @@ def _pick_from_list(prompt: str, options: List[str]) -> int:
 
 
 def select_mode() -> str:
-    from Vision_Module.config import USE_PDDL_PLANNER
+    from Core.config import settings
 
-    planner_label = "PDDL planner" if USE_PDDL_PLANNER else "LLM dialogue"
+    planner_label = "PDDL planner" if settings.use_pddl_planner else "LLM dialogue"
     print("\n" + "=" * 60)
     print("  Robot Configuration")
-    print(f"  Sequence planner: {planner_label}  (toggle USE_PDDL_PLANNER in config.py)")
+    print(f"  Sequence planner: {planner_label}  (toggle RC_USE_PDDL_PLANNER in .env)")
     print("=" * 60)
 
     idx = _pick_from_list("\nWhat do you want to do?", [
@@ -562,7 +562,7 @@ def run_session(client: OpenAI, mode: str) -> None:
     Top-level dispatcher.  Routes to the correct pipeline based on mode,
     then hands off to API_Main only for the LLM conversation loop.
     """
-    from Vision_Module.config import USE_PDDL_PLANNER
+    from Core.config import settings
 
     # ── Execute ──────────────────────────────────────────────────────────
     if mode == "execute":
@@ -570,7 +570,7 @@ def run_session(client: OpenAI, mode: str) -> None:
         return
 
     # ── PDDL planning (motion mode with PDDL enabled) ───────────────────
-    if mode == "motion" and USE_PDDL_PLANNER:
+    if mode == "motion" and settings.use_pddl_planner:
         run_pddl_sequence()
         return
 

@@ -1,7 +1,7 @@
 # planner_interface.py
 #
 # Single entry point for sequence generation.
-# Reads USE_PDDL_PLANNER from config to decide which backend to call.
+# Reads RC_USE_PDDL_PLANNER from .env (via settings) to decide which backend to call.
 #
 # Both planners receive the same input (positions.json) and produce the
 # same output (sequence.json), so the execution module is unaffected.
@@ -23,7 +23,7 @@ def generate_sequence(
     Generate a pick-and-place sequence from the current workspace state
     and save it to sequence_path.
 
-    The backend is selected by USE_PDDL_PLANNER in config.py:
+    The backend is selected by RC_USE_PDDL_PLANNER in .env (settings.use_pddl_planner):
       False (default) → the LLM dialogue in API_Main already produced the
                         sequence; this function is a no-op (returns None to
                         signal that the caller should not overwrite the file).
@@ -32,9 +32,9 @@ def generate_sequence(
     Returns the sequence list, or None if skipped / failed.
     """
     # Import here to avoid circular imports at module load time
-    from Vision_Module.config import USE_PDDL_PLANNER
+    from Core.config import settings
 
-    if not USE_PDDL_PLANNER:
+    if not settings.use_pddl_planner:
         # LLM dialogue flow — sequence already written by API_Main.py
         return None
 

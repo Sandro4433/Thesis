@@ -1633,8 +1633,8 @@ class RobotGUI:
                 from openai import OpenAI
                 client = OpenAI()
             except Exception as exc:
-                from Vision_Module.config import USE_PDDL_PLANNER  # type: ignore
-                if mode == "motion" and USE_PDDL_PLANNER:
+                from Core.config import settings
+                if mode == "motion" and settings.use_pddl_planner:
                     pass
                 else:
                     print(f"\n[ERR] Could not create OpenAI client: {exc}\n")

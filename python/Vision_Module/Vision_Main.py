@@ -14,6 +14,7 @@ import json
 import cv2
 import numpy as np
 
+from Core.config import settings
 from Vision_Module.config import (
     CONTAINER_TAG_IDS,
     KIT_TAG_IDS,
@@ -57,23 +58,11 @@ if "pyrealsense2" in sys.modules:
         "pyrealsense2 was imported into the main Vision process — this will "
         "cause a malloc heap-corruption crash when libapriltag is loaded.\n"
         "Find which module imported it and guard it behind  "
-        "  if not USE_CAMERA  or move it into vision_capture_worker.py.\n"
+        "  if not settings.use_camera  or move it into vision_capture_worker.py.\n"
         f"Loaded sys.modules keys containing 'realsense': "
         f"{[k for k in sys.modules if 'realsense' in k.lower()]}"
     )
 # ─────────────────────────────────────────────────────────────────────────────
-
-# =============================================================================
-# IMAGE SOURCE TOGGLE
-# Set USE_CAMERA = True  → capture live from RealSense (via subprocess worker)
-# Set USE_CAMERA = False → load a PNG from the Images folder
-# =============================================================================
-USE_CAMERA = False
-
-# Only used when USE_CAMERA = False.
-# Path is relative to this file's directory (Vision_Module/Images/).
-TEST_IMAGE_NAME = "Scenario_1.png"
-# =============================================================================
 
 
 # Path to the Images folder (sits next to this file)
@@ -170,12 +159,12 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Acquire raw image
     # ------------------------------------------------------------------
-    if USE_CAMERA:
+    if settings.use_camera:
         print("Capturing from RealSense camera (subprocess worker)...")
         img_raw = _capture_via_subprocess()
     else:
-        print(f"Using test image: {TEST_IMAGE_NAME}")
-        img_raw = load_test_image(TEST_IMAGE_NAME)
+        print(f"Using test image: {settings.test_image_name}")
+        img_raw = load_test_image(settings.test_image_name)
 
     # ------------------------------------------------------------------
     # ROI crop — remove non-workspace edges (walls, cables, robot arm)
@@ -369,7 +358,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     import os as _os
     if _os.environ.get("ROBOT_GUI_MODE") != "1":
-        source_label = "CAMERA" if USE_CAMERA else f"IMAGE: {TEST_IMAGE_NAME}"
+        source_label = "CAMERA" if settings.use_camera else f"IMAGE: {settings.test_image_name}"
         cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
         cv2.setWindowTitle("Result", f"Result [{source_label}]")
         cv2.imshow("Result", img_vis)
