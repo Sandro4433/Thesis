@@ -681,7 +681,12 @@ def run_update_dialogue(
                 "the 'message' field and mapping overrides in the 'mapping' field.\n\n"
                 "CRITICAL: If you describe a mapping in your message and ask "
                 "'Confirm?', you MUST also put it in the mapping field — otherwise "
-                "nothing gets saved."
+                "nothing gets saved.\n\n"
+                "CRITICAL: Once a mapping has been confirmed and saved, do NOT "
+                "include it in the mapping field again. Only put NEW, unconfirmed "
+                "overrides in the mapping field. Mentioning saved mappings in your "
+                "message text is fine, but the mapping field must only contain "
+                "fresh proposals awaiting confirmation."
             ),
         },
         {"role": "user", "content": prompt_text},
@@ -694,10 +699,27 @@ def run_update_dialogue(
         while True:
             msg_text, turn_mapping = _chat_update(client, messages)
             print(f"ASSISTANT:\n{msg_text}\n")
+
+            # Strip entries that are already saved — the LLM sometimes echoes
+            # previously confirmed mappings in the tool field when summarising.
+            # Those must not be treated as new pending proposals.
+            turn_mapping = {
+                k: v for k, v in turn_mapping.items()
+                if not (k in accumulated_mapping and accumulated_mapping[k] == v)
+            }
+
             if turn_mapping:
                 logger.debug("Proposed mapping: %s", json.dumps(turn_mapping))
 
             messages.append({"role": "assistant", "content": msg_text})
+
+            # Show the proposed mapping to the user before asking for input
+            if turn_mapping:
+                print("  Proposed mapping:")
+                for img_label, target in turn_mapping.items():
+                    print(f"    {img_label}  →  {target}")
+                print()
+
             user = input("YOU: ").strip()
 
             if not user or user.lower() in ("done", "skip"):
@@ -707,27 +729,22 @@ def run_update_dialogue(
                     print("\n  No overrides — accepting auto-matches only.")
                 return accumulated_mapping
 
-            pending_summary = (
-                f"a mapping proposal with {len(turn_mapping)} override(s)"
-                if turn_mapping
-                else "a clarifying question about the part mapping"
-            )
-            decision, user = resolve_pending_reply(
-                client, settings.model, user, pending_summary,
-            )
+            # Only treat the reply as yes/no when the assistant actually
+            # proposed a concrete mapping.  If it just asked an open question
+            # (turn_mapping is empty), pass the user's message straight through
+            # so instructions like "part 15 is actually part 33" are never
+            # swallowed by the yes/no classifier.
+            if turn_mapping:
+                pending_summary = (
+                    f"a mapping proposal with {len(turn_mapping)} override(s)"
+                )
+                decision, user = resolve_pending_reply(
+                    client, settings.model, user, pending_summary,
+                )
+            else:
+                decision = "other"
 
             if decision == "yes":
-                if not turn_mapping:
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "The user confirmed. You clearly already know what "
-                            "the mapping should be — submit it properly in the "
-                            "mapping field. Do NOT submit an empty mapping {}."
-                        ),
-                    })
-                    continue
-
                 validation_issues = _validate_mapping_proposal(
                     turn_mapping, accumulated_mapping,
                     old_state, fresh_state, image_rename_map,
@@ -751,10 +768,39 @@ def run_update_dialogue(
                         )
                 accumulated_mapping.update(turn_mapping)
                 logger.debug("Accumulated mapping: %s", json.dumps(accumulated_mapping))
-                messages.append({
-                    "role": "user",
-                    "content": "Confirmed. (The mapping has been saved. Ask if there are more changes.)",
-                })
+                print(f"✅  Mapping saved. ({len(accumulated_mapping)} override(s) so far)\n")
+
+                # Check whether the user also included a new instruction alongside
+                # the confirmation (e.g. "yes and part 14 should be part 22").
+                # If so, strip leading confirmation words and forward the rest.
+                extra = re.sub(
+                    r"^(yes|yep|yeah|yup|sure|ok|okay|correct|confirmed?|good|great)"
+                    r"[\s,;.!]*(?:and\s*)?",
+                    "",
+                    user,
+                    flags=re.IGNORECASE,
+                ).strip()
+
+                acc_summary = (
+                    ", ".join(f"{k} → {v}" for k, v in accumulated_mapping.items())
+                    if accumulated_mapping else "none yet"
+                )
+                if extra:
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"Confirmed. Saved mappings so far: {acc_summary}. "
+                            f"Additional instruction: {extra}"
+                        ),
+                    })
+                else:
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"Confirmed. Saved mappings so far: {acc_summary}. "
+                            "Ask if there are more changes, or the user can say 'done'."
+                        ),
+                    })
                 continue
 
             if decision == "no":

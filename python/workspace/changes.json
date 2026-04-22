@@ -1,32 +1,5 @@
 {
-  "Container_1": {
-    "role": "input"
-  },
-  "Container_2": {
-    "role": "input"
-  },
-  "Container_3": {
-    "role": "input"
-  },
-  "Kit_2": {
-    "role": "output"
-  },
-  "workspace": {
-    "operation_mode": "kitting",
-    "batch_size": 1
-  },
-  "kit_recipe": [
-    {
-      "color": "green",
-      "quantity": 1
-    },
-    {
-      "color": "red",
-      "quantity": 1
-    },
-    {
-      "color": "blue",
-      "quantity": 1
-    }
-  ]
+  "Part_8": {
+    "fragility": "fragile"
+  }
 }

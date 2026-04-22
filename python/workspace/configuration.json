@@ -1,7 +1,7 @@
 {
   "workspace": {
-    "operation_mode": "kitting",
-    "batch_size": 1
+    "operation_mode": null,
+    "batch_size": null
   },
   "objects": {
     "kits": [
@@ -21,13 +21,13 @@
       "Part_12",
       "Part_13",
       "Part_14",
-      "Part_33",
+      "Part_15",
       "Part_16",
-      "Part_17",
+      "Part_33",
       "Part_18",
       "Part_2",
       "Part_3",
-      "Part_4",
+      "Part_99",
       "Part_5",
       "Part_6",
       "Part_7",
@@ -120,7 +120,7 @@
         "slot": "Container_1_Pos_6"
       },
       {
-        "part": "Part_33",
+        "part": "Part_15",
         "slot": "Container_2_Pos_1"
       },
       {
@@ -140,7 +140,7 @@
         "slot": "Container_2_Pos_5"
       },
       {
-        "part": "Part_17",
+        "part": "Part_33",
         "slot": "Container_2_Pos_6"
       },
       {
@@ -156,7 +156,7 @@
         "slot": "Container_3_Pos_3"
       },
       {
-        "part": "Part_4",
+        "part": "Part_99",
         "slot": "Container_3_Pos_4"
       },
       {
@@ -182,15 +182,15 @@
     "role": [
       {
         "object": "Container_1",
-        "role": "input"
+        "role": null
       },
       {
         "object": "Container_2",
-        "role": "input"
+        "role": null
       },
       {
         "object": "Container_3",
-        "role": "input"
+        "role": null
       },
       {
         "object": "Kit_1",
@@ -198,7 +198,7 @@
       },
       {
         "object": "Kit_2",
-        "role": "output"
+        "role": null
       },
       {
         "object": "Kit_3",
@@ -231,7 +231,7 @@
         "color": "green"
       },
       {
-        "part": "Part_33",
+        "part": "Part_15",
         "color": "red"
       },
       {
@@ -251,7 +251,7 @@
         "color": "red"
       },
       {
-        "part": "Part_17",
+        "part": "Part_33",
         "color": "red"
       },
       {
@@ -267,7 +267,7 @@
         "color": "blue"
       },
       {
-        "part": "Part_4",
+        "part": "Part_99",
         "color": "blue"
       },
       {
@@ -280,22 +280,14 @@
       }
     ],
     "priority": [],
-    "kit_recipe": [
-      {
-        "color": "green",
-        "quantity": 1
-      },
-      {
-        "color": "red",
-        "quantity": 1
-      },
-      {
-        "color": "blue",
-        "quantity": 1
-      }
-    ],
+    "kit_recipe": [],
     "part_compatibility": [],
-    "fragility": []
+    "fragility": [
+      {
+        "part": "Part_8",
+        "fragility": "fragile"
+      }
+    ]
   },
   "metric": {
     "Container_1_Pos_1": {
@@ -760,6 +752,20 @@
       ],
       "orientation": 29.48409875886051
     },
+    "Part_15": {
+      "pos": [
+        0.2693917156649838,
+        0.3245583004738792,
+        0.2
+      ],
+      "quat": [
+        -0.9214052431423866,
+        -0.3884316547590146,
+        -0.011368659081744474,
+        0.001995264788503215
+      ],
+      "orientation": -89.77793079761359
+    },
     "Part_13": {
       "pos": [
         0.32729664565634864,
@@ -816,20 +822,6 @@
       ],
       "orientation": -29.77793079761358
     },
-    "Part_17": {
-      "pos": [
-        0.21301117020020496,
-        0.35689309021992127,
-        0.2
-      ],
-      "quat": [
-        -0.9214052431423866,
-        -0.3884316547590146,
-        -0.011368659081744474,
-        0.001995264788503215
-      ],
-      "orientation": 30.22206920238642
-    },
     "Part_3": {
       "pos": [
         0.04508472043958406,
@@ -872,20 +864,6 @@
       ],
       "orientation": 31.01391964976355
     },
-    "Part_4": {
-      "pos": [
-        0.043529761508216566,
-        0.4614012898471679,
-        0.2
-      ],
-      "quat": [
-        -0.9214052431423866,
-        -0.3884316547590146,
-        -0.011368659081744474,
-        0.001995264788503215
-      ],
-      "orientation": -88.98608035023645
-    },
     "Part_6": {
       "pos": [
         -0.013426962922040986,
@@ -916,8 +894,8 @@
     },
     "Part_33": {
       "pos": [
-        0.2693917156649838,
-        0.3245583004738792,
+        0.21301117020020496,
+        0.35689309021992127,
         0.2
       ],
       "quat": [
@@ -926,7 +904,21 @@
         -0.011368659081744474,
         0.001995264788503215
       ],
-      "orientation": -89.77793079761359
+      "orientation": 30.22206920238642
+    },
+    "Part_99": {
+      "pos": [
+        0.043529761508216566,
+        0.4614012898471679,
+        0.2
+      ],
+      "quat": [
+        -0.9214052431423866,
+        -0.3884316547590146,
+        -0.011368659081744474,
+        0.001995264788503215
+      ],
+      "orientation": -88.98608035023645
     }
   }
 }

@@ -1,21 +1,9 @@
 """
 gui.py — Graphical front-end for the Robot Configuration System.
 
-Run this instead of Main.py.
-
 Requirements:
     pip install Pillow --break-system-packages
 
-Layout
-------
-  Left  (50 %) : Conversation chat + text-input row
-  Right (50 %) : top  → Scene description panel
-                 bottom → Vision image (or memory placeholder)
-
-Button bar
-----------
-  Default  : Reconfigure | Plan Sequence | Execute | Exit
-  Configure: (text-input row enabled) + Done button only
 """
 from __future__ import annotations
 
