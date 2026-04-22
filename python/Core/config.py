@@ -43,6 +43,16 @@ class Settings:
     test_image_name: str
     """Filename inside Vision_Module/Images/ used when use_camera is False."""
 
+    # ── MoveIt / robot hardware ────────────────────────────────────────────
+    arm_group: str
+    """MoveIt planning group name for the arm (e.g. 'panda_arm')."""
+    hand_group: str
+    """MoveIt planning group name for the hand (e.g. 'panda_hand')."""
+    finger_joint_1: str
+    """URDF name of the first gripper finger joint."""
+    finger_joint_2: str
+    """URDF name of the second gripper finger joint."""
+
     # ── Physical thresholds ────────────────────────────────────────────────
     position_match_threshold_m: float
     """XY distance threshold (metres) for auto-matching parts across scans."""
@@ -74,6 +84,10 @@ class Settings:
             "RC_USE_CAMERA", "false"
         ).lower() in ("1", "true", "yes")
         self.test_image_name = os.environ.get("RC_TEST_IMAGE", "Scenario_1.png")
+        self.arm_group      = os.environ.get("RC_ARM_GROUP",      "panda_arm")
+        self.hand_group     = os.environ.get("RC_HAND_GROUP",     "panda_hand")
+        self.finger_joint_1 = os.environ.get("RC_FINGER_JOINT_1", "panda_finger_joint1")
+        self.finger_joint_2 = os.environ.get("RC_FINGER_JOINT_2", "panda_finger_joint2")
         self.position_match_threshold_m = float(
             os.environ.get("RC_POSITION_MATCH_THRESHOLD_M", "0.040")
         )
