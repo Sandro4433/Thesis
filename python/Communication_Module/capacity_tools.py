@@ -19,6 +19,8 @@ from typing import Any, Dict, List
 
 
 # ── Shared spatial helper ────────────────────────────────────────────────────
+# This depends on the workspace and camera setup. In this thesis, the image from the camera is
+# inverted with what the user can see in person.
 
 def compute_position_labels(scene: Dict[str, Any]) -> Dict[str, str]:
     """

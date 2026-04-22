@@ -11,8 +11,7 @@ import os
 import sys
 from pathlib import Path
 
-# Ensure python/ is on sys.path so package imports work regardless of how this
-# script is invoked (directly, as a subprocess, or from a different cwd).
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
@@ -22,14 +21,6 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 def main() -> None:
     # ── Suppress ALL init noise, including C-level ROS loggers ───────────────
-    # rospy and MoveIt print heavily during initialisation through two
-    # independent output channels:
-    #   1. Python's sys.stdout / sys.stderr  (redirected via Python objects)
-    #   2. The underlying C/C++ ROS layer    (writes directly to OS fd 1/2)
-    # Redirecting only the Python streams silences Python-level prints but
-    # leaves the C-layer noise untouched.  We must therefore redirect *both*
-    # the Python stream objects AND the raw OS file descriptors to /dev/null.
-    # Everything is restored in the finally block before printing status.
 
     # Save original Python streams and OS file descriptors
     _py_stdout = sys.stdout
