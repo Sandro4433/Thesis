@@ -40,16 +40,16 @@ def main() -> None:
         import rospy
         import moveit_commander
         from Execution_Module.robot import Robot
+        from Core.config import settings
 
         rospy.init_node("franka_camera_home")
         moveit_commander.roscpp_initialize([])
-        from Execution_Module.Robot_Main import ROBOT_CONFIG
         robot = Robot(
-            ROBOT_CONFIG["arm_group"],
-            ROBOT_CONFIG["hand_group"],
+            settings.arm_group,
+            settings.hand_group,
             moveit_commander,
-            finger_joint_1=ROBOT_CONFIG["finger_joint_1"],
-            finger_joint_2=ROBOT_CONFIG["finger_joint_2"],
+            finger_joint_1=settings.finger_joint_1,
+            finger_joint_2=settings.finger_joint_2,
         )
     finally:
         # Restore everything
