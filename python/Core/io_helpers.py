@@ -41,6 +41,6 @@ def save_changes(changes: Dict[str, Any]) -> Path:
 
 def save_config_to_memory(state: Dict[str, Any]) -> Path:
     """Archive *state* as a timestamped snapshot in Memory/. Returns the path."""
-    dest = save_to_memory(state, label="session")
+    dest = save_to_memory(state, label="configuration")
     print(f"✅  State archived → {dest.name}")
     return dest
