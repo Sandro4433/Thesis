@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "name": "Part_1",
+    "cx_px": 55,
+    "cy_px": 433,
+    "color": "Blue",
+    "diameter_mm": 47.673165798187256
+  },
+  {
+    "name": "Part_2",
+    "cx_px": 261,
+    "cy_px": 338,
+    "color": "Red",
+    "diameter_mm": 54.29041385650635
+  }
+]
