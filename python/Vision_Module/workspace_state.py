@@ -138,8 +138,13 @@ def entries_to_state(final_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     # embedded parts get their own metric entry (actual detected position)
     for pname, child in embedded_parts.items():
+        pos = child.get("pos")
+        if pos is None:
+            print(f"[workspace_state] WARNING: {pname} is embedded in kit slot "
+                  f"{embedded_slot.get(pname, 'unknown')} but has no 'pos' — "
+                  "metric entry will be incomplete. Part may not be pickable.")
         metric[pname] = {
-            "pos":         child.get("pos"),
+            "pos":         pos,
             "quat":        child.get("quat"),
             "orientation": child.get("orientation"),
         }
@@ -200,5 +205,3 @@ def save_json_snapshot(path: str, state: Dict[str, Any], pretty: bool = True) ->
         else:
             json.dump(state, f, separators=(",", ":"), ensure_ascii=False)
     os.replace(tmp, path)
-
-

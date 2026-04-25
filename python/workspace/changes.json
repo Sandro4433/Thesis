@@ -7,31 +7,5 @@
   },
   "Container_1": {
     "role": "output"
-  },
-  "Container_2": {
-    "role": "output"
-  },
-  "workspace": {
-    "operation_mode": "sorting"
-  },
-  "part_compatibility": [
-    {
-      "part_color": "blue",
-      "allowed_in": [
-        "Container_1"
-      ]
-    },
-    {
-      "part_color": "red",
-      "allowed_in": [
-        "Container_1"
-      ]
-    },
-    {
-      "part_color": "green",
-      "allowed_in": [
-        "Container_2"
-      ]
-    }
-  ]
+  }
 }
