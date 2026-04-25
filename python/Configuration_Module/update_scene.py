@@ -392,6 +392,18 @@ def apply_update_mapping(
             used_nums.add(next_num)
             next_num += 1
 
+    # User-confirmed assignments for new parts take priority over auto-matches.
+    # If an auto-matched fresh part was assigned the same final name as a
+    # user-confirmed new part, drop the auto-match entry (the old part is gone).
+    confirmed_targets = {
+        rename_map[fn] for fn in new_parts_fresh if fn in rename_map
+    }
+    for fresh_name in list(matched_auto_fresh := [fn for _, fn in matched_auto]):
+        if rename_map.get(fresh_name) in confirmed_targets:
+            old_target = rename_map.pop(fresh_name)
+            print(f"[apply_update_mapping] auto-match for '{fresh_name}→{old_target}' "
+                  f"dropped — overridden by user-confirmed assignment")
+
     result = copy.deepcopy(fresh_state)
     old_parts_in_rename = {v for v in rename_map.values() if v.startswith("Part_")}
     print(f"[apply_update_mapping] rename_map: {rename_map}")
@@ -457,7 +469,7 @@ def apply_update_mapping(
     save_to_memory(merged, label="update")
     print("✅  State archived.")
 
-    _redraw_annotated_image(rename_map, merged)
+    _redraw_annotated_image(rename_map, merged, image_rename_map=image_rename_map)
     return merged
 
 
@@ -466,8 +478,15 @@ def apply_update_mapping(
 def _redraw_annotated_image(
     rename_map: Dict[str, str],
     merged_state: Dict[str, Any],
+    image_rename_map: Optional[Dict[str, str]] = None,
 ) -> None:
-    """Redraw latest_image.png with updated part names and fragility labels."""
+    """Redraw latest_image.png with updated part names and fragility labels.
+
+    rename_map        : fresh_vision_name → final_config_name
+    image_rename_map  : fresh_vision_name → image_label (what the pixel_map uses)
+                        When provided, pixel_map labels are translated via
+                        the inverse of this map before applying rename_map.
+    """
     base_path = WORKSPACE / "latest_image_base.png"
     pmap_path = WORKSPACE / "latest_pixel_map.json"
     out_path = WORKSPACE / "latest_image.png"
@@ -492,8 +511,22 @@ def _redraw_annotated_image(
             if e.get("fragility") == "fragile"
         }
 
+        # Build image_label → final_name lookup.
+        # The pixel_map uses image_labels (from redraw_image_with_auto_matches).
+        # rename_map keys are fresh_vision_names. We need to go:
+        #   image_label → fresh_vision_name (inverse of image_rename_map)
+        #               → final_config_name (via rename_map)
+        img_label_to_final: Dict[str, str] = {}
+        if image_rename_map:
+            inv_image_map = {v: k for k, v in image_rename_map.items()}
+            for img_label, fresh_name in inv_image_map.items():
+                final = rename_map.get(fresh_name, img_label)
+                img_label_to_final[img_label] = final
+        else:
+            img_label_to_final = rename_map  # type: ignore
+
         updated_annotations = [
-            {**p, "name": rename_map.get(p["name"], p["name"])}
+            {**p, "name": img_label_to_final.get(p["name"], p["name"])}
             for p in pixel_map
         ]
         annotate_parts(img, updated_annotations, fragile_set=fragile_set)
