@@ -70,6 +70,30 @@ def is_yes(text: str) -> bool:
     return False
 
 
+def extract_yes_with_extra(text: str) -> tuple[bool, str]:
+    """
+    Detect "yes but ..." / "yes and ..." style replies (with or without comma).
+
+    Returns (is_yes_with_extra, extra_instruction).
+    Extra is the portion after the confirmation word + conjunction.
+    """
+    t = text.strip()
+    # Pattern: yes/yep/... optionally followed by comma/punct, then a conjunction or direct extra
+    pattern = re.compile(
+        r"^(?:yes|yep|yeah|yup|sure|ok|okay|correct|confirm(?:ed)?|good|great|perfect|approved?)"
+        r"[\s,;.!]*"
+        r"(?:but|and|however|although|except|though|just|also|only|-|—)?\s*"
+        r"(.+)$",
+        re.IGNORECASE,
+    )
+    m = pattern.match(t)
+    if m:
+        extra = m.group(1).strip()
+        if extra:
+            return True, extra
+    return False, ""
+
+
 def is_no(text: str) -> bool:
     t = text.strip().lower()
     if t in (
@@ -135,6 +159,10 @@ def resolve_pending_reply(
     Returns (decision, effective_user_input) where decision is
     'yes', 'no', or 'other', and effective_user_input may have been
     updated by a clarification exchange.
+
+    When the user says "yes but <extra>" (with or without comma), decision
+    is 'yes' and effective_user_input is the extra instruction so the caller
+    can forward it back into the conversation.
     """
     if is_yes(user_input):
         return "yes", user_input
@@ -142,6 +170,11 @@ def resolve_pending_reply(
         return "no", user_input
     if is_finish(user_input):
         return "other", user_input
+
+    # Handle "yes but/and <extra>" — accept + forward extra instruction
+    is_yes_extra, extra = extract_yes_with_extra(user_input)
+    if is_yes_extra:
+        return "yes", extra
 
     decision = classify_pending_reply(client, model, user_input, pending_summary)
     if decision in ("yes", "no"):

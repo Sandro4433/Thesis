@@ -78,6 +78,50 @@ def extract_sequence_block(text: str) -> List[List]:
     return cleaned
 
 
+def _merge_duplicate_workspace_keys(raw: str) -> str:
+    """
+    Guard against LLM-generated changes blocks with duplicate 'workspace' keys.
+    json.loads silently keeps only the last value, discarding e.g. operation_mode.
+    This pre-pass merges all workspace objects into one before parsing.
+    """
+    try:
+        # Use a custom decoder to collect all values for duplicate keys
+        from collections import defaultdict
+        pairs: list = []
+
+        def pairs_hook(p):
+            pairs.extend(p)
+            return dict(p)
+
+        import json as _json
+        _json.loads(raw, object_pairs_hook=pairs_hook)
+
+        workspace_values = [v for k, v in pairs if k == "workspace" and isinstance(v, dict)]
+        if len(workspace_values) <= 1:
+            return raw  # no duplicates, nothing to do
+
+        # Merge all workspace dicts (left to right, last wins per key)
+        merged_ws: dict = {}
+        for ws in workspace_values:
+            merged_ws.update(ws)
+
+        # Re-encode the full object with a single merged workspace key
+        all_pairs_merged: dict = {}
+        seen_workspace = False
+        for k, v in pairs:
+            if k == "workspace":
+                if not seen_workspace:
+                    all_pairs_merged[k] = merged_ws
+                    seen_workspace = True
+                # skip subsequent workspace entries
+            else:
+                all_pairs_merged[k] = v
+
+        return _json.dumps(all_pairs_merged)
+    except Exception:
+        return raw  # if anything fails, let json.loads handle it and surface the real error
+
+
 def extract_changes_block(text: str) -> Dict[str, Any]:
     """Parse a ``changes`` block into a dict of workspace changes."""
     m = CHANGES_BLOCK_RE.search(text or "")
@@ -86,7 +130,8 @@ def extract_changes_block(text: str) -> Dict[str, Any]:
     if not m:
         raise ValueError("No ```changes``` block found.")
 
-    data = json.loads(m.group(1).strip())
+    raw_json = _merge_duplicate_workspace_keys(m.group(1).strip())
+    data = json.loads(raw_json)
     if not isinstance(data, dict) or not data:
         raise ValueError("Changes block must be a non-empty JSON object.")
 

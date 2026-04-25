@@ -226,9 +226,28 @@ def prepare_update() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     else:
         old_state = empty_state()
 
+    logger.debug(
+        "[prepare_update] old_state parts: %s",
+        old_state.get("objects", {}).get("parts", []),
+    )
+    logger.debug(
+        "[prepare_update] old_state metric keys (parts only): %s",
+        [k for k in old_state.get("metric", {}) if k.startswith("Part_")],
+    )
+
     save_atomic(CONFIGURATION_PATH, old_state)
     _run_vision()
     fresh_state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
+
+    logger.debug(
+        "[prepare_update] fresh_state parts: %s",
+        fresh_state.get("objects", {}).get("parts", []),
+    )
+    logger.debug(
+        "[prepare_update] fresh_state metric keys (parts only): %s",
+        [k for k in fresh_state.get("metric", {}) if k.startswith("Part_")],
+    )
+
     save_atomic(CONFIGURATION_PATH, old_state)
 
     return old_state, fresh_state
@@ -374,6 +393,38 @@ def apply_update_mapping(
         )
 
     _rename_parts_in_state(result, rename_map)
+
+    # ── Preserve metric entries for parts not detected by vision ──────────────
+    # Parts that exist in old_state but aren't in fresh_state's metric (because
+    # vision didn't detect them) would otherwise lose their pick position, causing
+    # the robot executor to crash with "Target not found".
+    # For each such part, fall back to the old metric entry.
+    old_metric = old_state.get("metric", {})
+    result_metric = result.get("metric", {})
+    result_preds = result.get("predicates", {})
+    result_at = {e["part"]: e["slot"] for e in result_preds.get("at", [])}
+    result_parts = set(result.get("objects", {}).get("parts", []))
+    old_colors = {e["part"]: e.get("color") for e in old_state.get("predicates", {}).get("color", [])}
+    old_at = {e["part"]: e["slot"] for e in old_state.get("predicates", {}).get("at", [])}
+
+    for part in sorted(result_parts):
+        if part not in result_metric and part in old_metric:
+            result_metric[part] = copy.deepcopy(old_metric[part])
+            logger.warning(
+                "%s not detected by vision — metric position preserved from previous state", part
+            )
+        # Also ensure at/color are carried over for undetected parts
+        if part not in result_at and part in old_at:
+            slot = old_at[part]
+            result_preds.setdefault("at", []).append({"part": part, "slot": slot})
+            if slot in result_preds.get("slot_empty", []):
+                result_preds["slot_empty"].remove(slot)
+            if part in old_colors and part not in {e["part"] for e in result_preds.get("color", [])}:
+                result_preds.setdefault("color", []).append({"part": part, "color": old_colors[part]})
+            if part not in result.get("objects", {}).get("parts", []):
+                result["objects"]["parts"].append(part)
+                result["objects"]["parts"] = sorted(result["objects"]["parts"])
+
     merged = _apply_high_level(result, old_state)
 
     # Summary
@@ -385,6 +436,15 @@ def apply_update_mapping(
         print(f"  - {p}  [removed]")
     if m_parts == f_parts:
         print("  (no structural changes — positions refreshed)")
+
+    logger.debug(
+        "[apply_update_mapping] final merged parts: %s",
+        sorted(merged.get("objects", {}).get("parts", [])),
+    )
+    logger.debug(
+        "[apply_update_mapping] final merged metric keys (parts only): %s",
+        sorted(k for k in merged.get("metric", {}) if k.startswith("Part_")),
+    )
 
     save_atomic(CONFIGURATION_PATH, merged)
     print("✅  Configuration updated.")
@@ -433,6 +493,14 @@ def _redraw_annotated_image(
         ]
         annotate_parts(img, updated_annotations, fragile_set=fragile_set)
         cv2.imwrite(str(out_path), img)
+
+        # Keep latest_pixel_map.json in sync with the renamed part names so
+        # subsequent calls to refresh_annotated_image() draw the correct labels.
+        if any(p["name"] != q["name"] for p, q in zip(pixel_map, updated_annotations)):
+            with open(str(pmap_path), "w", encoding="utf-8") as _f:
+                import json as _json
+                _json.dump(updated_annotations, _f, indent=2)
+            logger.debug("latest_pixel_map.json updated with renamed parts.")
         print("✅  Image updated.")
 
     except Exception as exc:

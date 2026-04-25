@@ -41,6 +41,7 @@ from Communication_Module.change_management import (
 from Communication_Module.prompts import build_system_prompt
 from Communication_Module.user_intent import (
     classify_pending_reply,
+    extract_yes_with_extra,
     is_finish,
     is_no,
     is_yes,
@@ -945,8 +946,16 @@ def _run_conversation_loop(
             pending_sequence = None
             pending_changes = None
 
-            print("ASSISTANT:\nAnything else? If not, type or press 'done'.\n")
-            user_input = input("YOU: ").strip()
+            # user_input may contain an extra instruction from "yes but <extra>"
+            # (resolve_pending_reply returns the extra part as user_input).
+            # If so, skip "Anything else?" and feed it directly into the loop.
+            extra_from_yes = user_input if (user_input and not is_yes(user_input)) else ""
+
+            if extra_from_yes:
+                user_input = extra_from_yes
+            else:
+                print("ASSISTANT:\nAnything else? If not, type or press 'done'.\n")
+                user_input = input("YOU: ").strip()
             if is_finish(user_input):
                 if accumulated_changes:
                     save_changes(accumulated_changes)

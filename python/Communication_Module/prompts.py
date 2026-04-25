@@ -65,6 +65,10 @@ Allowed keys and values:
                                      enforces it automatically with no config required.
                                      Only set fill_order: "parallel" when the user
                                      explicitly asks for parallel/even/interleaved filling.
+                                     CRITICAL: "workspace" must appear EXACTLY ONCE in the
+                                     changes block. Always combine operation_mode, batch_size,
+                                     and fill_order into a single "workspace" object.
+                                     NEVER split them across two "workspace" keys.
   "priority"                       → see PRIORITY FORMAT below
   "kit_recipe"                     → [{"color": "blue", "quantity": 2}, ...]
   "part_compatibility"             → see COMPATIBILITY FORMAT below
