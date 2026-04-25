@@ -1101,7 +1101,16 @@ def _goal_sorting(state: Dict[str, Any]) -> List[str]:
         if "part_color" in rule:
             c = (rule["part_color"] or "").lower()
             color_to_allowed.setdefault(c, set()).update(allowed_recs)
-    
+
+        # Fragility-based rule
+        if "part_fragility" in rule:
+            frag = (rule["part_fragility"] or "").lower()
+            matching = {p for p, f in frag_map.items() if f.lower() == frag}
+            for part in matching:
+                if part not in part_info:
+                    part_info[part] = {"allowed_recs": set(), "target_slot": None}
+                part_info[part]["allowed_recs"].update(allowed_recs)
+
     # PASS 2: Process pure exclusion rules
     for rule in exclusion_rules:
         excluded_recs = set(rule.get("not_allowed_in", []))
