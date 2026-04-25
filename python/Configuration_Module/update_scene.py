@@ -138,12 +138,6 @@ def _match_parts_by_position(
                     unmatched_fresh.remove(fresh_name)
                     unmatched_mem.remove(old_name)
 
-    print(f"[match] Pass1 slot-match results: {matched}")
-    print(f"[match] After Pass1 - unmatched_fresh: {unmatched_fresh}, unmatched_mem: {unmatched_mem}")
-    for p in unmatched_fresh:
-        print(f"[match]   fresh '{p}' slot={fresh_at.get(p)} xy={_part_xy(fresh_metric, p)}")
-    for p in unmatched_mem:
-        print(f"[match]   mem   '{p}' slot={mem_at.get(p)} xy={_part_xy(mem_metric, p)} (no metric = can't XY-match)")
 
     # Pass 2: XY-based matching
     fresh_xy: Dict[str, Optional[Tuple[float, float]]] = {
@@ -171,7 +165,6 @@ def _match_parts_by_position(
                 candidates.append((dist, old_name, fresh_name))
 
     candidates.sort(key=lambda x: x[0])
-    print(f"[match] Pass2 XY candidates (dist, old, fresh): {[(round(d,4), o, f) for d,o,f in candidates]}")
     for dist, old_name, fresh_name in candidates:
         if old_name in unmatched_mem and fresh_name in unmatched_fresh:
             matched.append((old_name, fresh_name))
@@ -219,8 +212,6 @@ def _apply_high_level(
 ) -> Dict[str, Any]:
     """Overlay high-level config from old_state onto fresh_state."""
     result = copy.deepcopy(fresh_state)
-    print("[_apply_high_level] metric parts after deepcopy:",
-          sorted(k for k in result.get("metric", {}) if k.startswith("Part_")))
     result["workspace"] = copy.deepcopy(
         old_state.get("workspace", {"operation_mode": None, "batch_size": None})
     )
@@ -244,15 +235,11 @@ def prepare_update() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     else:
         old_state = empty_state()
 
-    print("[prepare_update] old_state parts:", old_state.get("objects", {}).get("parts", []))
-    print("[prepare_update] old_state metric parts:", [k for k in old_state.get("metric", {}) if k.startswith("Part_")])
 
     save_atomic(CONFIGURATION_PATH, old_state)
     _run_vision()
     fresh_state = json.loads(CONFIGURATION_PATH.read_text(encoding="utf-8"))
 
-    print("[prepare_update] fresh_state parts:", fresh_state.get("objects", {}).get("parts", []))
-    print("[prepare_update] fresh_state metric parts:", [k for k in fresh_state.get("metric", {}) if k.startswith("Part_")])
 
     save_atomic(CONFIGURATION_PATH, old_state)
 
@@ -348,10 +335,6 @@ def apply_update_mapping(
         image_rename_map = {}
 
     matched_auto, new_parts_fresh, missing_from_fresh = _match_parts_by_position(old_state, fresh_state)
-    print(f"[apply_update_mapping] match results:")
-    print(f"  matched_auto:      {matched_auto}")
-    print(f"  new_parts_fresh:   {new_parts_fresh}")
-    print(f"  missing_from_fresh:{missing_from_fresh}")
 
     # Build rename map: fresh_name → final_identity
     rename_map: Dict[str, str] = {}
@@ -401,20 +384,13 @@ def apply_update_mapping(
     for fresh_name in list(matched_auto_fresh := [fn for _, fn in matched_auto]):
         if rename_map.get(fresh_name) in confirmed_targets:
             old_target = rename_map.pop(fresh_name)
-            print(f"[apply_update_mapping] auto-match for '{fresh_name}→{old_target}' "
-                  f"dropped — overridden by user-confirmed assignment")
 
     result = copy.deepcopy(fresh_state)
     old_parts_in_rename = {v for v in rename_map.values() if v.startswith("Part_")}
-    print(f"[apply_update_mapping] rename_map: {rename_map}")
 
     fresh_parts_total = len(fresh_state.get("objects", {}).get("parts", []))
-    if fresh_parts_total > 0 and not old_parts_in_rename:
-        print(f"[apply_update_mapping] WARNING: All {fresh_parts_total} fresh part(s) received new IDs — no position match found.")
 
     _rename_parts_in_state(result, rename_map)
-    print(f"[apply_update_mapping] after rename - result parts: {result.get('objects',{}).get('parts',[])}")
-    print(f"[apply_update_mapping] after rename - result metric parts: {sorted(k for k in result.get('metric',{}) if k.startswith('Part_'))}")
 
     # ── Preserve metric entries for parts not detected by vision ──────────────
     # Parts that exist in old_state but aren't in fresh_state's metric (because
@@ -432,7 +408,6 @@ def apply_update_mapping(
     for part in sorted(result_parts):
         if part not in result_metric and part in old_metric:
             result_metric[part] = copy.deepcopy(old_metric[part])
-            print(f"[apply_update_mapping] {part} not detected by vision — metric position preserved from previous state")
         # Also ensure at/color are carried over for undetected parts
         if part not in result_at and part in old_at:
             slot = old_at[part]
@@ -445,8 +420,6 @@ def apply_update_mapping(
                 result["objects"]["parts"].append(part)
                 result["objects"]["parts"] = sorted(result["objects"]["parts"])
 
-    print("[apply_update_mapping] result metric parts (pre _apply_high_level):",
-          sorted(k for k in result.get("metric", {}) if k.startswith("Part_")))
 
     merged = _apply_high_level(result, old_state)
 
@@ -460,8 +433,6 @@ def apply_update_mapping(
     if m_parts == f_parts:
         print("  (no structural changes — positions refreshed)")
 
-    print("[apply_update_mapping] final merged parts:", sorted(merged.get("objects", {}).get("parts", [])))
-    print("[apply_update_mapping] final merged metric parts:", sorted(k for k in merged.get("metric", {}) if k.startswith("Part_")))
 
     save_atomic(CONFIGURATION_PATH, merged)
     print("✅  Configuration updated.")
