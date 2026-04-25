@@ -368,6 +368,7 @@ class Robot:
             print(f"⚠ 'metric' section missing or invalid in {save_file}")
             return positions
 
+        print(f"[DEBUG] metric keys in config: {list(metric.keys())}")
         for name, entry in metric.items():
             if not isinstance(name, str) or not name:
                 continue
@@ -378,6 +379,7 @@ class Robot:
             if entry["pos"] is None or entry["quat"] is None:
                 continue
             positions[name] = self._entry_to_pose_record(name, entry)
+            
 
         return positions
 

@@ -96,7 +96,8 @@ def apply_sequence(
 
         src_label = source_slot if source_slot else "(standalone)"
         print(f"  ✓  {pick_name}  {src_label} → {place_name}")
-
+        print(f"[DEBUG] metric[{pick_name}] after update: {metric.get(pick_name)}")
+    
     return state
 
 

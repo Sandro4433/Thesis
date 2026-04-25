@@ -324,19 +324,24 @@ def main() -> None:
 
     # ------------------------------------------------------------------
     # Robot entries + part assignment
+    # Use the same threshold as the auto-matcher in update_scene.py so
+    # that slot assignment and part identity use a consistent distance
+    # criterion.  Previously this was a hard-coded 0.02 m which could
+    # cause a part detected 21–39 mm from its slot centre to be left
+    # unassigned by vision but still correctly matched by the auto-matcher,
+    # creating a state where the part had no 'at' predicate after an
+    # update even though it appeared correctly labelled in the image.
     # ------------------------------------------------------------------
-    new_entries = targets_to_robot_entries(
-        tag_targets=tag_targets,
-        charuco_origin_in_robot_m=CHARUCO_ORIGIN_IN_ROBOT_M,
-        z_robot=Z_ROBOT_M,
-        camera_quat=CAMERA_HOME["quat"],
-        kit_ids=KIT_TAG_IDS,
-        container_ids=CONTAINER_TAG_IDS,
-    )
-
     final_entries = assign_parts_to_slots(
-        new_entries,
-        xy_threshold_m=0.02,  # tune (meters)
+        targets_to_robot_entries(
+            tag_targets=tag_targets,
+            charuco_origin_in_robot_m=CHARUCO_ORIGIN_IN_ROBOT_M,
+            z_robot=Z_ROBOT_M,
+            camera_quat=CAMERA_HOME["quat"],
+            kit_ids=KIT_TAG_IDS,
+            container_ids=CONTAINER_TAG_IDS,
+        ),
+        xy_threshold_m=settings.position_match_threshold_m,  # 0.04 m default
     )
 
     # ------------------------------------------------------------------

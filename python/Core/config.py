@@ -89,7 +89,7 @@ class Settings:
         self.finger_joint_1 = os.environ.get("RC_FINGER_JOINT_1", "panda_finger_joint1")
         self.finger_joint_2 = os.environ.get("RC_FINGER_JOINT_2", "panda_finger_joint2")
         self.position_match_threshold_m = float(
-            os.environ.get("RC_POSITION_MATCH_THRESHOLD_M", "0.040")
+            os.environ.get("RC_POSITION_MATCH_THRESHOLD_M", "0.02")
         )
 
         root = Path(os.environ.get("RC_PROJECT_ROOT", str(_PROJECT_ROOT)))

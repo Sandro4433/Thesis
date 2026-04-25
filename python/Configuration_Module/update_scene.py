@@ -388,6 +388,7 @@ def apply_update_mapping(
 
     save_atomic(CONFIGURATION_PATH, merged)
     print("✅  Configuration updated.")
+    
     save_to_memory(merged, label="update")
     print("✅  State archived.")
 
@@ -503,7 +504,7 @@ def run_post_execution_rescan(config_state: Dict[str, Any]) -> Dict[str, Any]:
 
     matched, new_fresh, missing_config = _match_parts_by_position(
         config_state, fresh_state,
-        threshold_m=settings.position_match_threshold_m * 0.875,  # tighter post-exec
+        threshold_m=settings.position_match_threshold_m
     )
 
     rename_map = {fresh_name: config_name for config_name, fresh_name in matched}
@@ -537,19 +538,54 @@ def run_post_execution_rescan(config_state: Dict[str, Any]) -> Dict[str, Any]:
     fresh_metric = fresh_state.get("metric", {})
     config_metric = config_state.get("metric", {})
 
+    # Build a predicted post-execution position map from sequence.json.
+    # A part that was moved by the robot should be predicted at its
+    # PLACE slot's metric position, not its pre-execution pick position.
+    # Parts not in the sequence were not moved, so their pre-execution
+    # position is still correct.
+    predicted_slot: Dict[str, str] = {}   # part_name → place_slot_name
+    try:
+        from Core.paths import SEQUENCE_PATH
+        if SEQUENCE_PATH.exists():
+            sequence = json.loads(SEQUENCE_PATH.read_text(encoding="utf-8"))
+            for step in sequence:
+                if isinstance(step, (list, tuple)) and len(step) >= 2:
+                    predicted_slot[step[0]] = step[1]   # pick_name → place_slot
+    except Exception as _seq_err:
+        logger.warning("Could not load sequence.json for position prediction: %s", _seq_err)
+
     for mp in missing_config:
         if mp not in fresh_state["objects"]["parts"]:
             fresh_state["objects"]["parts"].append(mp)
-        if mp in config_at:
-            fresh_preds.setdefault("at", []).append({"part": mp, "slot": config_at[mp]})
-            slot = config_at[mp]
-            if slot in fresh_preds.get("slot_empty", []):
-                fresh_preds["slot_empty"].remove(slot)
+
+        # Determine best-guess slot: if the robot moved this part, use the
+        # destination slot; otherwise keep the last known slot from config.
+        best_slot = predicted_slot.get(mp, config_at.get(mp))
+        if best_slot:
+            fresh_preds.setdefault("at", []).append({"part": mp, "slot": best_slot})
+            if best_slot in fresh_preds.get("slot_empty", []):
+                fresh_preds["slot_empty"].remove(best_slot)
+
         if mp in config_colors:
             fresh_preds.setdefault("color", []).append({"part": mp, "color": config_colors[mp]})
-        if mp in config_metric:
+
+        # Use the place slot's metric for moved parts, pre-exec metric otherwise
+        if mp in predicted_slot:
+            place_slot = predicted_slot[mp]
+            if place_slot in config_metric:
+                fresh_metric[mp] = config_metric[place_slot]
+                logger.warning(
+                    "%s not detected — predicted at place slot %s", mp, place_slot
+                )
+            elif mp in config_metric:
+                fresh_metric[mp] = config_metric[mp]
+                logger.warning(
+                    "%s not detected — place slot %s has no metric, using pre-exec position",
+                    mp, place_slot
+                )
+        elif mp in config_metric:
             fresh_metric[mp] = config_metric[mp]
-        logger.warning("%s not detected by vision — kept with predicted position", mp)
+            logger.warning("%s not detected by vision — kept with pre-execution position", mp)
 
     fresh_state["objects"]["parts"] = sorted(fresh_state["objects"]["parts"])
     merged = _apply_high_level(fresh_state, config_state)
