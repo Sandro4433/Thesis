@@ -336,19 +336,9 @@ def apply_update_mapping(
 
     matched_auto, new_parts_fresh, missing_from_fresh = _match_parts_by_position(old_state, fresh_state)
 
-    # Build rename map: fresh_name → final_identity
-    rename_map: Dict[str, str] = {}
-    for old_name, fresh_name in matched_auto:
-        img_label = image_rename_map.get(fresh_name, fresh_name)
-        if img_label in confirmed_mapping:
-            rename_map[fresh_name] = confirmed_mapping[img_label]
-        else:
-            rename_map[fresh_name] = old_name
-
-    # Assign new parts
-    used = set(rename_map.values()) | set(old_state.get("objects", {}).get("parts", []))
-    used_nums = set()
-    for name in used:
+    # Pre-compute used IDs so next_num is available for both auto-matched and new parts
+    used_nums: set = set()
+    for name in old_state.get("objects", {}).get("parts", []):
         if name.startswith("Part_"):
             try:
                 used_nums.add(int(name.split("_", 1)[1]))
@@ -356,24 +346,43 @@ def apply_update_mapping(
                 pass
 
     next_num = max(used_nums, default=0) + 1
+
+    def _alloc_next() -> str:
+        nonlocal next_num
+        while next_num in used_nums:
+            next_num += 1
+        allocated = f"Part_{next_num}"
+        used_nums.add(next_num)
+        next_num += 1
+        return allocated
+
+    # Build rename map: fresh_name → final_identity
+    rename_map: Dict[str, str] = {}
+    for old_name, fresh_name in matched_auto:
+        img_label = image_rename_map.get(fresh_name, fresh_name)
+        if img_label in confirmed_mapping:
+            target = confirmed_mapping[img_label]
+            # "new" means the user considers this a new part — assign next available ID
+            rename_map[fresh_name] = _alloc_next() if target == "new" else target
+        else:
+            rename_map[fresh_name] = old_name
+
+    # Assign new parts — refresh used_nums to include any IDs already in rename_map
+    used = set(rename_map.values()) | set(old_state.get("objects", {}).get("parts", []))
+    for name in used:
+        if name.startswith("Part_"):
+            try:
+                used_nums.add(int(name.split("_", 1)[1]))
+            except ValueError:
+                pass
+
     for fresh_name in new_parts_fresh:
         img_label = image_rename_map.get(fresh_name, fresh_name)
         if img_label in confirmed_mapping:
             target = confirmed_mapping[img_label]
-            if target == "new":
-                while next_num in used_nums:
-                    next_num += 1
-                rename_map[fresh_name] = f"Part_{next_num}"
-                used_nums.add(next_num)
-                next_num += 1
-            else:
-                rename_map[fresh_name] = target
+            rename_map[fresh_name] = _alloc_next() if target == "new" else target
         else:
-            while next_num in used_nums:
-                next_num += 1
-            rename_map[fresh_name] = f"Part_{next_num}"
-            used_nums.add(next_num)
-            next_num += 1
+            rename_map[fresh_name] = _alloc_next()
 
     # User-confirmed assignments for new parts take priority over auto-matches.
     # If an auto-matched fresh part was assigned the same final name as a
