@@ -1,11 +1,11 @@
 {
-  "Part_13": {
-    "fragility": "fragile"
+  "workspace": {
+    "fill_order": "parallel"
   },
-  "Part_14": {
-    "fragility": "fragile"
-  },
-  "Part_15": {
-    "fragility": "fragile"
-  }
+  "priority": [
+    {
+      "color": "red",
+      "order": 1
+    }
+  ]
 }

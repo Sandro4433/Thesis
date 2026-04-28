@@ -865,22 +865,6 @@ def _run_conversation_loop(
                 pending_changes = None
                 continue
 
-        if pending_changes:
-            cap_warning = _validate_capacity(pending_changes)
-            if cap_warning:
-                logger.debug("Capacity check failed")
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        f"Before I confirm — there is a capacity problem:\n\n"
-                        f"{cap_warning}\n\n"
-                        "Do NOT output a changes block yet. "
-                        "Ask the user how to resolve this."
-                    ),
-                })
-                pending_changes = None
-                continue
-
         user_input = input("YOU: ").strip()
         if not user_input:
             continue
