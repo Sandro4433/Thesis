@@ -36,8 +36,6 @@ class Settings:
     max_tool_rounds: int
 
     # ── Hardware / mode toggles ────────────────────────────────────────────
-    use_pddl_planner: bool
-    """True → Fast Downward; False → LLM dialogue for sequence generation."""
     use_camera: bool
     """True → capture live from RealSense; False → load test image from disk."""
     test_image_name: str
@@ -77,9 +75,6 @@ class Settings:
 
         self.model = os.environ.get("RC_MODEL", "gpt-4.1")
         self.max_tool_rounds = int(os.environ.get("RC_MAX_TOOL_ROUNDS", "3"))
-        self.use_pddl_planner = os.environ.get(
-            "RC_USE_PDDL_PLANNER", "true"
-        ).lower() in ("1", "true", "yes")
         self.use_camera = os.environ.get(
             "RC_USE_CAMERA", "false"
         ).lower() in ("1", "true", "yes")

@@ -1,7 +1,7 @@
 """
 block_parsing.py — Extract and validate fenced JSON blocks from LLM responses.
 
-Handles ``sequence``, ``changes``, and ``mapping`` blocks.
+Handles ``changes`` and ``mapping`` blocks.
 """
 from __future__ import annotations
 
@@ -11,9 +11,6 @@ from typing import Any, Dict, List
 
 # ── Fenced-block regexes ─────────────────────────────────────────────────────
 
-SEQUENCE_BLOCK_RE = re.compile(
-    r"```sequence\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE
-)
 CHANGES_BLOCK_RE = re.compile(
     r"```changes\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE
 )
@@ -47,35 +44,6 @@ VALID_FRAGILITY = {"normal", "fragile", None}
 
 SPECIAL_KEYS = ("workspace", "priority", "kit_recipe", "part_compatibility")
 ALLOWED_PART_ATTRS = {"role", "color", "fragility"}
-
-
-def extract_sequence_block(text: str) -> List[List]:
-    """Parse a ``sequence`` block into a list of [pick, place] entries.
-
-    Accepts both 2-element and legacy 3-element entries (with gripper width).
-    Any third element is silently stripped — all parts use the standard
-    gripper width, which the executor applies automatically.
-    """
-    m = SEQUENCE_BLOCK_RE.search(text or "")
-    if not m:
-        raise ValueError("No ```sequence``` block found.")
-
-    data = json.loads(m.group(1).strip())
-    if not isinstance(data, list) or not data:
-        raise ValueError("Sequence block must be a non-empty JSON array.")
-
-    cleaned: List[List] = []
-    for i, entry in enumerate(data):
-        if not isinstance(entry, list) or len(entry) not in (2, 3):
-            raise ValueError(
-                f"Entry {i} must be [pick_name, place_name], got: {entry!r}"
-            )
-        if not isinstance(entry[0], str) or not isinstance(entry[1], str):
-            raise ValueError(f"Entry {i}: pick_name and place_name must be strings.")
-        if not entry[0].strip() or not entry[1].strip():
-            raise ValueError(f"Entry {i}: names must not be empty.")
-        cleaned.append([entry[0], entry[1]])
-    return cleaned
 
 
 def _merge_duplicate_workspace_keys(raw: str) -> str:

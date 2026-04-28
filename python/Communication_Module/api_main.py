@@ -23,11 +23,10 @@ from openai import OpenAI
 
 from Core.config import settings
 from Core.paths import CONFIGURATION_PATH
-from Core.io_helpers import save_sequence, save_changes, save_config_to_memory
+from Core.io_helpers import save_changes, save_config_to_memory
 from Communication_Module.block_parsing import (
     extract_changes_block,
     extract_mapping_block,
-    extract_sequence_block,
 )
 from Communication_Module.change_management import (
     detect_conflicts,
@@ -346,25 +345,6 @@ def _handle_conflicts(
 # LLM response extraction helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _try_extract_sequence(text: str, messages: List[Dict[str, str]]) -> Any:
-    """Try to extract a sequence block. Returns the sequence, None, or False (parse error)."""
-    try:
-        return extract_sequence_block(text)
-    except Exception as exc:
-        if "```sequence" in (text or ""):
-            logger.warning("Sequence block parse error: %s", exc)
-            messages.append({
-                "role": "user",
-                "content": (
-                    f"Your sequence block failed to parse: {exc}\n"
-                    'Each entry must be ["pick", "place"].\n'
-                    "Please rewrite the sequence block."
-                ),
-            })
-            return False
-        return None
-
-
 def _try_extract_changes(text: str, messages: List[Dict[str, str]]) -> Any:
     """Try to extract a changes block. Returns the changes, None, or False (parse error)."""
     try:
@@ -390,33 +370,22 @@ def _try_extract_changes(text: str, messages: List[Dict[str, str]]) -> Any:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _describe_pending(
-    pending_sequence: Optional[List[List]],
     pending_changes: Optional[Dict[str, Any]],
 ) -> str:
     """Short one-liner describing what's pending, for the reply classifier."""
-    parts = []
     if pending_changes is not None:
         keys = ", ".join(sorted(pending_changes.keys())) or "(empty)"
-        parts.append(f"a changes block with keys: {keys}")
-    if pending_sequence is not None:
-        parts.append(f"a sequence block with {len(pending_sequence)} pick-and-place steps")
-    return " and ".join(parts) if parts else "a proposal awaiting confirmation"
+        return f"a changes block with keys: {keys}"
+    return "a proposal awaiting confirmation"
 
 
 def _confirm_pending(
     client: OpenAI,
     messages: List[Dict[str, str]],
     accumulated: Dict[str, Any],
-    pending_sequence: Optional[List[List]],
     pending_changes: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Handle confirmation of pending sequence and/or changes. Returns updated accumulated."""
-    if pending_sequence is not None:
-        save_sequence(pending_sequence)
-        print("✅  Sequence confirmed.\n")
-        messages.append({"role": "user", "content": "Confirmed the sequence."})
-        messages.append({"role": "assistant", "content": "Sequence saved."})
-
+    """Handle confirmation of pending changes. Returns updated accumulated."""
     if pending_changes is not None:
         accumulated = _handle_conflicts(client, accumulated, pending_changes)
         print("✅  Changes noted.\n")
@@ -429,17 +398,12 @@ def _confirm_pending(
 def _finalize_session(
     client: OpenAI,
     accumulated: Dict[str, Any],
-    pending_sequence: Optional[List[List]],
     pending_changes: Optional[Dict[str, Any]],
 ) -> None:
     """Save any pending work and end the session."""
     # apply_and_save_config lives in session_handler (it orchestrates vision +
     # config modules) — imported late to avoid the circular import chain.
     from Orchestration.session_handler import apply_and_save_config
-
-    if pending_sequence is not None:
-        save_sequence(pending_sequence)
-        print("✅  Sequence saved.")
 
     if pending_changes is not None:
         accumulated = _handle_conflicts(client, accumulated, pending_changes)
@@ -861,7 +825,6 @@ def _run_conversation_loop(
     """Inner loop extracted so LLMCancelled can be caught cleanly."""
     from Orchestration.session_handler import apply_and_save_config  # only orchestration fn still needed here
 
-    pending_sequence: Optional[List[List]] = None
     pending_changes: Optional[Dict[str, Any]] = None
     accumulated_changes: Dict[str, Any] = {}
 
@@ -874,12 +837,10 @@ def _run_conversation_loop(
             logger.info("Role conflict — returning to mode selection.")
             return
 
-        pending_sequence = _try_extract_sequence(assistant_text, messages)
         pending_changes = _try_extract_changes(assistant_text, messages)
 
-        if pending_sequence is False or pending_changes is False:
-            pending_sequence = None if pending_sequence is False else pending_sequence
-            pending_changes = None if pending_changes is False else pending_changes
+        if pending_changes is False:
+            pending_changes = None
             continue
 
         if pending_changes and "priority" in pending_changes:
@@ -925,13 +886,13 @@ def _run_conversation_loop(
             continue
 
         if is_finish(user_input):
-            _finalize_session(client, accumulated_changes, pending_sequence, pending_changes)
+            _finalize_session(client, accumulated_changes, pending_changes)
             return
 
-        has_pending = pending_sequence is not None or pending_changes is not None
+        has_pending = pending_changes is not None
 
         if has_pending:
-            pending_summary = _describe_pending(pending_sequence, pending_changes)
+            pending_summary = _describe_pending(pending_changes)
             decision, user_input = resolve_pending_reply(
                 client, settings.model, user_input, pending_summary,
             )
@@ -941,9 +902,8 @@ def _run_conversation_loop(
         if decision == "yes":
             accumulated_changes = _confirm_pending(
                 client, messages, accumulated_changes,
-                pending_sequence, pending_changes,
+                pending_changes,
             )
-            pending_sequence = None
             pending_changes = None
 
             # user_input may contain an extra instruction from "yes but <extra>"
@@ -980,7 +940,6 @@ def _run_conversation_loop(
             continue
 
         if decision == "no":
-            pending_sequence = None
             pending_changes = None
             messages.append({
                 "role": "user",

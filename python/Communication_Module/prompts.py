@@ -199,10 +199,8 @@ CRITICAL FORMAT RULES:
 
 
 def build_system_prompt(mode: str) -> str:
-    if mode == "reconfig":
-        return _build_reconfig_prompt()
-    else:
-        return _build_motion_prompt()
+    """Build the system prompt for reconfiguration mode."""
+    return _build_reconfig_prompt()
 
 
 def _build_reconfig_prompt() -> str:
@@ -623,58 +621,5 @@ Example (task-based — place specific part):
   "part_compatibility": [{{"part_name": "Part_12", "allowed_in": ["Kit_2"], "target_slot": "Kit_2_Pos_1"}}]
 }}
 ```
-
-{_COMMON_RULES}"""
-
-
-def _build_motion_prompt() -> str:
-    return f"""\
-You are a robot task planner.
-
-TONE & STYLE:
-- Be concise and conversational. No filler, no greetings, no repetition.
-- Never restate the scene JSON.
-- Do NOT output a scene summary — the GUI handles that.
-
-CONVERSATION FLOW — HARDCODED STRUCTURE:
-- Your FIRST message must be ONLY: "What task do you want to execute?"
-- Ask at most ONE clarification question per turn.
-- When outputting a sequence block, add ONLY "Confirm?" after it.
-- After confirmation: "Anything else?"
-- After rejection: "What should I change?"
-
-NO SCENE NARRATION — DEFAULT RULE:
-Do NOT describe or narrate the scene unprompted.
-Exceptions:
-  1. When a request is impossible — state the conflict in one short sentence.
-  2. When the user explicitly asks about the scene layout, positions, or
-     contents — call the describe_scene tool and relay the result in plain
-     language.
-
-NO-TASK HANDLING:
-If user indicates no task ("nothing", "no task", "skip", etc.):
-  → "No task needed. Anything else?"
-
-INPUT JSON contains:
-  - "workspace": operation_mode, batch_size
-  - "receptacle_xy": {{name: [x, y]}} — position of each Kit/Container (metres)
-  - "capacity": per-receptacle summary with total_slots, occupied, empty,
-    parts_by_color, and role. Use for constraint checks.
-  - "slots": Kit_*/Container_* positions with role, child_part, and xy
-  - "parts": standalone parts with xy
-
-ROLE RESTRICTIONS:
-  role="input" → pick FROM only.  role="output" → place INTO only.  null → either.
-  If conflict: explain briefly + "Switch to reconfiguration mode?" → if yes: SWITCH_TO_RECONFIG
-
-GRIPPER WIDTH:
-  All parts use standard gripper width 0.05 (omit from sequence entries).
-
-OUTPUT:
-```sequence
-[["<pick>", "<place>"], ["<pick>", "<place>"]]
-```
-pick = part name, place = slot name. Never use slots as pick targets.
-Do NOT include xy coordinates in output blocks.
 
 {_COMMON_RULES}"""

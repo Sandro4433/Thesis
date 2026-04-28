@@ -38,7 +38,7 @@ from Core.paths import (
     PROJECT_DIR, CONFIGURATION_PATH, SEQUENCE_PATH, CHANGES_PATH,
     MEMORY_DIR, WORKSPACE_DIR, save_atomic,
 )
-from Core.io_helpers import save_sequence, save_changes, save_config_to_memory
+from Core.io_helpers import save_changes, save_config_to_memory
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -58,17 +58,14 @@ def _pick_from_list(prompt: str, options: List[str]) -> int:
 
 
 def select_mode() -> str:
-    from Core.config import settings
-
-    planner_label = "PDDL planner" if settings.use_pddl_planner else "LLM dialogue"
     print("\n" + "=" * 60)
     print("  Robot Configuration")
-    print(f"  Sequence planner: {planner_label}  (toggle RC_USE_PDDL_PLANNER in .env)")
+    print("  Sequence planner: PDDL")
     print("=" * 60)
 
     idx = _pick_from_list("\nWhat do you want to do?", [
         "Workspace reconfiguration  (change attributes, roles, recipes)",
-        f"Motion sequence planning   ({planner_label})",
+        "Motion sequence planning   (PDDL planner)",
         "Execute robot motion       (run current sequence.json)",
         "Exit",
     ])
@@ -559,27 +556,23 @@ def run_pddl_sequence() -> None:
 
 def run_session(client: OpenAI, mode: str) -> None:
     """
-    Top-level dispatcher.  Routes to the correct pipeline based on mode,
-    then hands off to API_Main only for the LLM conversation loop.
+    Top-level dispatcher. Routes to the correct pipeline based on mode.
     """
-    from Core.config import settings
-
     # ── Execute ──────────────────────────────────────────────────────────
     if mode == "execute":
         run_execution()
         return
 
-    # ── PDDL planning (motion mode with PDDL enabled) ───────────────────
-    if mode == "motion" and settings.use_pddl_planner:
+    # ── PDDL planning (motion mode) ──────────────────────────────────────
+    if mode == "motion":
         run_pddl_sequence()
         return
 
-    # ── Load scene (handles fresh / update / memory internally) ──────────
+    # ── Reconfiguration mode: Load scene and run LLM conversation ────────
     scene = load_scene(client, mode)
     if scene is None:
         return
 
-    # ── Hand off to the LLM conversation loop ────────────────────────────
     from Communication_Module.api_main import run_conversation
     run_conversation(client, mode, scene)
 

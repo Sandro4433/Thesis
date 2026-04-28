@@ -13,21 +13,11 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from Core.paths import (
-    SEQUENCE_PATH,
     CHANGES_PATH,
     CONFIGURATION_PATH,
     save_atomic,
     save_to_memory,
 )
-
-
-def save_sequence(sequence: List[List]) -> Path:
-    """Write *sequence* to sequence.json atomically. Returns the path."""
-    SEQUENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SEQUENCE_PATH.write_text(
-        json.dumps(sequence, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-    return SEQUENCE_PATH
 
 
 def save_changes(changes: Dict[str, Any]) -> Path:
