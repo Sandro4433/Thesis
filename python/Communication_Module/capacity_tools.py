@@ -88,7 +88,9 @@ CAPACITY_TOOL_SCHEMA = {
         "description": (
             "Check whether the workspace has enough parts and slots for a "
             "proposed kitting or sorting operation. Call this BEFORE proposing "
-            "a changes block whenever the user requests kitting or sorting."
+            "a changes block whenever the user requests kitting or sorting.\n\n"
+            "For SORTING: counts only FREE parts (parts not in container slots).\n"
+            "For KITTING: counts parts IN the specified input_containers."
         ),
         "parameters": {
             "type": "object",
@@ -194,11 +196,25 @@ def execute_capacity_check(args: Dict[str, Any], scene: Dict[str, Any]) -> str:
         lines.append(f"WARNING: Unknown output receptacles: {', '.join(sorted(unknown_outputs))}")
 
     available: Dict[str, int] = {}
-    for rec_name in sorted(input_containers & all_known):
-        for color, count in capacity.get(rec_name, {}).get("parts_by_color", {}).items():
-            available[color] = available.get(color, 0) + count
+    
+    # For sorting: only count FREE parts (not already in container slots)
+    # For kitting: count parts IN the input containers
+    if operation == "sorting":
+        # Count free parts in the workspace
+        parts_view = scene.get("parts", {})
+        for part_name, part_data in parts_view.items():
+            color = (part_data.get("color") or "unknown").lower()
+            available[color] = available.get(color, 0) + 1
+    else:
+        # For kitting: count parts IN input containers (from capacity)
+        for rec_name in sorted(input_containers & all_known):
+            for color, count in capacity.get(rec_name, {}).get("parts_by_color", {}).items():
+                available[color] = available.get(color, 0) + count
 
-    lines.append(f"Available parts in {', '.join(sorted(input_containers & all_known))}:")
+    if operation == "sorting":
+        lines.append(f"Available FREE parts in workspace (not in containers):")
+    else:
+        lines.append(f"Available parts in {', '.join(sorted(input_containers & all_known))}:")
     if available:
         for color in sorted(available):
             lines.append(f"  {color}: {available[color]}")
