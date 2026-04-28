@@ -1,4 +1,14 @@
 {
+  "kit_recipe": [
+    {
+      "color": "red",
+      "quantity": 1
+    },
+    {
+      "color": "blue",
+      "quantity": 2
+    }
+  ],
   "workspace": {
     "fill_order": "parallel"
   },
@@ -6,6 +16,10 @@
     {
       "color": "red",
       "order": 1
+    },
+    {
+      "color": "blue",
+      "order": 2
     }
   ]
 }
