@@ -1,0 +1,32 @@
+================================================================================
+SCENARIO 3 — TASK SPECIFICATION | Volunteer | Experiment 1 (Sorting)
+Ambiguity Profile: R (typo "zes" causes confirmation failure; "contaier" typo handled correctly)
+Note: Multiple sessions. Volunteer unfamiliar with confirmation flow — repeated instruction thinking changes weren't saved.
+================================================================================
+
+[SYS]  Starting vision module … Vision complete. Loaded fresh scene from vision.
+[SYS]  ── Mode: Reconfiguration ──
+
+[AST-OPEN] What would you like to change?
+[USR-INST] container 1 is reserved for red and blue parts. and contaier 2 for green ones.
+[AST-PROP] {red+blue→Container_1, green→Container_2} — Confirm?
+[USR-CONF] yes
+[SYS]  ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-INST] green parts should be done first
+[AST-PROP] {priority: green→1} — Confirm?
+[USR-CONF] yes
+[SYS]  ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-INST] I want to sort the colors in their respective container
+           [NOTE: I — implies operation_mode: sorting and container roles without stating them explicitly]
+[AST-CLAR] Do you want to set the operation mode to sorting, and have each part placed into the container allowed by its color compatibility?
+[USR-CONF] yes
+[AST-PROP] {Container_1/2: output, operation_mode: sorting} — Confirm?
+[USR-CONF] yes
+[SYS]  ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-DONE] done
+[SYS]  ✅ Configuration updated. State archived → configuration_18042026_1021.json. Image updated.
+[SYS]  ── Configuration complete. ──
+[SYS]  ✅ Sequence written.

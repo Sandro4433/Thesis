@@ -1,0 +1,95 @@
+================================================================================
+SCENARIO 1 — BASELINE RECONFIGURATION | Trial 4
+Ambiguity Profile: None 
+================================================================================
+
+[SYS]  Let's configure, what would you like to do?
+[SYS]  Starting vision module … Vision complete. Loaded fresh scene from vision.
+
+--- Setup for priority testing ---
+
+[SYS]      ── Mode: Reconfiguration ──
+[AST-OPEN] What would you like to change?
+[USR-INST] switch to sorting. red parts in container 1, blue parts go into container 2 and green parts in container 3
+[AST-PROP] {operation_mode: sorting, Container_1/2/3: output, part_compatibility: red→C1, blue→C2, green→C3} — Confirm?
+[USR-CONF] yes
+[SYS]      ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-INST] part 13 and part 2 are fragile
+[AST-PROP] {Part_13: fragile, Part_2: fragile} — Confirm?
+[USR-CONF] yes
+[SYS]      ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-DONE] done
+[SYS]      ✅ Configuration updated. State archived. Image updated.
+[SYS]      ── Configuration complete. ──
+
+--- Reconfiguration Session 1 ---
+
+[AST-OPEN] What would you like to change?
+[USR-INST] change priority to green parts first then red parts then blue
+[AST-PROP] {priority: green→1, red→2, blue→3} — Confirm?
+[USR-CONF] yes
+[SYS]      ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-DONE] done
+[SYS]      ✅ Configuration updated. State archived. Image updated.
+[SYS]      ── Configuration complete. ──
+
+--- Reconfiguration Session 2 ---
+
+[AST-OPEN] What would you like to change?
+[USR-INST] do part 8 first, then part 13
+[AST-CLAR] What should be done with Part_8 and Part_13? Should they be moved to a specific container, or prioritized for sorting?
+           [NOTE: Incidental I-type ambiguity — instruction implied priority but was underspecified]
+[USR-CLAR] change priority to part 8 first then part 13
+[AST-PROP] {priority: Part_8→1, Part_13→2} — Confirm?
+[USR-CONF] yes
+[SYS]      ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-DONE] done
+[SYS]      ✅ Configuration updated. State archived. Image updated.
+[SYS]      ── Configuration complete. ──
+
+--- Reconfiguration Session 3 ---
+
+[AST-OPEN] What would you like to change?
+[USR-INST] prioritize container 1, then container 2
+[AST-PROP] {priority: color-based entries + container→C1:1, C2:2} — Confirm?
+[USR-CONF] yes
+[AST-PROP] {priority: Container_1→1, Container_2→2} — Confirm?
+[USR-CONF] yes
+[SYS]      ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-DONE] done
+[SYS]      ✅ Configuration updated. State archived. Image updated.
+[SYS]      ── Configuration complete. ──
+
+--- Reconfiguration Session 4 ---
+
+[SYS]      ── Mode: Reconfiguration ──
+[AST-OPEN] What would you like to change?
+[USR-INST] prioritize fragile parts
+[AST-PROP] {priority: [{fragility: fragile, order: 1}]} — Confirm?
+[USR-CONF] yes
+[SYS]      ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-DONE] done
+[SYS]      ✅ Configuration updated. State archived. Image updated.
+[SYS]      ── Configuration complete. ──
+
+--- Reconfiguration Session 5 ---
+
+[SYS]      ── Mode: Reconfiguration ──
+[AST-OPEN] What would you like to change?
+[USR-INST] do kit 2 first, then kit 3 and then kit 1
+[AST-PROP] {priority: Kit_2→1, Kit_3→2, Kit_1→3} — Confirm?
+[USR-CONF] yes
+[SYS]      ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-DONE] done
+[SYS]      ✅ Configuration updated. State archived. Image updated.
+[SYS]      ── Configuration complete. ──
+
+
+

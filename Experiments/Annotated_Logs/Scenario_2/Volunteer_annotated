@@ -1,0 +1,20 @@
+================================================================================
+SCENARIO 2 — WORKSPACE STATE-DESCRIPTION AMBIGUITY | Philipp
+Ambiguity Profile: R (typo "zes" instead of "yes" causes silent config loss; "exchanged" causes swap misinterpretation)
+================================================================================
+
+[SYS]  ── Update Scene Dialogue ──
+
+[AST-OPEN] Do the auto-matched part IDs look correct? If not, tell me what changed.
+[USR-INST] no, part 5 was exchanged with part 3
+           [NOTE: R — "exchanged" ambiguous; system interpreted as swap (bidirectional), user meant replacement (Part_5 deleted, Part_3 moved in)]
+[AST-PROP] Cross-reassigning Part_5 and Part_3. Mapping: {"Part_5": "Part_3", "Part_7": "Part_5"} — Confirm?
+[USR-INST] part 5 is just deleted
+[AST-PROP] Part_5 should be deleted, so Part_7 is a new part. Mapping: {"Part_5": "Part_3", "Part_7": "new"} — Confirm?
+[USR-CONF] yes
+[SYS]  [Accumulated mapping: {"Part_5": "Part_3", "Part_7": "new"}]
+[AST-OPEN] Saved. Any more changes? (say "done" to finish)
+[USR-DONE] done
+[SYS]  Applying mapping: {"Part_5": "Part_3", "Part_7": "new"}
+[SYS]  ── Final Scene Summary ── Part_7 [new] | Part_5 [removed]
+[SYS]  ✅ Configuration updated. State archived. Image updated.

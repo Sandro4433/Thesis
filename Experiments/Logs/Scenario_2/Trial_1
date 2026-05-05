@@ -1,0 +1,90 @@
+Let's configure, what would you like to do?
+
+Starting vision module …
+
+Vision complete.
+
+Loaded fresh scene from vision.
+
+── Mode: Reconfiguration ──
+
+ASSISTANT:
+What would you like to change?
+
+YOU:
+part 3 is fragile
+
+ASSISTANT:
+```changes
+{
+  "Part_3": {"fragility": "fragile"}
+}
+```
+Confirm?
+
+YOU:
+yes
+
+✅  Changes noted.
+
+ASSISTANT:
+Anything else? If not, type or press 'done'.
+
+YOU:
+done
+
+✅  Configuration updated.
+✅  State archived → configuration_15042026_1344.json
+✅  Image updated.
+
+── Configuration complete. ──
+
+Starting vision module …
+
+Vision complete.
+
+✅  Image updated.
+
+ASSISTANT:
+A new image has been captured. Does the image look okay, or should I take another picture?
+
+YOU:
+looks good
+
+── Update Scene Dialogue ──
+
+ASSISTANT:
+Do the auto-matched part IDs look correct? If not, tell me what changed.
+
+YOU:
+Remap part 5 to be part 3.
+
+ASSISTANT:
+Part_5 in the image is actually Part_3. Mapping: {"Part_5": "Part_3"}. Confirm?
+
+[Proposed mapping: {"Part_5": "Part_3"}]
+
+YOU:
+yes
+
+[Accumulated mapping: {"Part_5": "Part_3"}]
+
+ASSISTANT:
+Saved. Any more changes? (say "done" to finish)
+
+YOU:
+done
+
+Applying mapping: {"Part_5": "Part_3"}
+
+── Final Scene Summary ──
+
++ Part_7  [new part]
+
+- Part_5  [removed]
+
+✅  Configuration updated.
+✅  State archived.
+✅  Image updated.
+
+

@@ -1,0 +1,68 @@
+── Mode: Reconfiguration ──
+A:
+What would you like to change?
+
+YOU:
+part 16 is fragile
+
+A:
+```changes
+{
+  "Part_16": {"fragility": "fragile"}
+}
+```
+Confirm?
+
+YOU:
+yes
+
+✅  Changes noted.
+
+A:
+Anything else? If not, type or press 'done'.
+
+YOU:
+done
+
+✅  Configuration updated.
+✅  State archived → configuration_15042026_1300.json
+✅  Image updated.
+
+── Configuration complete. ──
+── Mode: Reconfiguration ──
+
+A:
+What would you like to change?
+
+YOU:
+all green parts are fragile
+
+A:
+```changes
+{
+  "Part_7": {"fragility": "fragile"},
+  "Part_8": {"fragility": "fragile"},
+  "Part_9": {"fragility": "fragile"},
+  "Part_10": {"fragility": "fragile"},
+  "Part_11": {"fragility": "fragile"},
+  "Part_12": {"fragility": "fragile"}
+}
+```
+Confirm?
+
+YOU:
+yes
+
+✅  Changes noted.
+
+A:
+Anything else? If not, type or press 'done'.
+
+YOU:
+done
+
+✅  Configuration updated.
+✅  State archived → configuration_15042026_1301.json
+✅  Image updated.
+
+── Configuration complete. ──

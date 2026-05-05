@@ -1,0 +1,24 @@
+================================================================================
+SCENARIO 3 — TASK SPECIFICATION | Experiment 2 (Kitting) | Trial 2
+Ambiguity Profile: R + O
+================================================================================
+
+[SYS]  ── Mode: Reconfiguration ──
+
+[AST-OPEN] What would you like to change?
+[USR-INST] Switch to kitting mode. batch size is. Kit recipe is 1 red and 1 blue part per kit. Set all kits as outputs. Set all Containers as inputs except for container.
+           [NOTE: R — "except for container" — which container unspecified | O — "batch size is" incomplete, value missing]
+[AST-CLAR] Which container should not be set as input?
+[USR-CLAR] Container 3
+[AST-PROP] {Container_1/2: input, Container_3: null, Kit_1/2/3: output, operation_mode: kitting, kit_recipe: red:1, blue:1} — Confirm?
+[USR-INST] batch size is
+           [NOTE: O — user re-sends incomplete sentence, value still missing]
+[AST-CLAR] What should the batch size be?
+[USR-CLAR] 2
+[AST-PROP] {Container_1/2: input, Container_3: null, Kit_1/2/3: output, operation_mode: kitting, batch_size: 2, kit_recipe: red:1, blue:1} — Confirm?
+[USR-CONF] yes
+[SYS]  ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-DONE] done
+[SYS]  ✅ Configuration updated. State archived → configuration_17042026_1519.json. Image updated.
+[SYS]  ── Configuration complete. ──

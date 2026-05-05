@@ -1,0 +1,71 @@
+================================================================================
+SCENARIO 2 — WORKSPACE STATE-DESCRIPTION AMBIGUITY | Trial_violation
+Ambiguity Profile: Constraint Violation Handling (CV)
+Note: Each user statement below intentionally contains false/wrong information about the scene.
+CV types tested: CV-1 wrong count removed | CV-2 wrong count added | CV-3 wrong part moved |
+                 CV-4 wrong part removed | CV-5 no-op scene claim | CV-6 non-existent container |
+                 CV-7 off-topic input
+================================================================================
+
+[SYS]  ── Update Scene Dialogue ──
+
+-- CV 1 --
+
+[AST-OPEN] Do the auto-matched part IDs look correct? If not, tell me what changed.
+[USR-INST] I removed 2 green parts from the scene.
+           [NOTE: CV-1 — scan shows only 1 fewer green part, not 2]
+[AST-VIOL] I only see 1 fewer green part in the current scan (old: 3, current: 2), not 2 removed. Can you clarify which green parts you removed?
+
+-- CV 2 --
+
+[AST-OPEN] What should I change?
+[USR-INST] I added 2 blue parts to the scene.
+           [NOTE: CV-2 — scan shows only 1 new blue detection, not 2]
+[AST-VIOL] I only see 1 new blue detection in the scan (old: 2, current: 3). Can you clarify where the second added blue part is?
+
+-- CV 3 --
+
+[AST-OPEN] What should I change?
+[USR-INST] I moved the red part.
+           [NOTE: CV-3 — scan shows red part still in same slot]
+[AST-VIOL] The red part ('Part_6') is still in the same slot (Container_1_Pos_3) as before. Can you clarify where you moved it?
+
+-- CV 4 --
+
+[AST-OPEN] What should I change?
+[USR-INST] I removed the red part.
+           [NOTE: CV-4 — scan shows red part still present]
+[AST-VIOL] The red part ('Part_6') is still present in the current scan (Container_1_Pos_3). Can you clarify if you meant a different part or if something else changed?
+
+-- CV 5 --
+
+[AST-OPEN] What should I change?
+[USR-INST] No part in the scene was removed, but the green part 3 was moved.
+           [NOTE: CV-5 — contradictory: The scanned environment is not reachable without removing a part; system attempts resolution]
+[AST-CLAR] Which slot did you move green Part_3 to? In the current scan, there are two green parts: Part_4 (Container_1_Pos_1) and Part_5 (Container_1_Pos_6). Which one is Part_3?
+[USR-CLAR] part 3 was moved to slot 6.
+[AST-PROP] Assigning Part_5 in Container_1_Pos_6 as Part_3. Confirm?
+[USR-INST] but part 5 was not removed from the scene
+           [NOTE: CV-5 continued — user contradicts scan evidence again]
+[AST-CLAR] If Part_5 was not removed, where is it now? Should Part_5 be assigned to another slot, or is it no longer present? Please clarify.
+[USR-CLAR] Even though part 3 was moved, no other part was added or removed from the scene.
+[AST-PROP] Assigning Part_5 in Container_1_Pos_6 as Part_3 (moved), and Part_3 is no longer in its old slot. All other parts remain as auto-matched. Confirm?
+
+-- CV 6 --
+
+[AST-OPEN] What should I change?
+[USR-INST] There are no blue parts in the scene.
+           [NOTE: CV-4 variant — scan shows blue parts present]
+[AST-VIOL] Currently, the scan shows blue parts in Container_1_Pos_4 ('Part_1') and Container_1_Pos_5 ('Part_2'), and a new blue detection in Container_1_Pos_2 ('Part_7'). Can you confirm if these are misidentified, or should they be marked as removed or a different colour?
+[USR-INST] forget it
+
+[AST-OPEN] What should I change?
+[USR-INST] There are two containers.
+           [NOTE: CV-6 — scan only lists Container_1; non-existent container claim]
+[AST-VIOL] The scan data only lists Container_1. Can you clarify what you mean by two containers? Is there a missing container in the scan, or should I update something else?
+[USR-INST] forget it
+
+[AST-OPEN] What should I change?
+[USR-INST] The weather is nice today.
+           [NOTE: CV-7 — completely off-topic input]
+[AST-US]   I'm here to help with part matching. Let me know if you want to make any changes to the part IDs.

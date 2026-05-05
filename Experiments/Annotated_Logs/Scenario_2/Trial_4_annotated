@@ -1,0 +1,19 @@
+================================================================================
+SCENARIO 2 — WORKSPACE STATE-DESCRIPTION AMBIGUITY | Trial 4
+Ambiguity Profile: O + S
+================================================================================
+
+[SYS]  ── Update Scene Dialogue ──
+
+[AST-OPEN] Do the auto-matched part IDs look correct? If not, tell me what changed.
+[USR-INST] The fragile part 3 from the previous config should be mapped to a new part on the right hand side of the container.
+           [NOTE: O — "new part" unspecified which one | S — "right hand side" is perspective-dependent]
+[AST-PROP] Just to confirm: the new part on the right is 'Part_5' (green) in Container_1_Pos_6. So, you want to map 'Part_5' in the image to 'Part_3' (fragile). Confirm?
+[USR-CONF] yes
+[SYS]  [Accumulated mapping: {"Part_5": "Part_3"}]
+[AST-OPEN] Saved. Any more changes? (say "done" to finish)
+[USR-DONE] done
+[SYS]  Applying mapping: {"Part_5": "Part_3"}
+[SYS]  ── Final Scene Summary ── Part_7 [new] | Part_5 [removed]
+[SYS]  ✅ Configuration updated. State archived. Image updated.
+

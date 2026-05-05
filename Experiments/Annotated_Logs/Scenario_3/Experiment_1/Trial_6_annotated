@@ -1,0 +1,26 @@
+================================================================================
+SCENARIO 3 — TASK SPECIFICATION | Experiment 1 (Sorting) | Trial 6
+Ambiguity Profile: R + I + O + S
+Note: Capacity constraint surfaced mid-resolution, adding extra clarification turns.
+================================================================================
+
+[SYS]  ── Mode: Reconfiguration ──
+
+[AST-OPEN] What would you like to change?
+[USR-INST] Red parts are sensitive. sort by color. use the container on the top for the green parts and finish this one first.
+           [NOTE: R — "both parts" vs "which part" fragile unclear | I — "sensitive" implies fragility | O — red/blue container destination missing | S — "top" is perspective-dependent]
+[AST-CLAR] Do you want both Part_6 and Part_7 to be marked as sensitive, or just one of them?
+[USR-CLAR] both
+[AST-PROP] {Part_6/7: fragile, operation_mode: sorting, Container_2: output, green→Container_2, priority: Container_2→1} — Confirm?
+[AST-VIOL] Container_2 only has 6 empty slots, but sorting all parts by color as requested would require it to hold 7 parts. Would you like to leave some parts unsorted, use another container for the extra part(s), or handle this another way?
+           [NOTE: Capacity constraint detected mid-proposal — extra turns required]
+[USR-CLAR] only green parts go into container 2. red and blue parts go into container 1
+[AST-CLAR] Just to confirm: Should Container_1 and Container_2 both be set as output containers for sorting, with green parts going into Container_2 and red/blue parts into Container_1?
+[USR-CONF] yes
+[AST-PROP] {Part_6/7: fragile, Container_1/2: output, operation_mode: sorting, green→Container_2, red+blue→Container_1, priority: Container_2→1} — Confirm?
+[USR-CONF] yes
+[SYS]  ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-DONE] done
+[SYS]  ✅ Configuration updated. State archived → configuration_17042026_1448.json. Image updated.
+[SYS]  ── Configuration complete. ──

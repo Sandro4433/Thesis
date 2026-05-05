@@ -1,0 +1,21 @@
+================================================================================
+SCENARIO 2 — WORKSPACE STATE-DESCRIPTION AMBIGUITY | Trial 6
+Ambiguity Profile: R + I + O + S
+================================================================================
+
+[SYS]  ── Update Scene Dialogue ──
+
+[AST-OPEN] Do the auto-matched part IDs look correct? If not, tell me what changed.
+[USR-INST] The green part on the right side of the container from the previous scan was removed from the scene. A green part was moved to a new container slot.
+           [NOTE: R — "a green part" ambiguous among multiple green parts | I — implies Part_3 identity without stating it | O — destination slot not specified | S — "right side" is perspective-dependent]
+[AST-CLAR] Just to clarify: the green part that was on the right (Container_1_Pos_6, previously Part_5) was removed, and the other green part (Part_3, previously in Pos_2) was moved to a new slot. Which slot is the green part now in: Pos_1 (currently labeled Part_4) or Pos_6 (currently labeled Part_5)?
+[USR-CLAR] pos 6
+[AST-PROP] Part_5 in Pos_6 is actually Part_3 (moved), and Part_5 was removed. Confirm?
+[USR-CONF] yes
+[SYS]  [Accumulated mapping: {"Part_5": "Part_3"}]
+[AST-OPEN] Saved. Any more changes? (say "done" to finish)
+[USR-DONE] done
+[SYS]  Applying mapping: {"Part_5": "Part_3"}
+[SYS]  ── Final Scene Summary ── Part_7 [new] | Part_8 [new] | Part_5 [removed]
+[SYS]  ✅ Configuration updated. State archived. Image updated.
+

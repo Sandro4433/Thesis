@@ -1,0 +1,30 @@
+================================================================================
+SCENARIO 3 — TASK SPECIFICATION | Experiment 2 (Kitting) | Trial_violation
+Ambiguity Profile: Constraint Violation Handling (CV)
+CV types tested:
+  CV-1: Batch size exceeds number of available kits (batch_size: 4, only 3 kits exist) ← detected
+  CV-2: Kit recipe exceeds kit capacity (2 red + 2 blue = 4 parts, kit only has 3 slots) ← detected
+  CV-3: Insufficient parts for requested recipe and input-containers
+================================================================================
+
+[SYS]  ── Mode: Reconfiguration ──
+
+-- CV 1 --
+
+[USR-INST] kit recipe is 2 red and 2 blue parts per kit
+[AST-VIOL] The kit recipe cannot exceed 3 parts in total. Please reduce the quantities.
+
+-- CV 2 --
+
+[AST-OPEN] What would you like to change?
+[USR-INST] batch size is 4
+[AST-VIOL] There are only 3 kits available, so batch size cannot exceed 3. Please choose a value of 3 or fewer. What batch size would you like?
+
+
+-- CV 3 --
+
+[USR-INST] Do kitting. Do not pick from container 3. fill two kits. kit recipe is 1 red and 2 blue parts per kit
+           [NOTE: CV-3 — need 4 blue parts (2 kits × 2), only 3 available in Container_1 and Container_2]
+[AST-VIOL] There aren't enough blue parts to fill both kits with your requested recipe (you need 4 blue, but only 3 are available in Containers 1 and 2). Would you like to use a different recipe, reduce the number of kits, or substitute another color for the missing blue part?
+
+

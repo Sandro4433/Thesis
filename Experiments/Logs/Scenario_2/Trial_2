@@ -1,0 +1,43 @@
+── Update Scene Dialogue ──
+
+ASSISTANT:
+Do the auto-matched part IDs look correct? If not, tell me what changed.
+
+YOU:
+A green part was removed. Part 3 from the previous scan was moved to a new position
+
+ASSISTANT:
+Just to confirm: Part_3 (green, fragile) was moved to a new position, and a different green part was removed. Which slot is Part_3 in now—Container_1_Pos_1 (currently Part_4) or Container_1_Pos_6 (currently Part_5)?
+
+YOU:
+pos 6 (currently part 5)
+
+ASSISTANT:
+Part_5 in the image is actually Part_3 (moved), and a green part was removed. Mapping: {"Part_5": "Part_3"}. Confirm?
+
+[Proposed mapping: {"Part_5": "Part_3"}]
+
+YOU:
+yes
+
+[Accumulated mapping: {"Part_5": "Part_3"}]
+
+ASSISTANT:
+Saved. Any more changes? (say "done" to finish)
+
+YOU:
+done
+
+Applying mapping: {"Part_5": "Part_3"}
+
+── Final Scene Summary ──
+
++ Part_7  [new part]
+
+- Part_5  [removed]
+
+✅  Configuration updated.
+✅  State archived.
+✅  Image updated.
+
+── Mode: Reconfiguration ──

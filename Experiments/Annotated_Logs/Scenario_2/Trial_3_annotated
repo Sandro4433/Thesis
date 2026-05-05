@@ -1,0 +1,19 @@
+================================================================================
+SCENARIO 2 — WORKSPACE STATE-DESCRIPTION AMBIGUITY | Trial 3
+Ambiguity Profile: I + S
+================================================================================
+
+[SYS]  ── Update Scene Dialogue ──
+
+[AST-OPEN] Do the auto-matched part IDs look correct? If not, tell me what changed.
+[USR-INST] the green part on the right hand side should actually be part 3 from the previous config
+           [NOTE: I — implies identity mapping without stating it explicitly | S — "right hand side" is perspective-dependent]
+[AST-PROP] Just to confirm: you want the green part on the right (Part_5 in the image) to be Part_3 from the previous config. Mapping: {"Part_5": "Part_3"} — Confirm?
+[USR-CONF] yes
+[SYS]  [Accumulated mapping: {"Part_5": "Part_3"}]
+[AST-OPEN] Saved. Any more changes? (say "done" to finish)
+[USR-DONE] done
+[SYS]  Applying mapping: {"Part_5": "Part_3"}
+[SYS]  ── Final Scene Summary ── Part_7 [new] | Part_5 [removed]
+[SYS]  ✅ Configuration updated. State archived. Image updated.
+

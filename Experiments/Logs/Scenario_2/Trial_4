@@ -1,0 +1,61 @@
+── Configuration complete. ──
+
+Starting vision module …
+
+Vision complete.
+
+✅  Image updated.
+
+ASSISTANT:
+A new image has been captured. Does the image look okay, or should I take another picture?
+
+YOU:
+The fragile part 3 from the previous config should be mapped to a new part on the right hand side of the container.
+
+ASSISTANT:
+Sorry, I didn't understand. Is the image okay? (yes / no)
+
+YOU:
+yes
+
+── Update Scene Dialogue ──
+
+ASSISTANT:
+Do the auto-matched part IDs look correct? If not, tell me what changed.
+
+YOU:
+The fragile part 3 from the previous config should be mapped to a new part on the right hand side of the container.
+
+ASSISTANT:
+Just to confirm: the new part on the right is 'Part_5' (green) in Container_1_Pos_6. So, you want to map 'Part_5' in the image to 'Part_3' (fragile). Confirm?
+
+[Proposed mapping: {"Part_5": "Part_3"}]
+
+YOU:
+yes
+
+[Accumulated mapping: {"Part_5": "Part_3"}]
+
+ASSISTANT:
+Saved. Any more changes? (say "done" to finish)
+
+YOU:
+done
+
+Applying mapping: {"Part_5": "Part_3"}
+
+── Final Scene Summary ──
+
++ Part_7  [new part]
+
+- Part_5  [removed]
+
+✅  Configuration updated.
+✅  State archived.
+✅  Image updated.
+
+── Mode: Reconfiguration ──
+
+ASSISTANT:
+What would you like to change?
+

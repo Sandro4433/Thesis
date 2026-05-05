@@ -1,0 +1,24 @@
+================================================================================
+SCENARIO 3 — TASK SPECIFICATION | Experiment 2 (Kitting) | Trial 3
+Ambiguity Profile: I + S
+================================================================================
+
+[SYS]  ── Mode: Reconfiguration ──
+
+[AST-OPEN] What would you like to change?
+[USR-INST] Switch to kitting mode. Kit recipe is 1 red and 1 blue per kit. batch size is 2. Do not use the container on the right hand side.
+           [NOTE: I — "do not use" implies role exclusion without stating it | S — "right hand side" is perspective-dependent]
+[AST-CLAR] Did you mean Container_1 (bottom-left) or Container_3 (bottom-right) when you said "the container on the right hand side"?
+[USR-CLAR] container 3
+[AST-PROP] {operation_mode: kitting, kit_recipe: red:1, blue:1, batch_size: 2, Container_3: null} — Confirm?
+[USR-INST] I need object roles for kitting
+           [NOTE: O — roles for containers/kits were omitted from proposal]
+[AST-CLAR] Which containers should be used as input (sources for parts) for kitting? You specified not to use Container_3. Should I use Container_1 and Container_2 as inputs, and all three kits as outputs?
+[USR-CONF] yes
+[AST-PROP] {Container_1/2: input, Kit_1/2/3: output} — Confirm?
+[USR-CONF] yes
+[SYS]  ✅ Changes noted.
+[AST-OPEN] Anything else? If not, type or press 'done'.
+[USR-DONE] done
+[SYS]  ✅ Configuration updated. State archived → configuration_17042026_1522.json. Image updated.
+[SYS]  ── Configuration complete. ──
