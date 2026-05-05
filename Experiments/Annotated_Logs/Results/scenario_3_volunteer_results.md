@@ -4,8 +4,8 @@
 
 ## Turn-Type Breakdown
 
-| Trial | Ambiguity Profile | Total | USR | AST | USR-INST | USR-CONF | USR-CLAR | USR-DONE | AST-OPEN | AST-PROP | AST-CLAR | AST-VIOL | Notes |
-|-------|-------------------|-------|-----|-----|----------|----------|----------|----------|----------|----------|----------|----------|-------|
-| Exp_1 | R (typo "zes" causes confirmation failure; "contaier" typo handled correctly) | 16 | 8 | 8 | 3 | 4 | 0 | 1 | 4 | 3 | 1 | 0 | I (implicit sorting mode) |
-| Exp_2 | None (system error — false constraint violation flagged) | 10 | 5 | 5 | 3 | 1 | 0 | 1 | 2 | 1 | 0 | 2 | None (system error) |
+| Trial | Ambiguity Profile | Total | USR | AST | USR-INST | USR-CONF | USR-CLAR | USR-DONE | AST-OPEN | AST-PROP | AST-CLAR | AST-VIOL | Config Correct |
+|-------|-------------------|-------|-----|-----|----------|----------|----------|----------|----------|----------|----------|----------|----------------|
+| Exp_1 | R | 16 | 8 | 8 | 3 | 2 | 1 | 1 | 3 | 3 | 1 | 0 | Y |
+| Exp_2 | None | 10 | 5 | 5 | 3 | 1 | 0 | 1 | 2 | 1 | 0 | 2 | Y |
 
